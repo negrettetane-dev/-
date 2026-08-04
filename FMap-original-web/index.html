@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CityPulse Map</title>
+    <link rel="stylesheet" href="./tokens.css" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="map-shell" aria-label="CityPulse 地图工作台">
+      <section class="map-stage" aria-label="城市地图">
+        <div class="map-grid" aria-hidden="true">
+          <svg class="map-art" viewBox="0 0 1200 900" role="img" aria-label="原创城市地图插画">
+            <rect width="1200" height="900" class="map-bg" />
+            <path class="water" d="M0 606 C185 540 250 646 418 586 S712 442 876 520 1034 650 1200 590 L1200 900 L0 900 Z" />
+            <path class="park park-a" d="M64 78h232v144H64z" />
+            <path class="park park-b" d="M842 92h258v164H842z" />
+            <path class="road major" d="M-60 470 C150 382 284 344 456 372 C702 414 808 292 1260 300" />
+            <path class="road major slow-road" d="M574 -40 C520 160 560 328 650 468 C742 610 724 706 648 940" />
+            <path class="road" d="M90 315 H1100" />
+            <path class="road" d="M100 690 H980" />
+            <path class="road" d="M250 0 V760" />
+            <path class="road" d="M430 80 V900" />
+            <path class="road" d="M802 0 V790" />
+            <path class="road" d="M1005 50 V680" />
+            <g class="blocks">
+              <rect x="110" y="360" width="104" height="76" />
+              <rect x="310" y="390" width="88" height="118" />
+              <rect x="478" y="122" width="180" height="106" />
+              <rect x="700" y="350" width="74" height="126" />
+              <rect x="860" y="330" width="182" height="98" />
+              <rect x="940" y="704" width="116" height="78" />
+            </g>
+            <g class="route-line">
+              <path d="M276 626 C390 548 462 548 526 482 S640 400 778 408" />
+            </g>
+          </svg>
+        </div>
+
+        <button class="pin pin-current" data-place="home" aria-label="当前位置"></button>
+        <button class="pin pin-cafe" data-place="cafe" aria-label="岚桥咖啡"></button>
+        <button class="pin pin-station" data-place="station" aria-label="青杉地铁站"></button>
+        <button class="pin pin-park" data-place="park" aria-label="北岸公园"></button>
+        <button class="pin pin-charge" data-place="charge" aria-label="南门充电站"></button>
+
+        <header class="top-search" aria-label="地图搜索">
+          <button class="icon-btn" id="profileBtn" aria-label="打开用户中心">
+            <span class="icon user-icon"></span>
+          </button>
+          <button class="search-entry" id="openSearch" aria-label="搜索地点、公交、地铁">
+            <span class="icon search-icon"></span>
+            <span>搜索地点、公交、地铁</span>
+          </button>
+          <button class="icon-btn" id="voiceBtn" aria-label="语音搜索">
+            <span class="icon voice-icon"></span>
+          </button>
+          <button class="icon-btn" id="scanBtn" aria-label="扫码">
+            <span class="icon scan-icon"></span>
+          </button>
+        </header>
+
+        <aside class="tool-rail" aria-label="地图工具">
+          <button class="rail-btn" id="trafficBtn" aria-pressed="true">路况</button>
+          <button class="rail-btn" id="layerBtn" aria-pressed="false">3D</button>
+          <button class="rail-btn" id="teamBtn" aria-pressed="false">组队</button>
+        </aside>
+
+        <aside class="city-status" aria-label="当前位置状态">
+          <strong id="districtName">杉湖商圈</strong>
+          <span id="trafficSummary">主路缓行，预计多 4 分钟</span>
+          <button class="weather-pill" id="weatherBtn">多云 26°C · 空气良</button>
+        </aside>
+
+        <div class="zoom-stack" aria-label="地图缩放">
+          <button id="zoomIn" aria-label="放大地图">+</button>
+          <button id="zoomOut" aria-label="缩小地图">-</button>
+        </div>
+
+        <div class="lower-tools">
+          <button class="round-btn gps" id="gpsBtn" aria-label="定位模式">
+            <span id="gpsState">定</span>
+          </button>
+          <button class="route-chip" id="routeBtn">
+            <span class="icon route-icon"></span>
+            <span>路线</span>
+          </button>
+          <button class="round-btn" id="favoriteBtn" aria-label="常去地点">常</button>
+        </div>
+
+        <button class="nearby-bar" id="nearbyBtn">搜周边：停车场、餐饮、充电站</button>
+      </section>
+
+      <section class="bottom-sheet" id="detailSheet" aria-label="地点详情">
+        <button class="sheet-grip" id="toggleSheet" aria-label="展开或收起详情"></button>
+        <div class="sheet-head">
+          <div>
+            <h1 id="poiTitle">当前位置</h1>
+            <p id="poiDistance">正在获取位置</p>
+          </div>
+          <button class="icon-btn ghost" id="closeSheet" aria-label="关闭详情">x</button>
+        </div>
+        <div class="sheet-actions">
+          <button data-action="nearby"><span class="icon search-icon"></span><span>周边</span></button>
+          <button data-action="save"><span class="star-mark"></span><span>收藏</span></button>
+          <button data-action="share"><span class="share-mark"></span><span>分享</span></button>
+          <button data-action="taxi"><span class="taxi-mark"></span><span>打车</span></button>
+        </div>
+        <div class="route-tabs" aria-label="出行方式">
+          <button class="route-tab is-active" data-mode="drive">驾车</button>
+          <button class="route-tab" data-mode="walk">步行</button>
+          <button class="route-tab" data-mode="transit">公交</button>
+        </div>
+        <div class="route-card" id="routeCard">
+          <strong id="routeTime">18 分钟</strong>
+          <span id="routeHint">点击地图上的地点后可规划路线</span>
+        </div>
+        <div class="detail-row">
+          <strong>新增地点</strong>
+          <span>补充门牌、入口或营业信息</span>
+        </div>
+        <div class="detail-row">
+          <strong>导航提醒</strong>
+          <span id="naviHint">路线会根据路况、步行距离和换乘次数动态调整</span>
+        </div>
+      </section>
+
+      <section class="feature-panel" id="featurePanel" aria-label="功能面板" aria-hidden="true">
+        <div class="feature-head">
+          <div>
+            <h2 id="featureTitle">功能</h2>
+            <p id="featureSubtitle">本地模拟功能</p>
+          </div>
+          <button class="icon-btn ghost" id="closeFeature" aria-label="关闭功能面板">x</button>
+        </div>
+        <div class="feature-body" id="featureBody"></div>
+        <div class="feature-actions" id="featureActions"></div>
+      </section>
+
+      <section class="search-panel" id="searchPanel" aria-label="搜索模式">
+        <div class="search-toolbar">
+          <button class="icon-btn ghost" id="backSearch" aria-label="返回地图">‹</button>
+          <label class="search-input-wrap">
+            <span class="icon search-icon"></span>
+            <input id="searchInput" type="search" placeholder="输入地点或关键词" autocomplete="off" />
+          </label>
+        </div>
+        <div class="filter-strip" aria-label="搜索类型">
+          <button class="filter-chip is-active" data-filter="all">全部</button>
+          <button class="filter-chip" data-filter="food">餐饮</button>
+          <button class="filter-chip" data-filter="transit">交通</button>
+          <button class="filter-chip" data-filter="charge">充电</button>
+        </div>
+        <div class="suggestions" id="suggestions"></div>
+      </section>
+
+      <aside class="profile-drawer" id="profileDrawer" aria-label="用户中心">
+        <button class="icon-btn ghost drawer-close" id="closeProfile" aria-label="关闭用户中心">x</button>
+        <h2>CityPulse</h2>
+        <p>位置收藏、路线历史和通勤偏好集中在这里。</p>
+        <div class="profile-list">
+          <button data-profile="home">家和公司</button>
+          <button data-profile="history">路线历史</button>
+          <button data-profile="sport">运动记录</button>
+          <button data-profile="offline">离线地图</button>
+        </div>
+        <form class="login-card" id="loginForm">
+          <label>
+            <span>手机号</span>
+            <input id="phoneInput" inputmode="numeric" maxlength="11" placeholder="输入手机号" />
+          </label>
+          <div class="login-row">
+            <input id="codeInput" inputmode="numeric" maxlength="6" placeholder="验证码" />
+            <button type="button" id="sendCodeBtn">获取验证码</button>
+          </div>
+          <button class="sync-btn" type="submit">登录以同步</button>
+        </form>
+      </aside>
+
+      <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    </main>
+    <script src="./app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,9 @@
+{
+  "date": "2026-08-04",
+  "framework": "Vue 3 + Vite + TypeScript",
+  "font": "Microsoft YaHei UI with DIN Alternate numeric outlier",
+  "palette": "locked OKLCH cyan-blue traffic operations system",
+  "motion": "motion-cut; transform and opacity only",
+  "spacing": "4-point token scale",
+  "source": "frontend/design.md"
+}

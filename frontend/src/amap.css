@@ -1,0 +1,31 @@
+.amap-host { position: absolute; inset: 0; opacity: 0; pointer-events: none; }
+.amap-host.visible { opacity: 1; pointer-events: auto; }
+.map-fallback-note {
+  position: absolute;
+  right: var(--space-xs);
+  top: var(--space-xs);
+  padding: var(--space-2xs) var(--space-xs);
+  background: var(--color-paper);
+  border: var(--rule-thin) solid var(--color-rule);
+  color: var(--color-muted);
+  font-size: var(--text-xs);
+  z-index: 2;
+  border-radius: var(--radius-xs);
+}
+.amap-event-dot {
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--color-danger-soft);
+  border: var(--rule-thin) solid var(--color-danger);
+}
+.amap-event-dot span {
+  width: .4375rem;
+  height: .4375rem;
+  border-radius: 50%;
+  background: var(--color-ink);
+  box-shadow: 0 0 .5rem var(--color-danger);
+}
+.amap-logo, .amap-copyright { opacity: .58; }
