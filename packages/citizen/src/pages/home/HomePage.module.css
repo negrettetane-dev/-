@@ -1,0 +1,102 @@
+/* ===== 大图地图 Hero ===== */
+.hero { position: relative; border-radius: 16px; overflow: hidden; height: 480px; box-shadow: 0 4px 20px rgba(0,0,0,0.12); }
+.heroMap { width: 100%; height: 100%; background: #e8edf2; }
+.mapLoading {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  background: #1a1a2e; color: #fff; font-size: 14px;
+}
+
+/* 左侧浮层 */
+.heroLeft { position: absolute; top: 16px; left: 16px; width: 320px; display: flex; flex-direction: column; gap: 12px; }
+.aiBox { background: rgba(255,255,255,0.95); backdrop-filter: blur(8px); border-radius: 12px; padding: 16px; box-shadow: 0 4px 16px rgba(0,0,0,0.12); }
+.aiBoxTitle { font-size: 15px; font-weight: 700; margin-bottom: 12px; }
+.searchRow { display: flex; gap: 8px; }
+.searchInput {
+  flex: 1; padding: 10px 14px; border: 1px solid #e5e7eb; border-radius: 8px;
+  font-size: 14px; outline: none; transition: border-color 0.2s;
+}
+.searchInput:focus { border-color: var(--primary); }
+.searchBtn { padding: 10px 16px; background: var(--primary); color: #fff; border: none; border-radius: 8px; font-size: 14px; cursor: pointer; white-space: nowrap; }
+.aiHint { font-size: 12px; color: var(--text-hint); margin-top: 10px; }
+
+.indexCard { background: rgba(255,255,255,0.95); backdrop-filter: blur(8px); border-radius: 12px; padding: 14px 16px; box-shadow: 0 4px 16px rgba(0,0,0,0.12); }
+.indexHead { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: var(--text-secondary); margin-bottom: 8px; }
+.indexTrend { font-size: 12px; color: #f5222d; }
+.indexBody { display: flex; align-items: center; gap: 16px; }
+.indexNum { font-size: 44px; font-weight: 800; line-height: 1; }
+.indexMeta { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--text-secondary); }
+.indexMeta b { color: var(--text-primary); }
+
+/* 底部快捷入口 */
+.heroQuick {
+  position: absolute; left: 50%; transform: translateX(-50%); bottom: 16px;
+  display: flex; gap: 8px; background: rgba(255,255,255,0.96); backdrop-filter: blur(8px);
+  padding: 8px; border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+}
+.heroQuickItem {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 10px 18px; border-radius: 8px; cursor: pointer; transition: all 0.2s;
+  font-size: 12px; color: var(--text-primary);
+}
+.heroQuickItem:hover { background: var(--primary-light); color: var(--primary); }
+.heroQuickIcon { font-size: 22px; }
+
+/* 实时预警浮层 */
+.alertFloat { position: absolute; top: 16px; right: 16px; width: 320px; display: flex; flex-direction: column; gap: 8px; }
+.alertFloatItem {
+  display: flex; align-items: center; gap: 8px;
+  background: rgba(255,255,255,0.95); backdrop-filter: blur(8px);
+  padding: 10px 14px; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  font-size: 13px; cursor: pointer; transition: transform 0.2s;
+}
+.alertFloatItem:hover { transform: translateX(-4px); }
+.alertFloatTitle { flex: 1; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.alertFloatTime { font-size: 11px; color: var(--text-hint); }
+
+/* ===== 功能模块 ===== */
+.features { margin-top: 32px; }
+.sectionHead { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.sectionTitle { font-size: 20px; font-weight: 700; }
+.sectionMore { font-size: 13px; color: var(--primary); cursor: pointer; }
+.featureGrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.featureCard {
+  display: flex; align-items: center; gap: 14px; background: #fff;
+  border-radius: 12px; padding: 20px; cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06); transition: all 0.25s;
+  border: 1px solid transparent;
+}
+.featureCard:hover { box-shadow: 0 6px 20px rgba(0,0,0,0.1); transform: translateY(-2px); border-color: var(--primary-light); }
+.featureIcon { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 24px; flex-shrink: 0; }
+.featureInfo { flex: 1; min-width: 0; }
+.featureTitle { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+.featureDesc { font-size: 12px; color: var(--text-hint); line-height: 1.4; }
+.featureArrow { color: #ddd; font-size: 16px; }
+
+/* ===== 底部区块 ===== */
+.bottomSection { margin-top: 32px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.siteCard { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+.sparkArea { margin-top: 12px; }
+.sparkline { display: flex; align-items: flex-end; gap: 4px; height: 90px; padding: 0 8px; }
+.sparkBar { flex: 1; border-radius: 3px 3px 0 0; min-width: 6px; transition: height 0.4s; }
+.sparkLabels { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-hint); margin-top: 6px; padding: 0 8px; }
+
+.newsList { display: flex; flex-direction: column; }
+.newsItem { padding: 12px 0; border-bottom: 1px solid #f5f5f5; cursor: pointer; transition: all 0.2s; }
+.newsItem:last-child { border-bottom: none; }
+.newsItem:hover .newsTitle { color: var(--primary); }
+.newsTitle { font-size: 14px; font-weight: 500; transition: color 0.2s; }
+.newsMeta { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-hint); margin-top: 6px; }
+
+/* ===== 响应式 ===== */
+@media (max-width: 1024px) {
+  .featureGrid { grid-template-columns: repeat(2, 1fr); }
+  .heroLeft { width: 280px; }
+  .alertFloat { width: 280px; }
+}
+@media (max-width: 768px) {
+  .hero { height: 380px; }
+  .heroLeft { width: calc(100% - 32px); }
+  .alertFloat { display: none; }
+  .bottomSection { grid-template-columns: 1fr; }
+  .heroQuick { display: none; }
+}

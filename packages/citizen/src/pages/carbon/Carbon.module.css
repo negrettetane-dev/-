@@ -1,0 +1,35 @@
+.page { }
+.header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+.title { font-size: 24px; font-weight: 700; }
+.rank { font-size: 14px; background: #e6ffe6; color: #52c41a; padding: 6px 14px; border-radius: 16px; }
+.scoreRing { display: flex; justify-content: center; padding: 16px 0; }
+.statsGrid { display: flex; background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+.statItem { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.statValue { font-size: 22px; font-weight: 700; }
+.statLabel { font-size: 13px; color: var(--text-secondary); }
+.forest { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); margin-top: 16px; }
+.sectionTitle { font-size: 17px; font-weight: 600; margin-bottom: 14px; }
+.trees { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 8px 0; min-height: 48px; }
+.records { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); margin-top: 16px; }
+.record { display: flex; align-items: center; gap: 14px; padding: 12px 0; border-bottom: 1px solid #f5f5f5; }
+.record:last-child { border-bottom: none; }
+.recordIcon { font-size: 28px; }
+.recordBody { flex: 1; }
+.recordType { font-size: 15px; font-weight: 600; }
+.recordDetail { font-size: 13px; color: var(--text-secondary); }
+.recordPoints { font-weight: 700; color: #52c41a; font-size: 16px; }
+.rewards { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); margin-top: 16px; }
+.rewardGrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.rewardCard { background: var(--bg-page); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 8px; transition: all 0.2s; }
+.rewardCard:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+.rewardName { font-size: 15px; font-weight: 600; }
+.rewardDesc { font-size: 12px; color: var(--text-secondary); flex: 1; }
+.rewardFooter { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; }
+.rewardCost { font-size: 14px; font-weight: 600; color: #faad14; }
+.redeemBtn { padding: 6px 16px; background: var(--primary); color: #fff; border: none; border-radius: 6px; font-size: 13px; cursor: pointer; }
+.redeemBtn:hover { opacity: 0.9; }
+.redeemBtn:disabled { background: #ddd; color: #999; cursor: not-allowed; }
+
+@media (max-width: 768px) {
+  .rewardGrid { grid-template-columns: repeat(2, 1fr); }
+}

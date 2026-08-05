@@ -1,0 +1,78 @@
+import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useElderly } from '../../App';
+import styles from './Elderly.module.css';
+
+const ElderlyHomePage: React.FC = () => {
+  const navigate = useNavigate();
+  const { toggleElderlyMode } = useElderly();
+  const [dest, setDest] = useState('');
+  const [voiceActive, setVoiceActive] = useState(false);
+  const [busResult, setBusResult] = useState<{name:string;arrival:number;crowding:string}[]>([]);
+
+  const handleVoiceInput = () => {
+    setVoiceActive(true);
+    setTimeout(()=>{ setVoiceActive(false); setDest('北京市第一人民医院'); }, 2000);
+  };
+
+  const handleBusQuery = () => {
+    setBusResult([
+      { name:'8路', arrival:180, crowding:'normal' },
+      { name:'56路', arrival:420, crowding:'crowded' },
+    ]);
+  };
+
+  return (
+    <div className={styles.page}>
+      {/* Top bar */}
+      <div className={styles.topBar}>
+        <span className={styles.logo}>智途云枢</span>
+        <button className={styles.exitBtn} onClick={()=>{toggleElderlyMode();navigate('/');}}>退出长辈模式</button>
+      </div>
+
+      {/* Emergency button */}
+      <div className={styles.emergency}>
+        <button className={styles.emergencyBtn}>🆘 SOS 紧急求助</button>
+      </div>
+
+      {/* 3 Big Buttons */}
+      <div className={styles.mainButtons}>
+        {/* 1. Where to go */}
+        <div className={styles.card}>
+          <div className={styles.cardTitle}>1️⃣ 想去哪儿</div>
+          <div className={styles.voiceInput} onClick={handleVoiceInput}>
+            <span style={{fontSize:32}}>🎤</span>
+            <span>{voiceActive ? '正在聆听...' : '点击语音输入目的地'}</span>
+          </div>
+          <input className={styles.input} placeholder="或手写输入目的地" value={dest} onChange={e=>setDest(e.target.value)}/>
+          {dest && <button className={styles.btn} onClick={()=>navigate('/travel')}>🔍 查询路线</button>}
+        </div>
+
+        {/* 2. Bus arrival */}
+        <div className={styles.card}>
+          <div className={styles.cardTitle}>2️⃣ 公交车到哪了</div>
+          <button className={styles.btn} onClick={handleBusQuery}>🚌 查询常用线路</button>
+          {busResult.map((b,i)=>(
+            <div key={i} className={styles.busRow}>
+              <span className={styles.busName}>{b.name}</span>
+              <span className={styles.busArrival}>{Math.floor(b.arrival/60)}分钟后到站</span>
+              <span>{b.crowding==='normal'?'🟡适中':'🟠拥挤'}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* 3. Report issue */}
+        <div className={styles.card}>
+          <div className={styles.cardTitle}>3️⃣ 上报问题</div>
+          <div style={{fontSize:28,textAlign:'center'}}>📷</div>
+          <div style={{fontSize:20,textAlign:'center',color:'var(--text-secondary)'}}>拍照自动识别 · 语音描述</div>
+          <button className={styles.btn} onClick={()=>navigate('/report/new')}>📸 拍照上报</button>
+        </div>
+      </div>
+
+      <div style={{height:32}}/>
+    </div>
+  );
+};
+
+export default ElderlyHomePage;

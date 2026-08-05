@@ -1,37 +1,24 @@
-# Dependencies
-node_modules/
-frontend/node_modules/
-FMap/
+# 依赖与构建产物
+node_modules
+dist
+.vite
 
-# Build output
-dist/
-frontend/dist/
-backend/dist/
-
-# Python
-__pycache__/
-*.py[cod]
-.pytest_cache/
-.venv/
-venv/
-
-# Environment files
+# 环境变量（含高德 Key，不提交；提供 .env.example 供参考）
 .env
-.env.*
+.env.local
+.env.*.local
 !.env.example
 
-# Logs
-*.log
-npm-debug.log*
-pnpm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# OS and editor files
+# 本地临时文件
+*.local
 .DS_Store
 Thumbs.db
-.idea/
-.vscode/
 
-# Local caches
-.cache/
+# 编辑器/系统
+.vscode/*
+!.vscode/extensions.json
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln

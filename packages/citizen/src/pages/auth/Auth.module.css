@@ -1,0 +1,130 @@
+.authPage {
+  min-height: 100vh;
+  display: flex;
+  background: linear-gradient(135deg, #e6f4ff 0%, #f0f5ff 50%, #f6ffed 100%);
+  padding: 40px 24px;
+  overflow-y: auto;
+}
+.authCard {
+  display: flex;
+  width: 880px;
+  max-width: 100%;
+  min-height: 560px;
+  margin: auto;
+  background: #fff;
+  border-radius: 20px;
+  box-shadow: 0 12px 48px rgba(0,0,0,0.12);
+}
+/* 左侧品牌区 */
+.authSide {
+  width: 45%;
+  background: linear-gradient(160deg, #001529 0%, #003a70 60%, #1677ff 130%);
+  color: #fff;
+  padding: 48px 40px;
+  display: flex;
+  flex-direction: column;
+}
+.sideLogo { font-size: 48px; margin-bottom: 16px; }
+.sideTitle { font-size: 28px; font-weight: 700; margin-bottom: 12px; letter-spacing: 2px; }
+.sideDesc { font-size: 15px; line-height: 1.8; opacity: 0.85; margin-bottom: 32px; }
+.sideFeatures { display: flex; flex-direction: column; gap: 16px; margin-top: auto; }
+.sideFeature { font-size: 14px; opacity: 0.9; }
+.sideStats { display: flex; gap: 24px; margin-top: auto; }
+.sideStat { text-align: center; }
+.sideStatNum { font-size: 22px; font-weight: 700; color: #4fc3f7; }
+
+/* 右侧表单区 */
+.authForm {
+  flex: 1;
+  padding: 48px 40px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.formTitle { font-size: 24px; font-weight: 700; margin-bottom: 6px; }
+.formSub { font-size: 13px; color: var(--text-hint); margin-bottom: 24px; }
+
+.modeSwitch {
+  display: flex;
+  background: var(--bg-page);
+  border-radius: 8px;
+  padding: 4px;
+  margin-bottom: 20px;
+}
+.modeBtn {
+  flex: 1;
+  padding: 8px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  font-size: 14px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.modeActive { background: #fff; color: var(--primary); font-weight: 600; box-shadow: 0 1px 4px rgba(0,0,0,0.1); }
+
+.field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--bg-page);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 0 14px;
+  margin-bottom: 14px;
+  transition: border-color 0.2s;
+}
+.field:focus-within { border-color: var(--primary); background: #fff; }
+.fieldIcon { font-size: 16px; }
+.input {
+  flex: 1;
+  padding: 12px 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+.codeBtn {
+  padding: 6px 12px;
+  border: none;
+  background: var(--primary-light);
+  color: var(--primary);
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.codeBtn:disabled { background: #eee; color: var(--text-hint); cursor: not-allowed; }
+
+.agreeRow { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; font-size: 13px; }
+.agreeText { color: var(--text-secondary); }
+.link { color: var(--primary); cursor: pointer; }
+
+.error { color: var(--danger); font-size: 13px; margin-bottom: 12px; }
+
+.submitBtn {
+  width: 100%;
+  padding: 14px;
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+.submitBtn:hover { opacity: 0.9; }
+.submitBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.authFooter { margin-top: 20px; font-size: 13px; color: var(--text-hint); display: flex; gap: 8px; align-items: center; }
+.divider { color: #ddd; }
+
+/* 响应式 */
+@media (max-width: 768px) {
+  .authSide { display: none; }
+  .authCard { width: 100%; }
+  .authForm { padding: 32px 24px; }
+}

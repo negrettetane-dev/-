@@ -1,0 +1,20 @@
+.page { }
+.tabRow { display: flex; gap: 8px; margin-bottom: 20px; background: #fff; padding: 6px; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); width: fit-content; }
+.tab { padding: 10px 24px; border: none; border-radius: 8px; background: transparent; font-size: 15px; cursor: pointer; transition: all 0.2s; color: var(--text-secondary); }
+.tabActive { background: var(--primary); color: #fff; font-weight: 600; }
+
+.list { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+.card { background: #fff; border-radius: 12px; padding: 18px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); display: flex; flex-direction: column; gap: 8px; transition: all 0.25s; border: 1px solid transparent; }
+.card:hover { box-shadow: 0 6px 20px rgba(0,0,0,0.1); transform: translateY(-2px); border-color: var(--primary-light); }
+.cardHeader { display: flex; justify-content: space-between; align-items: flex-start; }
+.lotName { font-weight: 600; font-size: 16px; }
+.cardBody { font-size: 13px; color: var(--text-secondary); }
+.cardFooter { display: flex; justify-content: space-between; align-items: flex-end; }
+.spotNum { font-size: 28px; font-weight: 700; }
+.progressBar { width: 100px; height: 5px; background: #eee; border-radius: 3px; margin-top: 6px; }
+.navBtn { padding: 8px 20px; background: var(--primary); color: #fff; border: none; border-radius: 8px; font-size: 13px; cursor: pointer; margin-top: 4px; transition: opacity 0.2s; }
+.navBtn:hover { opacity: 0.85; }
+
+@media (max-width: 768px) {
+  .list { grid-template-columns: 1fr; }
+}

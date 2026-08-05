@@ -1,0 +1,65 @@
+.page { }
+.modeTabs { display: flex; gap: 8px; background: #fff; border-radius: 12px; padding: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); margin-bottom: 20px; width: fit-content; }
+.modeTab { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 22px; border-radius: 8px; cursor: pointer; transition: all 0.2s; color: var(--text-secondary); }
+.modeTab:hover { background: var(--bg-page); }
+.modeActive { background: var(--primary-light); color: var(--primary); font-weight: 600; }
+
+.inputArea { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); display: flex; flex-direction: column; gap: 12px; }
+.inputRow { display: flex; align-items: center; gap: 8px; padding: 10px 14px; background: var(--bg-page); border-radius: 10px; }
+.poiDot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.poiInput { flex: 1; border: none; outline: none; background: none; font-size: 15px; color: var(--text-primary); }
+.poiInput::placeholder { color: var(--text-hint); }
+.locBtn, .swapBtn { font-size: 18px; cursor: pointer; flex-shrink: 0; }
+.departRow { display: flex; align-items: center; justify-content: space-between; padding: 4px 0; }
+.departLabel { font-size: 13px; color: var(--text-secondary); }
+.departSelect { border: 1px solid var(--border-color); border-radius: 6px; padding: 6px 10px; font-size: 13px; background: #fff; }
+.searchBtn { width: 100%; padding: 14px; background: var(--primary); color: #fff; border: none; border-radius: 10px; font-size: 16px; font-weight: 600; cursor: pointer; transition: opacity 0.2s; }
+.searchBtn:hover { opacity: 0.9; }
+
+.quickSection { margin-top: 24px; }
+.sectionTitle { font-size: 17px; font-weight: 600; margin-bottom: 12px; }
+.quickGrid { display: flex; flex-wrap: wrap; gap: 8px; }
+.quickDest { padding: 8px 18px; background: #fff; border-radius: 20px; font-size: 14px; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.06); transition: all 0.2s; }
+.quickDest:hover { background: var(--primary-light); color: var(--primary); }
+
+.transitSection { margin-top: 24px; }
+.busList, .metroList { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+.busCard { background: #fff; border-radius: 12px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); transition: all 0.25s; }
+.busCard:hover { box-shadow: 0 6px 20px rgba(0,0,0,0.1); transform: translateY(-2px); }
+.busHeader { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.busName { font-weight: 700; font-size: 16px; background: var(--primary); color: #fff; padding: 3px 12px; border-radius: 6px; }
+.busRoute { font-size: 13px; color: var(--text-secondary); }
+.busMeta { display: flex; gap: 16px; font-size: 13px; color: var(--text-hint); }
+
+.metroCard { background: #fff; border-radius: 12px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); display: flex; align-items: center; gap: 14px; }
+.metroName { font-weight: 700; font-size: 16px; color: #fff; background: #f5222d; padding: 4px 14px; border-radius: 6px; }
+.metroStations { font-size: 13px; color: var(--text-secondary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.customBusBanner { background: linear-gradient(135deg,#e6f4ff,#f0f5ff); border-radius: 12px; padding: 18px; margin-top: 24px; display: flex; justify-content: space-between; align-items: center; gap: 16px; font-size: 14px; }
+.customBusBtn { padding: 10px 24px; background: var(--primary); color: #fff; border: none; border-radius: 20px; font-size: 14px; cursor: pointer; flex-shrink: 0; }
+
+/* ===== 路径结果页 ===== */
+.resultHeader { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.resultHeader .backBtn { cursor: pointer; font-size: 20px; }
+.resultRoute { flex: 1; font-size: 16px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.resultMap { height: 280px; border-radius: 12px; overflow: hidden; margin-bottom: 16px; }
+.optionScroll { display: flex; flex-direction: column; gap: 12px; }
+.routeCard { background: #fff; border-radius: 12px; padding: 18px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); cursor: pointer; transition: all 0.25s; border: 2px solid transparent; }
+.routeCard:hover { box-shadow: 0 6px 20px rgba(0,0,0,0.1); }
+.routeCardActive { border-color: var(--primary); background: #fafcff; }
+.routeCardHeader { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.routeDuration { font-size: 22px; font-weight: 700; color: var(--primary); }
+.predictionRow { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.predictionDot { text-align: center; }
+.congestionBar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; gap: 2px; margin-bottom: 10px; }
+.segments { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+.segment { display: flex; align-items: center; gap: 10px; padding: 8px; background: var(--bg-page); border-radius: 8px; }
+.aiAdvice { display: flex; gap: 8px; padding: 10px 14px; background: #fffbe6; border-radius: 8px; font-size: 13px; color: #ad6800; margin-bottom: 10px; }
+.bikeInfo { display: flex; gap: 16px; font-size: 13px; color: var(--text-secondary); margin-bottom: 10px; }
+.navBtn { width: 100%; padding: 12px; background: var(--primary); color: #fff; border: none; border-radius: 10px; font-size: 15px; font-weight: 600; cursor: pointer; }
+.navBtn:hover { opacity: 0.9; }
+
+@media (max-width: 768px) {
+  .busList, .metroList { grid-template-columns: 1fr; }
+  .customBusBanner { flex-direction: column; align-items: flex-start; }
+}

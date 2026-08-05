@@ -1,0 +1,506 @@
+/* ===== 智途云枢 · 管理端全局样式 ===== */
+
+:root {
+  /* Primary palette */
+  --color-primary: #1677ff;
+  --color-primary-light: #4096ff;
+  --color-primary-dark: #0958d9;
+
+  /* Dashboard dark theme */
+  --dashboard-bg: #0a1628;
+  --dashboard-card-bg: rgba(16, 30, 60, 0.85);
+  --dashboard-card-border: rgba(22, 119, 255, 0.15);
+  --dashboard-accent: #1677ff;
+  --dashboard-accent-glow: rgba(22, 119, 255, 0.4);
+
+  /* Semantic colors */
+  --color-success: #52c41a;
+  --color-warning: #faad14;
+  --color-danger: #f5222d;
+  --color-info: #1677ff;
+
+  /* Congestion colors */
+  --congestion-free: #52c41a;
+  --congestion-slow: #fadb14;
+  --congestion-congested: #ff7a00;
+  --congestion-blocked: #f5222d;
+
+  /* Layout */
+  --sidebar-width: 240px;
+  --header-height: 56px;
+
+  /* Typography */
+  --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.15);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--font-family);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: #f0f2f5;
+}
+
+/* ===== Scrollbar ===== */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.25);
+}
+
+/* ===== Sidebar ===== */
+.ant-layout-sider-dark {
+  background: #001529 !important;
+}
+
+.ant-menu-dark {
+  background: #001529 !important;
+}
+.ant-menu-dark .ant-menu-item-selected {
+  background: var(--color-primary) !important;
+}
+
+/* ===== Dashboard page ===== */
+.dashboard-page {
+  height: 100%;
+  overflow: hidden;
+  background: var(--dashboard-bg);
+  color: #fff;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.dashboard-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  flex-shrink: 0;
+}
+
+.dashboard-header .title {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  background: linear-gradient(90deg, #4fc3f7, #1677ff);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.dashboard-header .clock {
+  font-size: 36px;
+  font-weight: 700;
+  font-family: 'Courier New', monospace;
+  letter-spacing: 4px;
+  color: #4fc3f7;
+  text-shadow: 0 0 20px rgba(79, 195, 247, 0.5);
+}
+
+.dashboard-header .date-info {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.7);
+  text-align: right;
+  line-height: 1.6;
+}
+
+.dashboard-row {
+  display: flex;
+  gap: 10px;
+  flex: 1;
+  min-height: 0;
+}
+
+.dashboard-panel {
+  background: var(--dashboard-card-bg);
+  border: 1px solid var(--dashboard-card-border);
+  border-radius: 8px;
+  padding: 12px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.dashboard-panel .panel-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+}
+
+/* Stat cards */
+.stat-cards-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  flex: 1;
+}
+
+.stat-card {
+  background: linear-gradient(135deg, rgba(22, 119, 255, 0.12), rgba(22, 119, 255, 0.04));
+  border: 1px solid rgba(22, 119, 255, 0.2);
+  border-radius: 8px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  transition: all 0.3s;
+}
+
+.stat-card:hover {
+  border-color: rgba(22, 119, 255, 0.5);
+  box-shadow: 0 0 20px rgba(22, 119, 255, 0.1);
+}
+
+.stat-card .stat-icon {
+  font-size: 28px;
+  margin-bottom: 6px;
+}
+
+.stat-card .stat-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: #fff;
+  line-height: 1.2;
+}
+
+.stat-card .stat-label {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.55);
+  margin-top: 4px;
+}
+
+.stat-card .stat-trend {
+  font-size: 12px;
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.stat-trend.up {
+  color: var(--color-success);
+}
+.stat-trend.down {
+  color: var(--color-danger);
+}
+
+/* ===== Dashboard city map ===== */
+.city-map-container {
+  flex: 1;
+  position: relative;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.city-map-legend {
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  display: flex;
+  gap: 12px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.7);
+  background: rgba(0, 0, 0, 0.5);
+  padding: 4px 10px;
+  border-radius: 4px;
+}
+
+.city-map-legend span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+/* ===== AI alerts list ===== */
+.ai-alert-list {
+  max-height: 210px;
+  overflow-y: auto;
+}
+
+.ai-alert-item {
+  padding: 5px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.ai-alert-item:hover {
+  background: rgba(22, 119, 255, 0.08);
+}
+
+.ai-alert-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ai-alert-item .alert-type {
+  font-weight: 600;
+  color: #4fc3f7;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.ai-alert-item .alert-location {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 11px;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ai-alert-item .alert-time {
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 11px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.ai-alert-item .alert-confidence {
+  font-size: 11px;
+  color: var(--color-warning);
+  flex-shrink: 0;
+}
+
+/* Congestion ranking */
+.congestion-rank-item {
+  display: flex;
+  align-items: center;
+  padding: 6px 10px;
+  gap: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 13px;
+}
+
+.congestion-rank-item .rank-num {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.congestion-rank-item .rank-num.top1 { background: var(--color-danger); color: #fff; }
+.congestion-rank-item .rank-num.top2 { background: #ff7a00; color: #fff; }
+.congestion-rank-item .rank-num.top3 { background: var(--color-warning); color: #000; }
+
+.congestion-rank-item .road-name {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.congestion-rank-item .congestion-index {
+  font-weight: 700;
+  color: var(--color-danger);
+  font-size: 14px;
+}
+
+/* ===== Content pages (light theme) ===== */
+.content-page {
+  padding: 20px 24px;
+  min-height: 100%;
+  background: #f0f2f5;
+}
+
+.content-page .page-header {
+  margin-bottom: 20px;
+}
+
+.content-page .page-header h2 {
+  font-size: 22px;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.85);
+  margin-bottom: 4px;
+}
+
+.content-page .page-header .page-desc {
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 14px;
+}
+
+/* Filter bar */
+.filter-bar {
+  background: #fff;
+  padding: 16px 20px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  box-shadow: var(--shadow-sm);
+}
+
+/* ===== Intersection card ===== */
+.intersection-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 16px;
+}
+
+.intersection-card {
+  background: #fff;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.intersection-card:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+
+.intersection-card .card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+
+.intersection-card .card-name {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.intersection-card .card-location {
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.45);
+}
+
+.phase-diagram {
+  display: flex;
+  gap: 4px;
+  margin-top: 10px;
+}
+
+.phase-block {
+  height: 24px;
+  border-radius: 3px;
+  flex: 1;
+}
+
+.phase-block.red { background: #f5222d; }
+.phase-block.yellow { background: #fadb14; }
+.phase-block.green { background: #52c41a; }
+
+/* ===== Simulation canvas ===== */
+.simulation-canvas-wrapper {
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 8px;
+  overflow: hidden;
+  position: relative;
+}
+
+.simulation-canvas {
+  width: 100%;
+  height: 100%;
+}
+
+.simulation-controls {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 0;
+}
+
+/* ===== Device status cards ===== */
+.device-status-bar {
+  display: flex;
+  gap: 16px;
+  padding: 10px 16px;
+  background: rgba(16, 30, 60, 0.6);
+  border-radius: 6px;
+  border: 1px solid rgba(22, 119, 255, 0.1);
+}
+
+.device-status-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.device-status-item .dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.dot.online { background: #52c41a; box-shadow: 0 0 6px rgba(82, 196, 26, 0.6); }
+.dot.offline { background: #f5222d; }
+.dot.fault { background: #faad14; }
+
+/* ===== Page transitions ===== */
+.page-enter {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+.page-enter-active {
+  opacity: 1;
+  transform: translateY(0);
+  transition: all 0.3s ease;
+}
+
+/* ===== Utility ===== */
+.text-center { text-align: center; }
+.mt-16 { margin-top: 16px; }
+.mb-16 { margin-bottom: 16px; }
+.flex-center { display: flex; align-items: center; justify-content: center; }
+
+/* Quick-fix for dashboard chart containers */
+.dashboard-chart-container {
+  flex: 1;
+  min-height: 0;
+}
