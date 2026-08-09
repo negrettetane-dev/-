@@ -7,3 +7,4 @@ export * from './types/news';
 export * from './types/carbon';
 export * from './types/management';
 export * from './types/api';
+export * from './utils';

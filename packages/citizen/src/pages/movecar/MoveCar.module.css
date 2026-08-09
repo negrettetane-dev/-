@@ -1,0 +1,271 @@
+/* 移车求助页 */
+
+.page {
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 16px;
+  padding-top: 0;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  margin-bottom: 16px;
+}
+
+.back {
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--primary, #1677ff);
+}
+
+.title {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.fieldGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary, #1a1a2e);
+}
+
+.required { color: #f5222d; }
+.optional { font-weight: 400; font-size: 12px; color: var(--text-hint, #999); }
+
+.hint {
+  font-size: 12px;
+  color: var(--text-hint, #999);
+}
+
+/* 车牌 */
+.plateRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.prefixSelect {
+  padding: 10px 14px;
+  border: 1px solid var(--border-color, #e8e8e8);
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  background: #fff;
+  outline: none;
+  cursor: pointer;
+}
+
+.plateInput {
+  flex: 1;
+  padding: 10px 14px;
+  border: 1px solid var(--border-color, #e8e8e8);
+  border-radius: 8px;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  outline: none;
+  font-family: monospace;
+}
+
+.plateInput:focus { border-color: var(--primary, #1677ff); }
+
+/* 位置 */
+.locationBox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  background: #f0f5ff;
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.locationText {
+  color: var(--text-secondary, #666);
+}
+
+/* 文本域 */
+.textarea {
+  padding: 12px 14px;
+  border: 1px solid var(--border-color, #e8e8e8);
+  border-radius: 8px;
+  font-size: 14px;
+  outline: none;
+  resize: vertical;
+  font-family: inherit;
+}
+.textarea:focus { border-color: var(--primary, #1677ff); }
+
+/* 照片 */
+.photoGrid {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.photoBox {
+  width: 90px;
+  height: 90px;
+  border-radius: 10px;
+  background: #f0f5ff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  cursor: pointer;
+  position: relative;
+  border: 1px dashed #1677ff;
+}
+
+.photoLabel {
+  font-size: 11px;
+  color: var(--text-hint, #999);
+}
+
+.photoRemove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #f5222d;
+  color: #fff;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.photoAdd {
+  width: 90px;
+  height: 90px;
+  border-radius: 10px;
+  border: 1px dashed var(--border-color, #e8e8e8);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  cursor: pointer;
+  color: var(--text-hint, #999);
+  transition: border-color 0.2s;
+}
+
+.photoAdd:hover { border-color: var(--primary, #1677ff); color: var(--primary, #1677ff); }
+
+/* 隐私 */
+.privacyBanner {
+  padding: 12px 14px;
+  background: #fffbe6;
+  border-radius: 8px;
+  font-size: 12px;
+  color: #ad6800;
+  line-height: 1.6;
+}
+
+/* 提交 */
+.submitBtn {
+  width: 100%;
+  padding: 14px;
+  background: var(--primary, #1677ff);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+.submitBtn:hover { opacity: 0.9; }
+.submitDisabled { opacity: 0.4; cursor: not-allowed; }
+
+/* 常见问题 */
+.faqBox {
+  background: #fff;
+  border-radius: 12px;
+  padding: 16px 20px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+}
+
+.faqTitle {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.faqList {
+  font-size: 13px;
+  color: var(--text-secondary, #666);
+  padding-left: 18px;
+  line-height: 1.8;
+}
+
+/* 成功页 */
+.successCard {
+  background: #fff;
+  border-radius: 16px;
+  padding: 40px 24px;
+  text-align: center;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+  margin-top: 40px;
+}
+
+.successIcon { font-size: 56px; margin-bottom: 16px; }
+
+.successTitle {
+  font-size: 22px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.successId {
+  font-size: 14px;
+  color: var(--primary, #1677ff);
+  font-weight: 600;
+  margin-bottom: 16px;
+  font-family: monospace;
+}
+
+.successDesc {
+  font-size: 14px;
+  color: var(--text-secondary, #666);
+  line-height: 1.6;
+  margin-bottom: 16px;
+}
+
+.privacy {
+  font-size: 12px;
+  color: #52c41a;
+  margin-bottom: 24px;
+  padding: 8px;
+  background: #f6ffed;
+  border-radius: 8px;
+}
+
+.backBtn {
+  padding: 10px 32px;
+  background: var(--primary, #1677ff);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}

@@ -1,9 +1,8 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import AMapLoader from '@amap/amap-jsapi-loader';
+import { loadAMap } from '../../lib/amap';
+import AIAssistant from '../../components/AIAssistant';
 import styles from './HomePage.module.css';
-
-const AMAP_KEY = import.meta.env.VITE_AMAP_KEY || '';
 
 interface Alert { id:string; category:string; title:string; summary:string; severity:string; publishTime:number }
 interface News { id:string; title:string; summary:string; source:string; publishTime:number }
@@ -17,16 +16,36 @@ const HomePage: React.FC = () => {
   const [news, setNews] = useState<News[]>([]);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
+  const [mapError, setMapError] = useState('');
   const [query, setQuery] = useState('');
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+
+  // 北京 POI 提示词库
+  const ALL_SUGGESTIONS = [
+    '天安门广场', '故宫博物院', '王府井步行街', '国贸CBD', '三里屯太古里',
+    '北京南站', '北京西站', '北京站', '首都国际机场', '大兴国际机场',
+    '中关村软件园', '西单大悦城', '望京SOHO', '五棵松体育馆', '颐和园',
+    '圆明园', '鸟巢·水立方', '簋街', '南锣鼓巷', '后海酒吧街',
+    '北京动物园', '朝阳大悦城', '蓝色港湾', '华熙LIVE', '金融街',
+    '北京大学', '清华大学', '中国人民大学', '北京航空航天大学', '北京理工大学',
+    '西二旗', '上地', '亦庄开发区', '通州万达', '回龙观', '天通苑',
+  ];
+
+  const handleQueryChange = (val: string) => {
+    setQuery(val);
+    if (val.trim().length > 0) {
+      const filtered = ALL_SUGGESTIONS.filter(s => s.includes(val.trim()));
+      setSuggestions(filtered.slice(0, 6));
+    } else {
+      setSuggestions([]);
+    }
+  };
 
   // 加载高德地图（大图显示）
   useEffect(() => {
-    if (!AMAP_KEY || mapInstance.current) return;
-    AMapLoader.load({
-      key: AMAP_KEY,
-      version: '2.0',
-      plugins: ['AMap.Scale', 'AMap.ToolBar', 'AMap.InfoWindow', 'AMap.TileLayer.Traffic'],
-    })
+    if (mapInstance.current) return;
+    setMapError('');
+    loadAMap()
       .then((AMap) => {
         if (!mapContainer.current) return;
         const map = new AMap.Map(mapContainer.current, {
@@ -69,7 +88,10 @@ const HomePage: React.FC = () => {
         mapInstance.current = map;
         setMapLoaded(true);
       })
-      .catch(e => console.error('AMap load error:', e));
+      .catch((e) => {
+        console.error('AMap load error:', e);
+        setMapError('地图加载失败，请检查高德 Key、安全码和域名白名单');
+      });
     return () => { if (mapInstance.current) { mapInstance.current.destroy(); mapInstance.current = null; } };
   }, []);
 
@@ -91,7 +113,9 @@ const HomePage: React.FC = () => {
       <section className={styles.hero}>
         <div ref={mapContainer} className={styles.heroMap} />
         {!mapLoaded && (
-          <div className={styles.mapLoading}>🗺️ 地图加载中...</div>
+          <div className={styles.mapLoading}>
+            {mapError || '🗺️ 地图加载中...'}
+          </div>
         )}
 
         {/* 左侧：AI出行助手搜索 */}
@@ -99,14 +123,29 @@ const HomePage: React.FC = () => {
           <div className={styles.aiBox}>
             <div className={styles.aiBoxTitle}>🤖 AI智能出行助手</div>
             <div className={styles.searchRow}>
-              <input
-                className={styles.searchInput}
-                placeholder="输入目的地，如：天安门"
-                value={query}
-                onChange={e=>setQuery(e.target.value)}
-                onKeyDown={e=>{ if(e.key==='Enter' && query.trim()) navigate('/travel'); }}
-              />
-              <button className={styles.searchBtn} onClick={()=>navigate('/travel')}>出行规划</button>
+              <div className={styles.searchWrapper}>
+                <input
+                  className={styles.searchInput}
+                  placeholder="输入目的地，如：天安门"
+                  value={query}
+                  onChange={e=>handleQueryChange(e.target.value)}
+                  onKeyDown={e=>{ if(e.key==='Enter' && query.trim()) navigate('/travel', { state: { dest: query.trim() } }); }}
+                  onBlur={()=>setTimeout(()=>setSuggestions([]),200)}
+                  onFocus={()=>{ if(query.trim()) handleQueryChange(query); }}
+                />
+                {/* 自动补全下拉 */}
+                {suggestions.length > 0 && (
+                  <div className={styles.suggestDropdown}>
+                    {suggestions.map(s => (
+                      <div key={s} className={styles.suggestItem} onMouseDown={e=>{ e.preventDefault(); setQuery(s); navigate('/travel', { state: { dest: s } }); }}>
+                        <span className={styles.suggestIcon}>📍</span>
+                        <span>{s}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <button className={styles.searchBtn} onClick={() => query.trim() ? navigate('/travel', { state: { dest: query.trim() } }) : navigate('/travel')}>出行规划</button>
             </div>
             <div className={styles.aiHint}>AI结合实时路况+拥堵预测，为您推荐最优路线</div>
           </div>
@@ -229,6 +268,7 @@ const HomePage: React.FC = () => {
       </section>
 
       <div style={{ height: 24 }} />
+      <AIAssistant />
     </div>
   );
 };

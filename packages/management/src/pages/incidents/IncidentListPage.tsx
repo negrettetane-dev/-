@@ -1,199 +1,82 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Table, Tag, Badge, Space, Select, DatePicker, Input, Button } from 'antd';
-import {
-  SearchOutlined,
-  ReloadOutlined,
-  EyeOutlined,
-} from '@ant-design/icons';
+import { Table, Tag, Space, Select, Input, Button, Card, Statistic, Row, Col } from 'antd';
+import { SearchOutlined, ReloadOutlined, EyeOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
-import { useIncidentStore } from '../../stores/incidentStore';
-import type { MockIncident } from '../../mocks/mockData';
+import { getReports, getDashboardStats } from '../../stores/adminPersistence';
+import type { Report } from '../../stores/adminPersistence';
 
-const { RangePicker } = DatePicker;
-
-const SEVERITY_MAP: Record<string, { color: string; label: string }> = {
-  normal: { color: 'blue', label: '一般' },
-  serious: { color: 'orange', label: '严重' },
-  critical: { color: 'red', label: '紧急' },
+const STATUS_MAP: Record<string, { color: string; label: string }> = {
+  pending: { color: 'orange', label: '待审核' },
+  received: { color: 'blue', label: '已受理' },
+  processing: { color: 'processing', label: '处理中' },
+  completed: { color: 'green', label: '已完成' },
+  rejected: { color: 'red', label: '已驳回' },
 };
 
-const STATUS_MAP: Record<string, { status: 'success' | 'processing' | 'warning' | 'error' | 'default'; label: string }> = {
-  new: { status: 'error', label: '待处理' },
-  dispatched: { status: 'processing', label: '已派发' },
-  processing: { status: 'processing', label: '处置中' },
-  resolved: { status: 'success', label: '已解决' },
-  archived: { status: 'default', label: '已归档' },
-};
-
-const SOURCE_MAP: Record<string, { color: string; label: string }> = {
-  ai_detection: { color: 'purple', label: 'AI检测' },
-  citizen_report: { color: 'green', label: '市民上报' },
-  patrol: { color: 'blue', label: '巡检' },
-  sensor: { color: 'cyan', label: '传感器' },
-};
+const formatTime = (ts: number) => new Date(ts).toLocaleString('zh-CN');
 
 export default function IncidentListPage() {
   const navigate = useNavigate();
-  const { incidents, loading, total, page, pageSize, filters, fetchList, setFilters, setPage } =
-    useIncidentStore();
+  const [reports, setReports] = useState<Report[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<string | undefined>();
+  const [searchText, setSearchText] = useState('');
 
-  useEffect(() => {
-    fetchList();
-  }, [fetchList]);
+  const load = useCallback(() => {
+    setLoading(true);
+    let list = getReports();
+    if (statusFilter) list = list.filter(r => r.status === statusFilter);
+    if (searchText) {
+      const s = searchText.toLowerCase();
+      list = list.filter(r => r.workOrderNo.toLowerCase().includes(s) || r.category.includes(s) || r.description.includes(s));
+    }
+    list.sort((a, b) => b.createdAt - a.createdAt);
+    setReports(list);
+    setLoading(false);
+  }, [statusFilter, searchText]);
 
-  const columns: ColumnsType<MockIncident> = [
-    {
-      title: '事件编号',
-      dataIndex: 'id',
-      key: 'id',
-      width: 120,
-      render: (id: string) => <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{id}</span>,
-    },
-    {
-      title: '来源',
-      dataIndex: 'source',
-      key: 'source',
-      width: 100,
-      render: (source: string) => {
-        const s = SOURCE_MAP[source] || { color: 'default', label: source };
-        return <Tag color={s.color}>{s.label}</Tag>;
-      },
-    },
-    {
-      title: '事件类型',
-      dataIndex: 'type',
-      key: 'type',
-      width: 110,
-    },
-    {
-      title: '位置',
-      dataIndex: 'roadName',
-      key: 'roadName',
-      width: 150,
-      ellipsis: true,
-    },
-    {
-      title: '严重程度',
-      dataIndex: 'severity',
-      key: 'severity',
-      width: 100,
-      render: (severity: string) => {
-        const s = SEVERITY_MAP[severity] || { color: 'default', label: severity };
-        return <Tag color={s.color}>{s.label}</Tag>;
-      },
-    },
-    {
-      title: '状态',
-      dataIndex: 'status',
-      key: 'status',
-      width: 100,
-      render: (status: string) => {
-        const s = STATUS_MAP[status] || { status: 'default' as const, label: status };
-        return <Badge status={s.status} text={s.label} />;
-      },
-    },
-    {
-      title: '发生时间',
-      dataIndex: 'createTime',
-      key: 'createTime',
-      width: 170,
-      sorter: (a, b) => a.createTime - b.createTime,
-      render: (time: number) => new Date(time).toLocaleString('zh-CN'),
-    },
-    {
-      title: '操作',
-      key: 'action',
-      width: 100,
-      fixed: 'right',
-      render: (_, record) => (
-        <Button
-          type="link"
-          size="small"
-          icon={<EyeOutlined />}
-          onClick={(e) => {
-            e.stopPropagation();
-            navigate(`/admin/incidents/${record.id}`);
-          }}
-        >
-          查看
-        </Button>
-      ),
-    },
+  useEffect(() => { load(); }, [load]);
+  const stats = getDashboardStats();
+
+  const columns: ColumnsType<Report> = [
+    { title: '工单编号', dataIndex: 'workOrderNo', key: 'wno', width: 140, render: (v: string) => <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{v}</span> },
+    { title: '类型', dataIndex: 'category', key: 'cat', width: 100, render: (v: string) => {
+      const icons: Record<string,string> = {'路面坑洼':'🕳️','路灯损坏':'💡','违停占道':'🚗','井盖破损':'⭕','信号灯故障':'🚦','事故线索':'🚨','道路障碍':'🚧','其他问题':'📝'};
+      return <span>{icons[v]||'📝'} {v}</span>;
+    }},
+    { title: '描述', dataIndex: 'description', key: 'desc', ellipsis: true, width: 250 },
+    { title: '位置', dataIndex: 'location', key: 'loc', width: 160, ellipsis: true, render: (v: string) => v?.slice(0, 20) },
+    { title: '状态', dataIndex: 'status', key: 'st', width: 90, render: (s: string) => {
+      const m = STATUS_MAP[s] || { color: 'default', label: s };
+      return <Tag color={m.color}>{m.label}</Tag>;
+    }},
+    { title: '上报时间', dataIndex: 'createdAt', key: 'time', width: 150, render: (v: number) => formatTime(v) },
+    { title: '操作', key: 'act', width: 80, fixed: 'right', render: (_, r) => (
+      <Button type="link" icon={<EyeOutlined />} onClick={() => navigate(`/admin/incidents/${r.id}`)}>详情</Button>
+    )},
   ];
 
   return (
     <div className="content-page">
-      <div className="page-header">
-        <h2>🚨 事件管理</h2>
-        <p className="page-desc">管理城市交通事件，包括AI检测、市民上报、巡检和传感器发现的各类交通事件</p>
-      </div>
+      <div className="page-header"><h2>📋 事件上报管理</h2><p className="page-desc">市民上报事件审核、分派、处理与反馈</p></div>
 
-      {/* Filter bar */}
+      <Row gutter={16} style={{ marginBottom: 16 }}>
+        <Col span={6}><Card size="small"><Statistic title="待审核" value={stats.pendingReports} valueStyle={{ color: '#faad14' }} /></Card></Col>
+        <Col span={6}><Card size="small"><Statistic title="处理中" value={stats.processingReports} valueStyle={{ color: '#1677ff' }} /></Card></Col>
+        <Col span={6}><Card size="small"><Statistic title="已完成" value={stats.completedReports} valueStyle={{ color: '#52c41a' }} /></Card></Col>
+        <Col span={6}><Card size="small"><Statistic title="今日新增" value={stats.todayReports} valueStyle={{ color: '#f5222d' }} /></Card></Col>
+      </Row>
+
       <div className="filter-bar">
-        <Select
-          placeholder="事件状态"
-          allowClear
-          style={{ width: 130 }}
-          value={filters.status}
-          onChange={(val) => setFilters({ status: val })}
-          options={[
-            { value: 'new', label: '待处理' },
-            { value: 'dispatched', label: '已派发' },
-            { value: 'processing', label: '处置中' },
-            { value: 'resolved', label: '已解决' },
-            { value: 'archived', label: '已归档' },
-          ]}
-        />
-        <Select
-          placeholder="严重程度"
-          allowClear
-          style={{ width: 130 }}
-          value={filters.severity}
-          onChange={(val) => setFilters({ severity: val })}
-          options={[
-            { value: 'normal', label: '一般' },
-            { value: 'serious', label: '严重' },
-            { value: 'critical', label: '紧急' },
-          ]}
-        />
-        <RangePicker placeholder={['开始日期', '结束日期']} />
-        <Input
-          placeholder="搜索事件编号/位置"
-          prefix={<SearchOutlined />}
-          style={{ width: 220 }}
-          value={filters.search}
-          onChange={(e) => setFilters({ search: e.target.value })}
-          allowClear
-        />
-        <Button icon={<ReloadOutlined />} onClick={fetchList}>
-          刷新
-        </Button>
+        <Select placeholder="筛选状态" allowClear style={{ width: 120 }} value={statusFilter} onChange={setStatusFilter}
+          options={Object.entries(STATUS_MAP).map(([k, v]) => ({ value: k, label: v.label }))} />
+        <Input placeholder="搜索工单编号/类型/描述" prefix={<SearchOutlined />} style={{ width: 260 }} value={searchText} onChange={e => setSearchText(e.target.value)} allowClear />
+        <Button icon={<ReloadOutlined />} onClick={load}>刷新</Button>
       </div>
 
-      {/* Table */}
-      <Table
-        columns={columns}
-        dataSource={incidents}
-        rowKey="id"
-        loading={loading}
-        onRow={(record) => ({
-          onClick: () => navigate(`/admin/incidents/${record.id}`),
-          style: { cursor: 'pointer' },
-        })}
-        pagination={{
-          current: page,
-          pageSize,
-          total,
-          showSizeChanger: true,
-          showTotal: (total) => `共 ${total} 条事件`,
-          onChange: (p, ps) => {
-            setPage(p);
-          },
-        }}
-        scroll={{ x: 1000 }}
-        style={{ background: '#fff', borderRadius: 8 }}
-      />
+      <Table columns={columns} dataSource={reports} rowKey="id" loading={loading} size="small" pagination={{ pageSize: 15, showTotal: t => `共 ${t} 条` }}
+        locale={{ emptyText: '暂无上报事件（市民端提交后自动出现）' }} />
     </div>
   );
 }

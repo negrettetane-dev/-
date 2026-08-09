@@ -2,20 +2,33 @@ import { create } from 'zustand';
 
 export interface User {
   id: string;
+  username?: string;
   phone: string;
+  email?: string;
   nickname?: string;
   realName?: string;
+  role?: 'user' | 'admin';
   isVerified: boolean;
   carbonCredits: number;
   avatar?: string;
+}
+
+export interface LoginResult {
+  ok: boolean;
+  error?: string;
+  fieldError?: string;
 }
 
 interface AuthState {
   isLoggedIn: boolean;
   user: User | null;
   token: string | null;
-  login: (phone: string, code: string) => Promise<boolean>;
-  register: (data: { phone: string; code: string; password: string; nickname: string }) => Promise<boolean>;
+  /** 密码登录：account 支持 用户名/手机号/邮箱 */
+  loginWithPassword: (account: string, password: string) => Promise<LoginResult>;
+  /** 验证码登录：仅手机号 */
+  loginWithSms: (phone: string, code: string) => Promise<LoginResult>;
+  /** 注册：用户名 + 手机号 + 邮箱 + 密码 */
+  register: (data: { username: string; phone: string; email: string; password: string; nickname: string }) => Promise<LoginResult>;
   logout: () => void;
   updateUser: (user: Partial<User>) => void;
 }
@@ -29,12 +42,38 @@ const stored = (() => {
   } catch { return { token: null, user: null }; }
 })();
 
+function persistLogin(user: User, token: string) {
+  localStorage.setItem('zhitu_token', token);
+  localStorage.setItem('zhitu_user', JSON.stringify(user));
+  return { user, token };
+}
+
 export const useAuthStore = create<AuthState>((set, get) => ({
   isLoggedIn: !!stored.token,
   user: stored.user,
   token: stored.token,
 
-  login: async (phone: string, code: string) => {
+  loginWithPassword: async (account, password) => {
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account, password }),
+      });
+      const data = await res.json();
+      if (data.code === 0 && data.data?.token) {
+        const u = data.data;
+        const { user, token } = persistLogin(u, u.token);
+        set({ isLoggedIn: true, user, token });
+        return { ok: true };
+      }
+      return { ok: false, error: data.message || '账号或密码错误' };
+    } catch {
+      return { ok: false, error: '登录失败，请重试' };
+    }
+  },
+
+  loginWithSms: async (phone, code) => {
     try {
       const res = await fetch('/api/user/login', {
         method: 'POST',
@@ -43,33 +82,39 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       });
       const data = await res.json();
       if (data.code === 0 && data.data?.token) {
-        const user = data.data;
-        localStorage.setItem('zhitu_token', user.token);
-        localStorage.setItem('zhitu_user', JSON.stringify(user));
-        set({ isLoggedIn: true, user, token: user.token });
-        return true;
+        const u = data.data;
+        const { user, token } = persistLogin(u, u.token);
+        set({ isLoggedIn: true, user, token });
+        return { ok: true };
       }
-      return false;
-    } catch { return false; }
+      return { ok: false, error: data.message || '登录失败，请重试' };
+    } catch {
+      return { ok: false, error: '登录失败，请重试' };
+    }
   },
 
-  register: async ({ phone, code, password, nickname }) => {
+  register: async ({ username, phone, email, password, nickname }) => {
     try {
       const res = await fetch('/api/user/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone, code, password, nickname }),
+        body: JSON.stringify({ username, phone, email, password, nickname }),
       });
       const data = await res.json();
       if (data.code === 0 && data.data?.token) {
-        const user = data.data;
-        localStorage.setItem('zhitu_token', user.token);
-        localStorage.setItem('zhitu_user', JSON.stringify(user));
-        set({ isLoggedIn: true, user, token: user.token });
-        return true;
+        const u = data.data;
+        const { user, token } = persistLogin(u, u.token);
+        set({ isLoggedIn: true, user, token });
+        return { ok: true };
       }
-      return false;
-    } catch { return false; }
+      // 重复错误：区分具体字段
+      if (data.code === 'username_exists') return { ok: false, fieldError: 'username', error: data.message };
+      if (data.code === 'phone_exists') return { ok: false, fieldError: 'phone', error: data.message };
+      if (data.code === 'email_exists') return { ok: false, fieldError: 'email', error: data.message };
+      return { ok: false, error: data.message || '注册失败，请重试' };
+    } catch {
+      return { ok: false, error: '注册失败，请重试' };
+    }
   },
 
   logout: () => {

@@ -13,3 +13,12 @@
 .busRow { display: flex; align-items: center; gap: 16px; font-size: 22px; padding: 14px; background: var(--bg-page); border-radius: 12px; }
 .busName { font-weight: 700; background: var(--primary); color: #fff; padding: 6px 16px; border-radius: 10px; }
 .busArrival { color: var(--primary); font-weight: 600; }
+
+/* SOS 弹窗 */
+.sosOverlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 2000; display: flex; align-items: center; justify-content: center; padding: 24px; }
+.sosDialog { background: #fff; border-radius: 20px; padding: 32px 28px; width: 100%; max-width: 400px; text-align: center; }
+.sosTitle { font-size: 28px; font-weight: 700; margin-bottom: 8px; }
+.sosDesc { font-size: 16px; color: var(--text-secondary); margin-bottom: 20px; }
+.sosActions { display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px; }
+.sosCall { display: block; padding: 16px; color: #fff; border-radius: 14px; font-size: 22px; font-weight: 700; text-decoration: none; cursor: pointer; }
+.sosClose { padding: 12px 32px; background: #eee; border: none; border-radius: 10px; font-size: 18px; cursor: pointer; width: 100%; }

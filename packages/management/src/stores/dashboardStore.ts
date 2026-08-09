@@ -75,12 +75,8 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   },
   fetchAll: async () => {
     set({ loading: true });
-    const now = Date.now();
     set({
-      metrics: {
-        timestamp: now,
-        ...generateRealTimeMetrics(),
-      },
+      metrics: generateRealTimeMetrics(),
       hourlyData: generateHourlyMetrics(),
       districtData: generateDistrictCongestion(),
       roadSegments: generateRoadSegments(),

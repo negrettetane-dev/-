@@ -21,6 +21,11 @@ import SettingsPage from './pages/profile/SettingsPage';
 import ElderlyHomePage from './pages/elderly/ElderlyHomePage';
 import LoginPage from './pages/auth/LoginPage';
 import RegisterPage from './pages/auth/RegisterPage';
+import QRCodePage from './pages/qrcode/QRCodePage';
+import MoveCarPage from './pages/movecar/MoveCarPage';
+import BusDetailPage from './pages/bus/BusDetailPage';
+import CustomBusPage from './pages/custombus/CustomBusPage';
+import MetroDetailPage from './pages/metro/MetroDetailPage';
 
 // 长辈模式 Context
 interface ElderlyContextType {
@@ -94,6 +99,11 @@ const App: React.FC = () => {
             <Route path="/news/:id" element={<NewsDetailPage />} />
             <Route path="/services" element={<ServicesPage />} />
             <Route path="/carbon" element={<CarbonPage />} />
+            <Route path="/qrcode" element={<QRCodePage />} />
+            <Route path="/move-car" element={<MoveCarPage />} />
+            <Route path="/travel/bus/:lineId" element={<BusDetailPage />} />
+            <Route path="/travel/metro/:lineId" element={<MetroDetailPage />} />
+            <Route path="/travel/custom-bus" element={<CustomBusPage />} />
             <Route path="/profile" element={
               <RequireAuth><ProfilePage /></RequireAuth>
             } />

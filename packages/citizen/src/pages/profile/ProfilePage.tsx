@@ -2,6 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
 import { useElderly } from '../../App';
+import { maskPhone } from '@zhitu/shared';
 import styles from './Profile.module.css';
 
 const ProfilePage: React.FC = () => {
@@ -22,8 +23,10 @@ const ProfilePage: React.FC = () => {
       <div className={styles.userCard}>
         <div className={styles.avatar}>👤</div>
         <div className={styles.userInfo}>
-          <div className={styles.userName}>{user?.nickname || '智途云枢用户'}</div>
-          <div className={styles.userPhone}>{user?.phone || '未绑定手机号'}</div>
+          <div className={styles.userName}>{user?.nickname || user?.username || '智途云枢用户'}</div>
+          <div className={styles.userPhone}>
+            {user?.phone ? maskPhone(user.phone) : (user?.email ? `📧 ${user.email}` : '未绑定手机号')}
+          </div>
           <div className={styles.verified}>{user?.isVerified ? '✅ 已实名认证' : '🕐 未实名认证'}</div>
         </div>
         <button className={styles.logoutBtn} style={{ boxShadow: 'none', marginTop: 0, padding: '8px 16px', fontSize: 13 }}

@@ -4,6 +4,11 @@ import styles from './News.module.css';
 
 interface News { id:string; category:string; title:string; content:string; source:string; publishTime:number; tags:string[] }
 
+function getPlainText(html: string): string {
+  const document = new DOMParser().parseFromString(html, 'text/html');
+  return document.body.textContent || '';
+}
+
 const NewsDetailPage: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -24,7 +29,7 @@ const NewsDetailPage: React.FC = () => {
       {news.tags && <div style={{display:'flex',gap:4,marginBottom:14,flexWrap:'wrap'}}>
         {news.tags.map(t=><span key={t} style={{fontSize:11,padding:'3px 10px',background:'var(--primary-light)',color:'var(--primary)',borderRadius:10}}>{t}</span>)}
       </div>}
-      <div className={styles.detailContent} dangerouslySetInnerHTML={{__html:news.content}}/>
+      <div className={styles.detailContent}>{getPlainText(news.content)}</div>
       <div style={{height:32}}/>
     </div>
   );

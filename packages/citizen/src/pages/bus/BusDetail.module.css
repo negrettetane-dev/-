@@ -1,0 +1,66 @@
+.page { max-width: 520px; margin: 0 auto; padding: 16px; padding-top: 0; }
+.header { display: flex; align-items: center; gap: 10px; padding: 12px 0; margin-bottom: 12px; }
+.back { cursor: pointer; font-size: 14px; color: var(--primary); }
+.title { font-size: 18px; font-weight: 700; flex: 1; }
+.star { cursor: pointer; font-size: 22px; }
+
+/* 方向切换 */
+.dirSwitch { display: flex; gap: 8px; margin-bottom: 10px; }
+.dirBtn { flex: 1; padding: 9px; border: 1px solid var(--border-color); border-radius: 8px; background: #fff; font-size: 13px; cursor: pointer; color: var(--text-secondary); }
+.dirBtn:hover { border-color: var(--primary); }
+.dirActive { background: var(--primary); color: #fff; border-color: var(--primary); font-weight: 600; }
+.lineInfo { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: var(--text-secondary); margin-bottom: 10px; padding: 0 2px; }
+.stopSeq { font-size: 11px; color: var(--text-hint); }
+
+/* 实时卡片 */
+.liveCard { background: linear-gradient(135deg, #1677ff, #4096ff); color: #fff; border-radius: 14px; padding: 18px 20px; margin-bottom: 14px; box-shadow: 0 4px 16px rgba(22,119,255,0.3); }
+.liveRow { display: flex; gap: 12px; }
+.liveRow:first-child { margin-bottom: 14px; }
+.liveItem { flex: 1; }
+.liveLabel { display: block; font-size: 11px; opacity: 0.8; margin-bottom: 4px; }
+.liveValue { font-size: 15px; font-weight: 600; }
+
+/* 拥挤度颜色 */
+.cEmpty { color: #52c41a !important; }
+.cNormal { color: #faad14 !important; }
+.cCrowded { color: #ff7a00 !important; }
+.cFull { color: #f5222d !important; }
+
+/* 地图 */
+.mapBox { position: relative; height: 300px; border-radius: 16px; overflow: hidden; margin-bottom: 14px; background: #f3f6fb; }
+.map { width: 100%; height: 100%; min-height: 300px; }
+.mapHint { position: absolute; bottom: 8px; left: 10px; z-index: 10; background: rgba(0,0,0,0.55); color: #fff; font-size: 11px; padding: 2px 8px; border-radius: 4px; }
+.mapStatus { position: absolute; inset: 0; z-index: 20; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 20px; color: #5f6b7a; background: #f7f9fc; text-align: center; }
+.retryBtn { border: 0; border-radius: 8px; padding: 8px 20px; color: #fff; background: #1677ff; font-size: 14px; cursor: pointer; }
+.retryBtn:hover { opacity: 0.9; }
+
+/* 在线车辆列表 */
+.vehiclesCard { background: #fff; border-radius: 12px; padding: 14px 18px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); margin-bottom: 14px; }
+.vehiclesTitle { font-size: 14px; font-weight: 600; margin-bottom: 10px; }
+.vehicleRow { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid #f5f5f5; }
+.vehicleRow:last-child { border-bottom: none; }
+.vehicleBadge { font-size: 11px; font-weight: 700; color: #1677ff; background: #e6f4ff; padding: 3px 8px; border-radius: 6px; flex-shrink: 0; }
+.vehicleBody { flex: 1; }
+.vehicleStations { font-size: 14px; font-weight: 500; display: block; }
+.vehicleDist { font-size: 11px; color: var(--text-hint); }
+.vehicleRight { text-align: right; }
+.vehicleSpeed { font-size: 14px; font-weight: 700; color: #1677ff; display: block; }
+.vehicleEta { font-size: 11px; color: #52c41a; }
+
+/* 站点列表 */
+.stopsCard { background: #fff; border-radius: 12px; padding: 16px 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); margin-bottom: 14px; }
+.stopsTitle { font-size: 14px; font-weight: 600; margin-bottom: 12px; }
+.stopsList { display: flex; flex-direction: column; }
+.stopRow { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid #f5f5f5; }
+.stopRow:last-child { border-bottom: none; }
+.stopCurrent { background: #f0f5ff; margin: 0 -20px; padding: 10px 20px; border-radius: 6px; }
+.stopDot { font-size: 16px; width: 24px; text-align: center; flex-shrink: 0; }
+.stopBody { flex: 1; }
+.stopName { font-size: 14px; font-weight: 500; display: block; }
+.stopEta { font-size: 11px; color: var(--text-hint); }
+.stopCrowding { font-size: 12px; flex-shrink: 0; }
+
+/* 操作按钮 */
+.actions { display: flex; gap: 10px; }
+.actionBtn { flex: 1; padding: 12px; background: #fff; border: 1px solid var(--border-color); border-radius: 10px; font-size: 14px; cursor: pointer; transition: all 0.2s; font-weight: 500; }
+.actionBtn:hover { border-color: var(--primary); color: var(--primary); background: #fafcff; }

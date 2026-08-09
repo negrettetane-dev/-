@@ -1,0 +1,36 @@
+.page { max-width: 520px; margin: 0 auto; padding: 16px; padding-top: 0; }
+.header { display: flex; align-items: center; gap: 10px; padding: 12px 0; margin-bottom: 12px; }
+.back { cursor: pointer; font-size: 14px; color: var(--primary); }
+.title { font-size: 18px; font-weight: 700; }
+
+.lineCard {
+  background: #fff; border-radius: 12px; padding: 18px 20px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06); margin-bottom: 14px;
+}
+.lineName { font-size: 24px; font-weight: 800; margin-bottom: 6px; }
+.lineMeta { display: flex; gap: 14px; font-size: 13px; color: var(--text-secondary); flex-wrap: wrap; }
+.lineStatus { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #52c41a; margin-top: 8px; }
+.statusDot { width: 8px; height: 8px; border-radius: 50%; }
+
+.arrivalCard { background: linear-gradient(135deg, #1677ff, #4096ff); color: #fff; border-radius: 14px; padding: 18px 20px; margin-bottom: 14px; }
+.arrivalTitle { font-size: 15px; font-weight: 600; margin-bottom: 12px; }
+.arrivalRow { display: flex; gap: 12px; }
+.arrivalItem { flex: 1; }
+.arrivalLabel { display: block; font-size: 11px; opacity: 0.85; margin-bottom: 4px; }
+.arrivalVal { font-size: 22px; font-weight: 700; display: block; }
+.arrivalCrowd { font-size: 12px; display: inline-block; margin-top: 4px; }
+
+.stationsCard { background: #fff; border-radius: 12px; padding: 16px 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+.stationsTitle { font-size: 14px; font-weight: 600; margin-bottom: 12px; }
+.stationsList { display: flex; flex-direction: column; }
+.stationRow { display: flex; align-items: center; gap: 12px; padding: 9px 0; border-bottom: 1px solid #f5f5f5; cursor: pointer; }
+.stationRow:last-child { border-bottom: none; }
+.stationCurrent { background: #f0f5ff; margin: 0 -20px; padding: 12px 20px; border-radius: 6px; }
+.stationDot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+.stationBody { flex: 1; }
+.stationName { font-size: 15px; font-weight: 500; }
+.transferBadge {
+  margin-left: 8px; font-size: 11px; color: #1677ff;
+  background: #e6f4ff; padding: 2px 8px; border-radius: 10px; font-weight: 400;
+}
+.stationSeq { font-size: 12px; color: var(--text-hint); }

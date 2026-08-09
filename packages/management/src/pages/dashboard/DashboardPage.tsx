@@ -100,7 +100,7 @@ export default function DashboardPage() {
         <div className="date-info"><div>{formatDate(currentTime)}</div><div>北京 · 多云 28°C | 空气质量 良</div></div>
       </div>
 
-      <div className="dashboard-row" style={{flex:'0 0 38%'}}>
+      <div className="dashboard-row" style={{flex:'0 0 45%'}}>
         <div className="dashboard-panel" style={{width:'28%'}}>
           <div className="panel-title">📊 核心指标</div>
           <div className="stat-cards-grid">
@@ -155,7 +155,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <div className="dashboard-row" style={{flex:'0 0 33%'}}>
+      <div className="dashboard-row" style={{flex:'0 0 37%'}}>
         <div className="dashboard-panel" style={{width:'50%'}}>
           <div className="panel-title">📈 24小时交通流量趋势</div>
           <div className="dashboard-chart-container">

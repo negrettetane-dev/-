@@ -1,4 +1,20 @@
 .page { }
+.demoBtn {
+  display: block;
+  margin: 12px auto;
+  padding: 10px 24px;
+  background: linear-gradient(135deg, #52c41a, #73d13d);
+  color: #fff;
+  border: none;
+  border-radius: 24px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: center;
+  box-shadow: 0 2px 8px rgba(82,196,26,0.3);
+  transition: all 0.2s;
+}
+.demoBtn:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(82,196,26,0.4); }
 .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
 .title { font-size: 24px; font-weight: 700; }
 .rank { font-size: 14px; background: #e6ffe6; color: #52c41a; padding: 6px 14px; border-radius: 16px; }
@@ -33,3 +49,21 @@
 @media (max-width: 768px) {
   .rewardGrid { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* 确认兑换弹窗 */
+.confirmOverlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+  z-index: 1100; display: flex; align-items: center; justify-content: center;
+  padding: 24px; animation: coFadeIn 0.2s;
+}
+@keyframes coFadeIn { from{opacity:0} to{opacity:1} }
+
+.confirmBox {
+  background: #fff; border-radius: 16px; padding: 28px 24px;
+  width: 100%; max-width: 340px; text-align: center;
+  box-shadow: 0 12px 48px rgba(0,0,0,0.18);
+}
+.confirmTitle { font-size: 18px; font-weight: 700; }
+.confirmActions { display: flex; gap: 12px; margin-top: 16px; }
+.confirmYes { flex:1; padding:10px; background:var(--primary); color:#fff; border:none; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer; }
+.confirmNo { flex:1; padding:10px; background:#f5f5f5; border:none; border-radius:8px; font-size:14px; cursor:pointer; }
