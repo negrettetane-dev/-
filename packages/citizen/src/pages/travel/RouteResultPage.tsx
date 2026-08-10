@@ -14,14 +14,25 @@ interface RouteData {
 const RouteResultPage: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { origin = '我的位置', destination = '目的地', mode = 'drive' } = (location.state || {}) as { origin?:string; destination?:string; mode?:string };
+  const { origin = '我的位置', destination = '目的地', waypoints = [], mode = 'drive' } = (location.state || {}) as {
+    origin?: string;
+    destination?: string;
+    waypoints?: string[];
+    mode?: string;
+  };
   const [routes, setRoutes] = useState<RouteData[]>([]);
   const [selectedIdx, setSelectedIdx] = useState(0);
 
   useEffect(() => {
-    fetch(`/api/route/plan?origin=${origin}&dest=${destination}&mode=${mode}`)
+    const query = new URLSearchParams({ origin, dest: destination, mode });
+    if (waypoints.length) query.set('waypoints', waypoints.join('|'));
+
+    fetch(`/api/route/plan?${query.toString()}`)
       .then(r=>r.json()).then(d=>d.data&&setRoutes(Array.isArray(d.data)?d.data:[d.data]));
-  }, [origin, destination, mode]);
+  }, [origin, destination, mode, waypoints]);
+
+  const routePoints = [origin, ...waypoints, destination];
+  const routeSummary = routePoints.join(' → ');
 
   const congestionColor = (l:string) => ({ free:'#52c41a', slow:'#fadb14', congested:'#ff7a00', blocked:'#f5222d' } as Record<string,string>)[l]||'#999';
   const crowdingEmoji = (c:string|undefined) => c==='empty'?'🟢':c==='normal'?'🟡':c==='crowded'?'🟠':'🔴';
@@ -40,9 +51,7 @@ const RouteResultPage: React.FC = () => {
       <div className={styles.resultHeader}>
         <span onClick={()=>navigate(-1)} style={{cursor:'pointer',fontSize:18}}>←</span>
         <div className={styles.resultRoute}>
-          <span>{origin}</span>
-          <span style={{margin:'0 4px'}}>→</span>
-          <span>{destination}</span>
+          <span>{routeSummary}</span>
         </div>
       </div>
 
@@ -51,7 +60,7 @@ const RouteResultPage: React.FC = () => {
         <div style={{position:'relative',height:'100%',background:'#1a1a2e',borderRadius:12,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center'}}>
           <div style={{color:'#fff',textAlign:'center'}}>
             <div style={{fontSize:40}}>🗺️</div>
-            <div style={{fontSize:14,marginTop:8}}>{origin} → {destination}</div>
+            <div style={{fontSize:14,marginTop:8}}>{routeSummary}</div>
             <div style={{fontSize:12,color:'#ccc',marginTop:4}}>智能规划路线</div>
           </div>
           {/* Simulated route path */}
