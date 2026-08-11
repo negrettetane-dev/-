@@ -133,8 +133,18 @@ const ORIGIN_ADDRESSES = [
 const RouteResultPage: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { origin = '我的位置', destination = '目的地' } = (location.state || {}) as { origin?: string; destination?: string; mode?: string };
-  const initMode = (location.state as any)?.mode as TravelMode | undefined;
+  const { origin = '我的位置', destination = '目的地', waypoints = [] } = (location.state || {}) as {
+    origin?: string;
+    destination?: string;
+    waypoints?: string[];
+    mode?: string;
+  };
+  const requestedMode = (location.state as { mode?: string } | null)?.mode;
+  const initMode = requestedMode === 'new-energy'
+    ? 'drive'
+    : requestedMode === 'accessible'
+      ? 'bus'
+      : requestedMode as TravelMode | undefined;
 
   // 核心状态：selectedMode 必须来自出行规划页选择的交通方式
   const [isPlanning, setIsPlanning] = useState(true);
@@ -195,7 +205,10 @@ const RouteResultPage: React.FC = () => {
     setUnavailableNote('');
 
     // 加载 mock 卡片数据作为展示兜底
-    fetch(`/api/route/plan?origin=${origin}&dest=${destination}&mode=${selectedMode}`)
+    const query = new URLSearchParams({ origin, dest: destination, mode: selectedMode });
+    if (waypoints.length) query.set('waypoints', waypoints.join('|'));
+
+    fetch(`/api/route/plan?${query.toString()}`)
       .then(r => r.json())
       .then(d => { if (d.data) setCardData(Array.isArray(d.data) ? d.data : [d.data]); });
 
@@ -393,7 +406,7 @@ const RouteResultPage: React.FC = () => {
       setRouteResults({});
       setIsPlanning(false);
     });
-  }, [origin, destination]);
+  }, [origin, destination, waypoints]);
 
   // ===== 加载地图 + 绘制当前选中路线 =====
   useEffect(() => {
@@ -618,9 +631,7 @@ const RouteResultPage: React.FC = () => {
       <div className={styles.resultHeader}>
         <span onClick={() => navigate(-1)} style={{ cursor: 'pointer', fontSize: 18 }}>←</span>
         <div className={styles.resultRoute}>
-          <span>{displayOrigin}</span>
-          <span style={{ margin: '0 4px' }}>→</span>
-          <span>{displayDest}</span>
+          <span>{[displayOrigin, ...waypoints, displayDest].join(' → ')}</span>
         </div>
       </div>
 
