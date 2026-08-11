@@ -2,6 +2,7 @@ import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import { useElderly } from '../App';
+import { maskPhone } from '@zhitu/shared';
 import styles from './MainLayout.module.css';
 
 const NAV_ITEMS = [
@@ -66,8 +67,8 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               <div className={styles.userArea}>
                 <div className={styles.avatar} onClick={() => navigate('/profile')}>👤</div>
                 <div className={styles.userInfo} onClick={() => navigate('/profile')}>
-                  <div className={styles.userName}>{user?.nickname || '市民用户'}</div>
-                  <div className={styles.userPhone}>{user?.phone || ''}</div>
+                  <div className={styles.userName}>{user?.nickname || user?.username || '市民用户'}</div>
+                  <div className={styles.userPhone}>{user?.phone ? maskPhone(user.phone) : (user?.email || '')}</div>
                 </div>
                 <button className={styles.logoutBtn} onClick={logout}>退出</button>
               </div>

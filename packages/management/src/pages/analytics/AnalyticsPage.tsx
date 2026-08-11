@@ -305,22 +305,20 @@ export default function AnalyticsPage() {
           <Card title="响应时间分布">
             <Table
               dataSource={[
-                { range: '≤5分钟', count: 45, pct: '13.2%', color: '#52c41a' },
-                { range: '5-15分钟', count: 128, pct: '37.4%', color: '#1677ff' },
-                { range: '15-30分钟', count: 98, pct: '28.7%', color: '#faad14' },
-                { range: '30-60分钟', count: 45, pct: '13.2%', color: '#ff7a00' },
-                { range: '>60分钟', count: 26, pct: '7.6%', color: '#f5222d' },
+                { range: '≤5分钟', count: 45, pct: '13.2%', key: 1 },
+                { range: '5-15分钟', count: 128, pct: '37.4%', key: 2 },
+                { range: '15-30分钟', count: 98, pct: '28.7%', key: 3 },
+                { range: '30-60分钟', count: 45, pct: '13.2%', key: 4 },
+                { range: '>60分钟', count: 26, pct: '7.6%', key: 5 },
               ]}
               columns={[
                 { title: '响应区间', dataIndex: 'range', key: 'range' },
                 { title: '事件数', dataIndex: 'count', key: 'count' },
-                {
-                  title: '占比',
-                  dataIndex: 'pct',
-                  key: 'pct',
-                  render: (pct: string, record: { color: string }) => (
-                    <span style={{ color: record.color, fontWeight: 600 }}>{pct}</span>
-                  ),
+                { title: '占比', dataIndex: 'pct', key: 'pct',
+                  render: (pct: string, _record: any, idx: number) => {
+                    const colors = ['#52c41a', '#1677ff', '#faad14', '#ff7a00', '#f5222d'];
+                    return <span style={{ color: colors[idx], fontWeight: 600 }}>{pct}</span>;
+                  },
                 },
               ]}
               pagination={false}

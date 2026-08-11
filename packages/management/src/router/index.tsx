@@ -7,19 +7,15 @@ import { Spin } from 'antd';
 const DashboardPage = lazy(() => import('../pages/dashboard/DashboardPage'));
 const IncidentListPage = lazy(() => import('../pages/incidents/IncidentListPage'));
 const IncidentDetailPage = lazy(() => import('../pages/incidents/IncidentDetailPage'));
-const SignalsPage = lazy(() => import('../pages/signals/SignalsPage'));
-const IntersectionDetailPage = lazy(() => import('../pages/signals/IntersectionDetailPage'));
-const SimulationPage = lazy(() => import('../pages/simulation/SimulationPage'));
-const DeviceListPage = lazy(() => import('../pages/devices/DeviceListPage'));
-const DeviceDetailPage = lazy(() => import('../pages/devices/DeviceDetailPage'));
-const WorkOrderListPage = lazy(() => import('../pages/workorders/WorkOrderListPage'));
-const WorkOrderDetailPage = lazy(() => import('../pages/workorders/WorkOrderDetailPage'));
+const UserManagementPage = lazy(() => import('../pages/users/UserManagementPage'));
+const CarbonManagementPage = lazy(() => import('../pages/carbon/CarbonManagementPage'));
+const ContentManagementPage = lazy(() => import('../pages/content/ContentManagementPage'));
 const AnalyticsPage = lazy(() => import('../pages/analytics/AnalyticsPage'));
 const SettingsPage = lazy(() => import('../pages/settings/SettingsPage'));
 
 const PageLoader = () => (
   <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', minHeight: 300 }}>
-    <Spin size="large" tip="加载中..." />
+    <Spin size="large" />
   </div>
 );
 
@@ -31,13 +27,9 @@ export default function AppRouter() {
           <Route index element={<DashboardPage />} />
           <Route path="incidents" element={<IncidentListPage />} />
           <Route path="incidents/:id" element={<IncidentDetailPage />} />
-          <Route path="signals" element={<SignalsPage />} />
-          <Route path="signals/:id" element={<IntersectionDetailPage />} />
-          <Route path="simulation" element={<SimulationPage />} />
-          <Route path="devices" element={<DeviceListPage />} />
-          <Route path="devices/:id" element={<DeviceDetailPage />} />
-          <Route path="workorders" element={<WorkOrderListPage />} />
-          <Route path="workorders/:id" element={<WorkOrderDetailPage />} />
+          <Route path="users" element={<UserManagementPage />} />
+          <Route path="carbon" element={<CarbonManagementPage />} />
+          <Route path="content" element={<ContentManagementPage />} />
           <Route path="analytics" element={<AnalyticsPage />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>

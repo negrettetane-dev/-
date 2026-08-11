@@ -25,7 +25,37 @@
 .photoArea { display: flex; gap: 10px; flex-wrap: wrap; }
 .photoSlot { width: 88px; height: 88px; border: 2px dashed #ddd; border-radius: 10px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; font-size: 12px; color: var(--text-hint); transition: all 0.2s; }
 .photoSlot:hover { border-color: var(--primary); color: var(--primary); }
-.photoImg { width: 88px; height: 88px; border-radius: 10px; object-fit: cover; background: #eee; }
+
+.photoWrap {
+  position: relative;
+  width: 88px;
+  height: 88px;
+}
+.photoImg {
+  width: 100%;
+  height: 100%;
+  border-radius: 10px;
+  object-fit: cover;
+  border: 1px solid #eee;
+}
+.photoRemove {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #f5222d;
+  color: #fff;
+  border: 2px solid #fff;
+  font-size: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+.photoRemove:hover { background: #ff4d4f; }
 .descInput { width: 100%; min-height: 80px; border: 1px solid #eee; border-radius: 8px; padding: 12px; font-size: 14px; resize: vertical; }
 .descInput:focus { border-color: var(--primary); outline: none; }
 .submitBtn { width: 100%; padding: 14px; background: var(--primary); color: #fff; border: none; border-radius: 10px; font-size: 16px; font-weight: 600; cursor: pointer; margin-top: 8px; transition: opacity 0.2s; }

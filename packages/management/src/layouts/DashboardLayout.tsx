@@ -13,6 +13,9 @@ import {
   SettingOutlined,
   BellOutlined,
   UserOutlined,
+  TeamOutlined,
+  GiftOutlined,
+  EditOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
 } from '@ant-design/icons';
@@ -21,23 +24,21 @@ import { useUIStore } from '../stores/uiStore';
 const { Header, Sider, Content } = Layout;
 
 const menuItems: MenuProps['items'] = [
-  { key: '/admin', icon: <DashboardOutlined />, label: '交通态势大屏' },
+  { key: '/admin', icon: <DashboardOutlined />, label: '数据驾驶舱' },
   { key: '/admin/incidents', icon: <AlertOutlined />, label: '事件管理' },
-  { key: '/admin/signals', icon: <ControlOutlined />, label: '信号控制' },
-  { key: '/admin/simulation', icon: <ExperimentOutlined />, label: '仿真推演' },
-  { key: '/admin/devices', icon: <ApiOutlined />, label: '设备管理' },
-  { key: '/admin/workorders', icon: <FileTextOutlined />, label: '工单处置' },
+  { key: '/admin/users', icon: <TeamOutlined />, label: '用户管理' },
+  { key: '/admin/carbon', icon: <GiftOutlined />, label: '碳积分管理' },
+  { key: '/admin/content', icon: <EditOutlined />, label: '内容管理' },
   { key: '/admin/analytics', icon: <BarChartOutlined />, label: '数据分析' },
   { key: '/admin/settings', icon: <SettingOutlined />, label: '系统设置' },
 ];
 
 const breadcrumbNameMap: Record<string, string> = {
-  '/admin': '交通态势大屏',
+  '/admin': '数据驾驶舱',
   '/admin/incidents': '事件管理',
-  '/admin/signals': '信号控制',
-  '/admin/simulation': '仿真推演',
-  '/admin/devices': '设备管理',
-  '/admin/workorders': '工单处置',
+  '/admin/users': '用户管理',
+  '/admin/carbon': '碳积分管理',
+  '/admin/content': '内容管理',
   '/admin/analytics': '数据分析',
   '/admin/settings': '系统设置',
 };
@@ -59,7 +60,7 @@ export default function DashboardLayout() {
     const path = location.pathname;
     if (path === '/admin' || path === '/admin/') return ['/admin'];
     // Try exact match first
-    if (menuItems.some((item) => item?.key === path)) return [path];
+    if ((menuItems as any[]).some((item) => item?.key === path)) return [path];
     // Fall back to parent
     const parent = path.split('/').slice(0, 3).join('/');
     return [parent];

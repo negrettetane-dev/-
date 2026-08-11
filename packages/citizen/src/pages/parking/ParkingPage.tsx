@@ -1,17 +1,18 @@
 import React, { useEffect, useState, useRef } from 'react';
-import AMapLoader from '@amap/amap-jsapi-loader';
+import { useNavigate } from 'react-router-dom';
+import { loadAMap } from '../../lib/amap';
 import styles from './Parking.module.css';
-
-const AMAP_KEY = import.meta.env.VITE_AMAP_KEY || '';
 
 interface ParkingLot { id:string; name:string; address:string; position:[number,number]; totalSpots:number; availableSpots:number; price:string; type:string; distance:number; hasCharging:boolean }
 interface ChargingStation { id:string; name:string; address:string; position:[number,number]; operator:string; totalPiles:number; availablePiles:number; power:string; price:string; distance:number; status:string }
 
 const ParkingPage: React.FC = () => {
+  const navigate = useNavigate();
   const [tab, setTab] = useState<'parking'|'charging'>('parking');
   const [viewMode, setViewMode] = useState<'list'|'map'>('list');
   const [parking, setParking] = useState<ParkingLot[]>([]);
   const [charging, setCharging] = useState<ChargingStation[]>([]);
+  const [mapError, setMapError] = useState('');
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
 
@@ -22,9 +23,10 @@ const ParkingPage: React.FC = () => {
 
   // 加载地图
   useEffect(() => {
-    if (viewMode !== 'map' || !AMAP_KEY || mapRef.current) return;
+    if (viewMode !== 'map' || mapRef.current) return;
 
-    AMapLoader.load({ key: AMAP_KEY, version: '2.0' })
+    setMapError('');
+    loadAMap()
       .then((AMap) => {
         if (!mapContainer.current) return;
         const map = new AMap.Map(mapContainer.current, {
@@ -33,6 +35,10 @@ const ParkingPage: React.FC = () => {
           resizeEnable: true,
         });
         mapRef.current = map;
+      })
+      .catch((error) => {
+        console.error('AMap 加载失败:', error);
+        setMapError('地图加载失败，请检查高德 Key、安全码和域名白名单');
       });
     return () => { if (mapRef.current) { mapRef.current.destroy(); mapRef.current = null; } };
   }, [viewMode]);
@@ -106,7 +112,14 @@ const ParkingPage: React.FC = () => {
       </div>
 
       {viewMode === 'map' ? (
-        <div ref={mapContainer} style={{flex:1, borderRadius:12, overflow:'hidden', minHeight:400}} />
+        <div style={{position:'relative', minHeight:400, flex:1, borderRadius:12, overflow:'hidden'}}>
+          <div ref={mapContainer} style={{width:'100%', height:'100%', minHeight:400}} />
+          {mapError && (
+            <div style={{position:'absolute', inset:0, display:'grid', placeItems:'center', padding:24, background:'#f7f8fa', color:'#d4380d', textAlign:'center'}}>
+              {mapError}
+            </div>
+          )}
+        </div>
       ) : (
         <>
           {tab === 'parking' && (
@@ -132,7 +145,10 @@ const ParkingPage: React.FC = () => {
                     </div>
                     <div style={{textAlign:'right'}}>
                       <div style={{fontWeight:600,color:'#f5222d',fontSize:15}}>{p.price}</div>
-                      <button className={styles.navBtn}>🧭 导航</button>
+                      <button className={styles.navBtn} onClick={() => {
+                        const [lng, lat] = p.position;
+                        navigate(`/travel/result`, { state: { origin: '我的位置', destination: p.name, mode: 'drive' } });
+                      }}>🧭 导航至此</button>
                     </div>
                   </div>
                 </div>
@@ -162,7 +178,7 @@ const ParkingPage: React.FC = () => {
                     </div>
                     <div style={{textAlign:'right'}}>
                       <div style={{fontWeight:600,fontSize:15}}>{c.price}</div>
-                      <button className={styles.navBtn}>🔌 扫码充电</button>
+                      <button className={styles.navBtn} onClick={() => navigate('/qrcode')}>🔌 扫码充电</button>
                     </div>
                   </div>
                 </div>

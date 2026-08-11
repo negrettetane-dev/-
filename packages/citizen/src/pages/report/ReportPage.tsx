@@ -1,10 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { getReports } from '../../stores/persistence';
+import type { PersistedReport } from '../../stores/persistence';
 import styles from './Report.module.css';
 
-interface WorkOrder { id:string; workOrderNo:string; category:string; description:string; status:string; createTime:number; processLogs?:{time:number;action:string;detail:string}[] }
+interface WorkOrder { id:string; workOrderNo:string; category:string; description:string; status:string; createTime:number; }
 
-const CATEGORY_MAP: Record<string,string> = { pothole:'🕳️ 路面坑洼', streetlight:'💡 路灯损坏', illegal_park:'🚗 违停占道', manhole:'⭕ 井盖破损', signal_fault:'🚦 信号灯故障', accident_clue:'🚨 事故线索', barrier:'🚧 道路障碍', other:'📝 其他' };
+const CATEGORY_ICONS: Record<string,string> = {
+  '路面坑洼':'🕳️','路灯损坏':'💡','违停占道':'🚗','井盖破损':'⭕',
+  '信号灯故障':'🚦','事故线索':'🚨','道路障碍':'🚧','其他问题':'📝',
+};
 const STATUS_MAP: Record<string,{label:string;color:string;bg:string}> = {
   pending:{label:'待受理',color:'#faad14',bg:'#fff7e6'},
   received:{label:'已受理',color:'#1677ff',bg:'#e6f4ff'},
@@ -19,7 +24,21 @@ const ReportPage: React.FC = () => {
   const [reports, setReports] = useState<WorkOrder[]>([]);
 
   useEffect(() => {
-    fetch('/api/report/list').then(r=>r.json()).then(d=>setReports(d.data||[]));
+    // 合并 mock 数据 + 持久化数据
+    fetch('/api/report/list').then(r=>r.json()).then(d=>{
+      const mockReports: WorkOrder[] = d.data||[];
+      const persisted: PersistedReport[] = getReports();
+      // 将 PersistedReport 转为 WorkOrder 格式
+      const persistedAsWorkOrders: WorkOrder[] = persisted.map(p => ({
+        id: p.id,
+        workOrderNo: p.workOrderNo,
+        category: p.category,
+        description: p.description,
+        status: p.status,
+        createTime: p.createdAt,
+      }));
+      setReports([...persistedAsWorkOrders, ...mockReports]);
+    });
   }, []);
 
   return (
@@ -43,7 +62,7 @@ const ReportPage: React.FC = () => {
             return (
               <div key={r.id} className={styles.card} onClick={()=>navigate(`/report/detail/${r.id}`)}>
                 <div className={styles.cardHeader}>
-                  <span>{CATEGORY_MAP[r.category]||r.category}</span>
+                  <span>{(CATEGORY_ICONS[r.category]||'📝')} {r.category}</span>
                   <span style={{fontSize:11,background:s.bg,color:s.color,padding:'3px 8px',borderRadius:4}}>{s.label}</span>
                 </div>
                 <div className={styles.cardDesc}>{r.description}</div>

@@ -1,6 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { addReport } from '../../stores/persistence';
 import styles from './Report.module.css';
+
+const MAX_PHOTOS = 6;
 
 const CATEGORIES = [
   { value:'pothole', label:'路面坑洼', icon:'🕳️' },
@@ -12,24 +15,96 @@ const CATEGORIES = [
   { value:'barrier', label:'道路障碍', icon:'🚧' },
   { value:'other', label:'其他问题', icon:'📝' },
 ];
+const CATEGORY_LABELS: Record<string,string> = {
+  pothole:'路面坑洼', streetlight:'路灯损坏', illegal_park:'违停占道',
+  manhole:'井盖破损', signal_fault:'信号灯故障', accident_clue:'事故线索',
+  barrier:'道路障碍', other:'其他问题',
+};
 
 const ReportFormPage: React.FC = () => {
   const navigate = useNavigate();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [category, setCategory] = useState('');
   const [description, setDescription] = useState('');
-  const [photos, setPhotos] = useState<string[]>([]);
+  const [photoFiles, setPhotoFiles] = useState<File[]>([]);
+  const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const [phone, setPhone] = useState('');
+  const [submitted, setSubmitted] = useState(false);
+  const [validationError, setValidationError] = useState('');
+
+  // 点击"添加照片"触发隐藏的 file input
+  const handleAddPhoto = () => {
+    fileInputRef.current?.click();
+  };
+
+  // 选择文件后：保存 File 对象 + 生成缩略图预览
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files?.length) return;
+    const remaining = MAX_PHOTOS - photoFiles.length;
+    const newFiles = Array.from(files).slice(0, remaining);
+    const newUrls = newFiles.map(f => URL.createObjectURL(f));
+    setPhotoFiles(prev => [...prev, ...newFiles]);
+    setPreviewUrls(prev => [...prev, ...newUrls]);
+    // 清空 input.value，允许再次选择同一文件
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  // 删除已选图片
+  const handleRemovePhoto = (index: number) => {
+    URL.revokeObjectURL(previewUrls[index]);
+    setPhotoFiles(prev => prev.filter((_, i) => i !== index));
+    setPreviewUrls(prev => prev.filter((_, i) => i !== index));
+  };
+
+  // 清理所有预览 URL
+  const revokeAllPreviews = () => {
+    previewUrls.forEach(u => URL.revokeObjectURL(u));
+  };
 
   const handleSubmit = () => {
-    if (!category || !description.trim()) return;
+    if (!category) { setValidationError('请选择问题类型'); return; }
+    if (!description.trim()) { setValidationError('请填写问题描述'); return; }
+    setValidationError('');
+
+    // 构建 FormData：文本字段 + 图片文件一起发送
+    const formData = new FormData();
+    formData.append('category', CATEGORY_LABELS[category] || category);
+    formData.append('description', description.trim());
+    formData.append('location', '北京市西城区天安门附近');
+    formData.append('position', JSON.stringify([116.40, 39.90]));
+    if (phone) formData.append('phone', phone);
+    // 追加所有图片文件（字段名统一用 photos）
+    photoFiles.forEach(file => formData.append('photos', file));
+
+    // 发送 POST 请求（目前使用 fetch mock，真实后端会接收 FormData）
     fetch('/api/report/submit', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({ category, description, photos, phone, position:[116.40,39.90], address:'自动定位' })
-    }).then(() => {
-      alert('上报成功！工单已生成');
-      navigate('/report');
-    });
+      method: 'POST',
+      body: formData,
+      // 注意：不要手动设置 Content-Type，浏览器会自动带 multipart/form-data + boundary
+    })
+      .then(async r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then(() => {
+        // 持久化保存（不含图片文件本身，只保存上报元数据）
+        addReport({
+          id: 'r_' + Date.now(),
+          workOrderNo: 'ZT' + Date.now().toString(36).toUpperCase().slice(-8),
+          category: CATEGORY_LABELS[category] || category,
+          description: description.trim(),
+          location: '北京市西城区天安门附近',
+          status: 'pending',
+          createdAt: Date.now(),
+          phone: phone || undefined,
+        });
+        revokeAllPreviews();
+        setSubmitted(true);
+      })
+      .catch(() => {
+        setValidationError('提交失败，请检查网络后重试');
+      });
   };
 
   return (
@@ -56,15 +131,45 @@ const ReportFormPage: React.FC = () => {
 
       {/* Photos */}
       <div className={styles.formSection}>
-        <div className={styles.formTitle}>📸 拍照/上传图片</div>
+        <div className={styles.formTitle}>
+          📸 拍照/上传图片
+          <span style={{fontSize:12,fontWeight:400,color:'var(--text-hint)',marginLeft:8}}>
+            ({photoFiles.length}/{MAX_PHOTOS})
+          </span>
+        </div>
+        {/* 隐藏的真实文件选择器 */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          style={{ display: 'none' }}
+          onChange={handleFileChange}
+        />
         <div className={styles.photoArea}>
-          {photos.map((p,i) => (
-            <div key={i} className={styles.photoImg} style={{background:'#eee',display:'flex',alignItems:'center',justifyContent:'center',fontSize:24}}>📷</div>
+          {/* 已选图片缩略图 */}
+          {previewUrls.map((url, i) => (
+            <div key={i} className={styles.photoWrap}>
+              <img className={styles.photoImg} src={url} alt={`照片 ${i + 1}`} />
+              <button
+                className={styles.photoRemove}
+                onClick={() => handleRemovePhoto(i)}
+                title="删除此图片"
+              >
+                ✕
+              </button>
+            </div>
           ))}
-          <div className={styles.photoSlot} onClick={()=>setPhotos([...photos,'mock'])}>
-            <span style={{fontSize:24}}>+</span>
-            <span>添加照片</span>
-          </div>
+          {/* 添加按钮 */}
+          {photoFiles.length < MAX_PHOTOS && (
+            <div className={styles.photoSlot} onClick={handleAddPhoto}>
+              <span style={{fontSize:24}}>+</span>
+              <span>添加照片</span>
+            </div>
+          )}
+        </div>
+        <div style={{fontSize:12,color:'var(--text-hint)',marginTop:8}}>
+          💡 支持 JPG/PNG，单张≤10MB，最多{MAX_PHOTOS}张。拍摄全景照片有助于快速定位。
         </div>
       </div>
 
@@ -88,7 +193,23 @@ const ReportFormPage: React.FC = () => {
         <input className={styles.descInput} style={{minHeight:36}} placeholder="方便工作人员联系您" value={phone} onChange={e=>setPhone(e.target.value)}/>
       </div>
 
-      <button className={styles.submitBtn} onClick={handleSubmit}>📤 提交上报</button>
+      {submitted ? (
+        <div style={{textAlign:'center',padding:'32px 16px',background:'#fff',borderRadius:12,boxShadow:'0 2px 12px rgba(0,0,0,0.06)'}}>
+          <div style={{fontSize:48,marginBottom:12}}>✅</div>
+          <div style={{fontSize:20,fontWeight:700,marginBottom:8}}>上报成功！</div>
+          <div style={{fontSize:14,color:'var(--text-secondary)',marginBottom:16}}>工单已生成，持久化保存，1-3个工作日内处理</div>
+          <button className={styles.submitBtn} onClick={() => navigate('/report')} style={{maxWidth:200,margin:'0 auto'}}>查看我的上报</button>
+        </div>
+      ) : (
+        <>
+          {validationError && (
+            <div style={{padding:10,background:'#fff1f0',color:'#f5222d',borderRadius:8,fontSize:13,marginBottom:4}}>
+              ⚠️ {validationError}
+            </div>
+          )}
+          <button className={styles.submitBtn} onClick={handleSubmit}>📤 提交上报</button>
+        </>
+      )}
       <div style={{height:32}}/>
     </div>
   );

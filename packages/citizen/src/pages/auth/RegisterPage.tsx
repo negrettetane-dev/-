@@ -6,19 +6,23 @@ import styles from './Auth.module.css';
 const RegisterPage: React.FC = () => {
   const navigate = useNavigate();
   const { register } = useAuthStore();
+
+  const [username, setUsername] = useState('');
+  const [nickname, setNickname] = useState('');
   const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPwd, setConfirmPwd] = useState('');
-  const [nickname, setNickname] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [agree, setAgree] = useState(false);
   const [countdown, setCountdown] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   const sendCode = () => {
-    if (!/^1\d{10}$/.test(phone)) { setError('请输入正确的手机号'); return; }
-    fetch('/api/user/send-code', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ phone }) });
+    if (!/^1[3-9]\d{9}$/.test(phone)) { setError('请输入正确的手机号'); return; }
+    fetch('/api/user/send-code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone }) });
     setError('');
     setCountdown(60);
     const t = setInterval(() => {
@@ -31,20 +35,32 @@ const RegisterPage: React.FC = () => {
 
   const handleRegister = async () => {
     setError('');
-    if (!/^1\d{10}$/.test(phone)) { setError('请输入正确的手机号'); return; }
+    if (!username.trim()) { setError('请输入用户名'); return; }
+    if (!/^1[3-9]\d{9}$/.test(phone)) { setError('请输入正确的手机号'); return; }
+    if (email.trim() && !/^[\w.+-]+@[\w-]+\.[\w.]+$/.test(email.trim())) { setError('请输入正确的邮箱'); return; }
     if (!code.trim()) { setError('请输入验证码'); return; }
     if (password.length < 6) { setError('密码至少6位'); return; }
     if (password !== confirmPwd) { setError('两次密码不一致'); return; }
-    if (!nickname.trim()) { setError('请输入昵称'); return; }
     if (!agree) { setError('请阅读并同意用户协议'); return; }
+
     setLoading(true);
-    const ok = await register({ phone, code, password, nickname });
+    const res = await register({
+      username: username.trim(),
+      phone,
+      email: email.trim(),
+      password,
+      nickname: nickname.trim() || username.trim(),
+    });
     setLoading(false);
-    if (ok) {
+    if (res.ok) {
       alert('注册成功！欢迎加入智途云枢');
       navigate('/profile');
     } else {
-      setError('注册失败，请重试');
+      // 重复错误精确提示
+      if (res.fieldError === 'username') setError('该用户名已存在');
+      else if (res.fieldError === 'phone') setError('该手机号已注册');
+      else if (res.fieldError === 'email') setError('该邮箱已注册');
+      else setError(res.error || '注册失败，请重试');
     }
   };
 
@@ -68,30 +84,45 @@ const RegisterPage: React.FC = () => {
 
           <div className={styles.field}>
             <span className={styles.fieldIcon}>👤</span>
-            <input className={styles.input} placeholder="请输入昵称" value={nickname} onChange={e=>setNickname(e.target.value)} maxLength={20}/>
+            <input className={styles.input} placeholder="用户名（登录用，唯一）" value={username} onChange={e => setUsername(e.target.value)} maxLength={20} />
+          </div>
+          <div className={styles.field}>
+            <span className={styles.fieldIcon}>🏷️</span>
+            <input className={styles.input} placeholder="昵称（选填）" value={nickname} onChange={e => setNickname(e.target.value)} maxLength={20} />
           </div>
           <div className={styles.field}>
             <span className={styles.fieldIcon}>📱</span>
-            <input className={styles.input} placeholder="请输入手机号" value={phone} onChange={e=>setPhone(e.target.value)} maxLength={11}/>
+            <input className={styles.input} placeholder="请输入手机号" value={phone} onChange={e => setPhone(e.target.value)} maxLength={11} />
+          </div>
+          <div className={styles.field}>
+            <span className={styles.fieldIcon}>📧</span>
+            <input className={styles.input} placeholder="邮箱（选填）" value={email} onChange={e => setEmail(e.target.value)} />
           </div>
           <div className={styles.field}>
             <span className={styles.fieldIcon}>🔢</span>
-            <input className={styles.input} placeholder="请输入验证码" value={code} onChange={e=>setCode(e.target.value)} maxLength={6}/>
+            <input className={styles.input} placeholder="请输入验证码" value={code} onChange={e => setCode(e.target.value)} maxLength={6} />
             <button className={styles.codeBtn} onClick={sendCode} disabled={countdown > 0}>
               {countdown > 0 ? `${countdown}s` : '获取验证码'}
             </button>
           </div>
           <div className={styles.field}>
             <span className={styles.fieldIcon}>🔒</span>
-            <input className={styles.input} type="password" placeholder="设置密码(至少6位)" value={password} onChange={e=>setPassword(e.target.value)}/>
+            <input
+              className={styles.input}
+              type={showPassword ? 'text' : 'password'}
+              placeholder="设置密码(至少6位)"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+            />
+            <span className={styles.eyeBtn} onClick={() => setShowPassword(!showPassword)}>{showPassword ? '🙈' : '👁'}</span>
           </div>
           <div className={styles.field}>
             <span className={styles.fieldIcon}>🔒</span>
-            <input className={styles.input} type="password" placeholder="确认密码" value={confirmPwd} onChange={e=>setConfirmPwd(e.target.value)}/>
+            <input className={styles.input} type="password" placeholder="确认密码" value={confirmPwd} onChange={e => setConfirmPwd(e.target.value)} />
           </div>
 
           <div className={styles.agreeRow}>
-            <input type="checkbox" checked={agree} onChange={e=>setAgree(e.target.checked)}/>
+            <input type="checkbox" checked={agree} onChange={e => setAgree(e.target.checked)} />
             <span className={styles.agreeText}>
               我已阅读并同意 <span className={styles.link}>《用户协议》</span> 和 <span className={styles.link}>《隐私政策》</span>
             </span>
@@ -105,7 +136,7 @@ const RegisterPage: React.FC = () => {
 
           <div className={styles.authFooter}>
             <span>已有账号？</span>
-            <span className={styles.link} onClick={()=>navigate('/login')}>去登录</span>
+            <span className={styles.link} onClick={() => navigate('/login')}>去登录</span>
           </div>
         </div>
       </div>
