@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import './styles/variables.css';
 import './styles/global.css';
+import './styles/tailwind.css';
 
 // 高德地图 JS API 安全密钥配置（必须在 AMapLoader.load 之前执行）
 const amapSecurityCode = import.meta.env.VITE_AMAP_SECURITY_CODE;
