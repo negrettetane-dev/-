@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { AlertCircle, ArrowRight, Eye, EyeOff, KeyRound, LockKeyhole, Smartphone, UserRound } from 'lucide-react';
+import { Button } from '../../components/ui/button';
+import { Input } from '../../components/ui/input';
 import { useAuthStore } from '../../stores/authStore';
-import styles from './Auth.module.css';
+import { AuthShell } from './AuthShell';
 import { apiPost } from '../../services/apiClient';
 
 const LoginPage: React.FC = () => {
@@ -68,80 +71,96 @@ const LoginPage: React.FC = () => {
   };
 
   return (
-    <div className={styles.authPage}>
-      <div className={styles.authCard}>
-        <div className={styles.authSide}>
-          <div className={styles.sideLogo}>🚦</div>
-          <h1 className={styles.sideTitle}>智途云枢</h1>
-          <p className={styles.sideDesc}>基于多源数据融合与智能决策的<br/>城市智慧交通平台</p>
-          <div className={styles.sideFeatures}>
-            <div className={styles.sideFeature}>🗺️ 实时路况 · 一张图看全城</div>
-            <div className={styles.sideFeature}>🧭 智能出行 · AI预判拥堵</div>
-            <div className={styles.sideFeature}>📷 市民共治 · 一键上报问题</div>
-            <div className={styles.sideFeature}>🌳 绿色出行 · 碳积分兑换</div>
-          </div>
-        </div>
-
-        <div className={styles.authForm}>
-          <h2 className={styles.formTitle}>欢迎登录</h2>
-          <p className={styles.formSub}>登录后体验完整的智慧出行服务</p>
-
-          <div className={styles.modeSwitch}>
-            <button className={`${styles.modeBtn} ${mode === 'code' ? styles.modeActive : ''}`} onClick={() => { setMode('code'); setError(''); }}>验证码登录</button>
-            <button className={`${styles.modeBtn} ${mode === 'password' ? styles.modeActive : ''}`} onClick={() => { setMode('password'); setError(''); }}>密码登录</button>
-          </div>
-
-          {mode === 'code' ? (
-            <>
-              <div className={styles.field}>
-                <span className={styles.fieldIcon}>📱</span>
-                <input className={styles.input} placeholder="请输入手机号" value={phone} onChange={e => setPhone(e.target.value)} maxLength={11} />
-              </div>
-              <div className={styles.field}>
-                <span className={styles.fieldIcon}>🔢</span>
-                <input className={styles.input} placeholder="请输入验证码" value={code} onChange={e => setCode(e.target.value)} maxLength={6} />
-                <button className={styles.codeBtn} onClick={sendCode} disabled={countdown > 0}>
-                  {countdown > 0 ? `${countdown}s` : '获取验证码'}
-                </button>
-              </div>
-            </>
-          ) : (
-            <>
-              <div className={styles.field}>
-                <span className={styles.fieldIcon}>👤</span>
-                <input className={styles.input} placeholder="请输入用户名 / 手机号 / 邮箱" value={account} onChange={e => setAccount(e.target.value)} />
-              </div>
-              <div className={styles.field}>
-                <span className={styles.fieldIcon}>🔒</span>
-                <input
-                  className={styles.input}
-                  type={showPassword ? 'text' : 'password'}
-                  placeholder="请输入密码"
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                />
-                <span className={styles.eyeBtn} onClick={() => setShowPassword(!showPassword)} title={showPassword ? '隐藏密码' : '显示密码'}>
-                  {showPassword ? '🙈' : '👁'}
-                </span>
-              </div>
-            </>
-          )}
-
-          {error && <div className={styles.error}>{error}</div>}
-
-          <button className={styles.submitBtn} onClick={handleLogin} disabled={loading}>
-            {loading ? '登录中...' : '登 录'}
-          </button>
-
-          <div className={styles.authFooter}>
-            <span>还没有账号？</span>
-            <span className={styles.link} onClick={() => navigate('/register')}>立即注册</span>
-            <span className={styles.divider}>|</span>
-            <span className={styles.link} onClick={() => navigate('/')}>游客浏览</span>
-          </div>
-        </div>
+    <AuthShell variant="login">
+      <div className="mb-7">
+        <div className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-blue-600">Welcome back</div>
+        <h2 className="m-0 text-[30px] font-semibold tracking-tight text-slate-950">欢迎登录</h2>
+        <p className="mb-0 mt-2 text-sm leading-6 text-slate-500">登录后体验完整的智慧出行与城市服务</p>
       </div>
-    </div>
+
+      <div className="mb-6 grid grid-cols-2 rounded-xl bg-slate-100 p-1" role="tablist" aria-label="登录方式">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={mode === 'code'}
+          className={`rounded-lg border-0 px-3 py-2.5 text-sm font-medium transition ${mode === 'code' ? 'bg-white text-blue-700 shadow-sm' : 'bg-transparent text-slate-500 hover:text-slate-800'}`}
+          onClick={() => { setMode('code'); setError(''); }}
+        >
+          验证码登录
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={mode === 'password'}
+          className={`rounded-lg border-0 px-3 py-2.5 text-sm font-medium transition ${mode === 'password' ? 'bg-white text-blue-700 shadow-sm' : 'bg-transparent text-slate-500 hover:text-slate-800'}`}
+          onClick={() => { setMode('password'); setError(''); }}
+        >
+          密码登录
+        </button>
+      </div>
+
+      <form className="space-y-4" onSubmit={event => { event.preventDefault(); void handleLogin(); }}>
+        {mode === 'code' ? (
+          <>
+            <label className="block">
+              <span className="mb-2 block text-sm font-medium text-slate-700">手机号码</span>
+              <span className="relative block">
+                <Smartphone className="pointer-events-none absolute inset-y-0 left-4 z-10 my-auto h-[18px] w-[18px] text-slate-400" />
+                <Input className="pl-11" inputMode="tel" autoComplete="tel" placeholder="请输入手机号" value={phone} onChange={e => setPhone(e.target.value)} maxLength={11} />
+              </span>
+            </label>
+            <label className="block">
+              <span className="mb-2 block text-sm font-medium text-slate-700">短信验证码</span>
+              <span className="relative block">
+                <KeyRound className="pointer-events-none absolute inset-y-0 left-4 z-10 my-auto h-[18px] w-[18px] text-slate-400" />
+                <Input className="pl-11 pr-32" inputMode="numeric" autoComplete="one-time-code" placeholder="请输入验证码" value={code} onChange={e => setCode(e.target.value)} maxLength={6} />
+                <Button className="absolute right-1.5 top-1.5" size="sm" variant="ghost" onClick={sendCode} disabled={countdown > 0}>
+                  {countdown > 0 ? `${countdown}s 后重试` : '获取验证码'}
+                </Button>
+              </span>
+            </label>
+          </>
+        ) : (
+          <>
+            <label className="block">
+              <span className="mb-2 block text-sm font-medium text-slate-700">账号</span>
+              <span className="relative block">
+                <UserRound className="pointer-events-none absolute inset-y-0 left-4 z-10 my-auto h-[18px] w-[18px] text-slate-400" />
+                <Input className="pl-11" autoComplete="username" placeholder="用户名 / 手机号 / 邮箱" value={account} onChange={e => setAccount(e.target.value)} />
+              </span>
+            </label>
+            <label className="block">
+              <span className="mb-2 block text-sm font-medium text-slate-700">密码</span>
+              <span className="relative block">
+                <LockKeyhole className="pointer-events-none absolute inset-y-0 left-4 z-10 my-auto h-[18px] w-[18px] text-slate-400" />
+                <Input className="pl-11 pr-12" type={showPassword ? 'text' : 'password'} autoComplete="current-password" placeholder="请输入密码" value={password} onChange={e => setPassword(e.target.value)} />
+                <Button className="absolute right-1 top-1" size="icon" variant="ghost" aria-label={showPassword ? '隐藏密码' : '显示密码'} onClick={() => setShowPassword(!showPassword)}>
+                  {showPassword ? <EyeOff className="h-[18px] w-[18px]" /> : <Eye className="h-[18px] w-[18px]" />}
+                </Button>
+              </span>
+            </label>
+          </>
+        )}
+
+        {error && (
+          <div className="flex items-start gap-2 rounded-xl border border-red-100 bg-red-50 px-3.5 py-3 text-sm text-red-700" role="alert">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+
+        <Button type="submit" className="h-12 w-full rounded-2xl text-[15px]" disabled={loading}>
+          {loading ? '正在登录...' : <>登录 <ArrowRight className="ml-2 h-4 w-4" /></>}
+        </Button>
+      </form>
+
+      <div className="mt-6 flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-sm text-slate-500">
+        <span>还没有账号？</span>
+        <button type="button" className="border-0 bg-transparent p-0 font-semibold text-blue-600 hover:text-blue-700" onClick={() => navigate('/register')}>立即注册</button>
+        <span className="h-4 w-px bg-slate-200" />
+        <button type="button" className="border-0 bg-transparent p-0 text-slate-500 hover:text-slate-900" onClick={() => navigate('/')}>游客浏览</button>
+      </div>
+    </AuthShell>
   );
 };
 

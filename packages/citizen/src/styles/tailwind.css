@@ -1,0 +1,18 @@
+@tailwind components;
+@tailwind utilities;
+
+@layer utilities {
+  .auth-grid {
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.055) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.055) 1px, transparent 1px);
+    background-size: 36px 36px;
+  }
+
+  .auth-glow {
+    background:
+      radial-gradient(circle at 14% 18%, rgba(56, 189, 248, 0.2), transparent 28%),
+      radial-gradient(circle at 78% 82%, rgba(37, 99, 235, 0.28), transparent 34%),
+      linear-gradient(145deg, #07152e 0%, #0a2550 52%, #123d78 100%);
+  }
+}

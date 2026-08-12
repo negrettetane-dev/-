@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { AlertCircle, ArrowRight, AtSign, Eye, EyeOff, KeyRound, LockKeyhole, Smartphone, Tag, UserRound } from 'lucide-react';
+import { Button } from '../../components/ui/button';
+import { Input } from '../../components/ui/input';
 import { useAuthStore } from '../../stores/authStore';
-import styles from './Auth.module.css';
+import { AuthShell } from './AuthShell';
 import { apiPost } from '../../services/apiClient';
 
 const RegisterPage: React.FC = () => {
@@ -71,82 +74,101 @@ const RegisterPage: React.FC = () => {
   };
 
   return (
-    <div className={styles.authPage}>
-      <div className={styles.authCard}>
-        <div className={styles.authSide}>
-          <div className={styles.sideLogo}>🚦</div>
-          <h1 className={styles.sideTitle}>智途云枢</h1>
-          <p className={styles.sideDesc}>加入智慧交通<br/>让出行更简单、更绿色</p>
-          <div className={styles.sideStats}>
-            <div className={styles.sideStat}><div className={styles.sideStatNum}>50万+</div><div>注册用户</div></div>
-            <div className={styles.sideStat}><div className={styles.sideStatNum}>5000+</div><div>合作停车场</div></div>
-            <div className={styles.sideStat}><div className={styles.sideStatNum}>98%</div><div>问题处置率</div></div>
-          </div>
-        </div>
-
-        <div className={styles.authForm}>
-          <h2 className={styles.formTitle}>创建账号</h2>
-          <p className={styles.formSub}>注册成为智途云枢用户</p>
-
-          <div className={styles.field}>
-            <span className={styles.fieldIcon}>👤</span>
-            <input className={styles.input} placeholder="用户名（登录用，唯一）" value={username} onChange={e => setUsername(e.target.value)} maxLength={20} />
-          </div>
-          <div className={styles.field}>
-            <span className={styles.fieldIcon}>🏷️</span>
-            <input className={styles.input} placeholder="昵称（选填）" value={nickname} onChange={e => setNickname(e.target.value)} maxLength={20} />
-          </div>
-          <div className={styles.field}>
-            <span className={styles.fieldIcon}>📱</span>
-            <input className={styles.input} placeholder="请输入手机号" value={phone} onChange={e => setPhone(e.target.value)} maxLength={11} />
-          </div>
-          <div className={styles.field}>
-            <span className={styles.fieldIcon}>📧</span>
-            <input className={styles.input} placeholder="邮箱（选填）" value={email} onChange={e => setEmail(e.target.value)} />
-          </div>
-          <div className={styles.field}>
-            <span className={styles.fieldIcon}>🔢</span>
-            <input className={styles.input} placeholder="请输入验证码" value={code} onChange={e => setCode(e.target.value)} maxLength={6} />
-            <button className={styles.codeBtn} onClick={sendCode} disabled={countdown > 0}>
-              {countdown > 0 ? `${countdown}s` : '获取验证码'}
-            </button>
-          </div>
-          <div className={styles.field}>
-            <span className={styles.fieldIcon}>🔒</span>
-            <input
-              className={styles.input}
-              type={showPassword ? 'text' : 'password'}
-              placeholder="设置密码(至少6位)"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-            />
-            <span className={styles.eyeBtn} onClick={() => setShowPassword(!showPassword)}>{showPassword ? '🙈' : '👁'}</span>
-          </div>
-          <div className={styles.field}>
-            <span className={styles.fieldIcon}>🔒</span>
-            <input className={styles.input} type="password" placeholder="确认密码" value={confirmPwd} onChange={e => setConfirmPwd(e.target.value)} />
-          </div>
-
-          <div className={styles.agreeRow}>
-            <input type="checkbox" checked={agree} onChange={e => setAgree(e.target.checked)} />
-            <span className={styles.agreeText}>
-              我已阅读并同意 <span className={styles.link}>《用户协议》</span> 和 <span className={styles.link}>《隐私政策》</span>
-            </span>
-          </div>
-
-          {error && <div className={styles.error}>{error}</div>}
-
-          <button className={styles.submitBtn} onClick={handleRegister} disabled={loading}>
-            {loading ? '注册中...' : '注 册'}
-          </button>
-
-          <div className={styles.authFooter}>
-            <span>已有账号？</span>
-            <span className={styles.link} onClick={() => navigate('/login')}>去登录</span>
-          </div>
-        </div>
+    <AuthShell variant="register">
+      <div className="mb-6">
+        <div className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-blue-600">Join us</div>
+        <h2 className="m-0 text-[30px] font-semibold tracking-tight text-slate-950">创建账号</h2>
+        <p className="mb-0 mt-2 text-sm leading-6 text-slate-500">几步完成注册，开启更聪明的城市出行体验</p>
       </div>
-    </div>
+
+      <form className="space-y-4" onSubmit={event => { event.preventDefault(); void handleRegister(); }}>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="block">
+            <span className="mb-2 block text-sm font-medium text-slate-700">用户名 <span className="text-red-500">*</span></span>
+            <span className="relative block">
+              <UserRound className="pointer-events-none absolute inset-y-0 left-4 z-10 my-auto h-[18px] w-[18px] text-slate-400" />
+              <Input className="pl-11" autoComplete="username" placeholder="登录使用，保持唯一" value={username} onChange={e => setUsername(e.target.value)} maxLength={20} />
+            </span>
+          </label>
+          <label className="block">
+            <span className="mb-2 block text-sm font-medium text-slate-700">昵称 <span className="font-normal text-slate-400">选填</span></span>
+            <span className="relative block">
+              <Tag className="pointer-events-none absolute inset-y-0 left-4 z-10 my-auto h-[18px] w-[18px] text-slate-400" />
+              <Input className="pl-11" placeholder="用于页面展示" value={nickname} onChange={e => setNickname(e.target.value)} maxLength={20} />
+            </span>
+          </label>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="block">
+            <span className="mb-2 block text-sm font-medium text-slate-700">手机号码 <span className="text-red-500">*</span></span>
+            <span className="relative block">
+              <Smartphone className="pointer-events-none absolute inset-y-0 left-4 z-10 my-auto h-[18px] w-[18px] text-slate-400" />
+              <Input className="pl-11" inputMode="tel" autoComplete="tel" placeholder="11 位手机号码" value={phone} onChange={e => setPhone(e.target.value)} maxLength={11} />
+            </span>
+          </label>
+          <label className="block">
+            <span className="mb-2 block text-sm font-medium text-slate-700">电子邮箱 <span className="font-normal text-slate-400">选填</span></span>
+            <span className="relative block">
+              <AtSign className="pointer-events-none absolute inset-y-0 left-4 z-10 my-auto h-[18px] w-[18px] text-slate-400" />
+              <Input className="pl-11" type="email" autoComplete="email" placeholder="name@example.com" value={email} onChange={e => setEmail(e.target.value)} />
+            </span>
+          </label>
+        </div>
+
+        <label className="block">
+          <span className="mb-2 block text-sm font-medium text-slate-700">短信验证码 <span className="text-red-500">*</span></span>
+          <span className="relative block">
+            <KeyRound className="pointer-events-none absolute inset-y-0 left-4 z-10 my-auto h-[18px] w-[18px] text-slate-400" />
+            <Input className="pl-11 pr-32" inputMode="numeric" autoComplete="one-time-code" placeholder="请输入验证码" value={code} onChange={e => setCode(e.target.value)} maxLength={6} />
+            <Button className="absolute right-1.5 top-1.5" size="sm" variant="ghost" onClick={sendCode} disabled={countdown > 0}>
+              {countdown > 0 ? `${countdown}s 后重试` : '获取验证码'}
+            </Button>
+          </span>
+        </label>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="block">
+            <span className="mb-2 block text-sm font-medium text-slate-700">设置密码 <span className="text-red-500">*</span></span>
+            <span className="relative block">
+              <LockKeyhole className="pointer-events-none absolute inset-y-0 left-4 z-10 my-auto h-[18px] w-[18px] text-slate-400" />
+              <Input className="pl-11 pr-12" type={showPassword ? 'text' : 'password'} autoComplete="new-password" placeholder="至少 6 位" value={password} onChange={e => setPassword(e.target.value)} />
+              <Button className="absolute right-1 top-1" size="icon" variant="ghost" aria-label={showPassword ? '隐藏密码' : '显示密码'} onClick={() => setShowPassword(!showPassword)}>
+                {showPassword ? <EyeOff className="h-[18px] w-[18px]" /> : <Eye className="h-[18px] w-[18px]" />}
+              </Button>
+            </span>
+          </label>
+          <label className="block">
+            <span className="mb-2 block text-sm font-medium text-slate-700">确认密码 <span className="text-red-500">*</span></span>
+            <span className="relative block">
+              <LockKeyhole className="pointer-events-none absolute inset-y-0 left-4 z-10 my-auto h-[18px] w-[18px] text-slate-400" />
+              <Input className="pl-11" type="password" autoComplete="new-password" placeholder="再次输入密码" value={confirmPwd} onChange={e => setConfirmPwd(e.target.value)} />
+            </span>
+          </label>
+        </div>
+
+        <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 bg-slate-50/70 px-3.5 py-3 text-sm text-slate-600 transition hover:border-blue-200 hover:bg-blue-50/50">
+          <input className="mt-0.5 h-4 w-4 shrink-0 accent-blue-600" type="checkbox" checked={agree} onChange={e => setAgree(e.target.checked)} />
+          <span className="leading-5">我已阅读并同意 <button type="button" className="border-0 bg-transparent p-0 font-medium text-blue-600">《用户协议》</button> 和 <button type="button" className="border-0 bg-transparent p-0 font-medium text-blue-600">《隐私政策》</button></span>
+        </label>
+
+        {error && (
+          <div className="flex items-start gap-2 rounded-xl border border-red-100 bg-red-50 px-3.5 py-3 text-sm text-red-700" role="alert">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+
+        <Button type="submit" className="h-12 w-full rounded-2xl text-[15px]" disabled={loading}>
+          {loading ? '正在创建账号...' : <>创建账号 <ArrowRight className="ml-2 h-4 w-4" /></>}
+        </Button>
+      </form>
+
+      <div className="mt-5 flex items-center justify-center gap-2 text-sm text-slate-500">
+        <span>已有账号？</span>
+        <button type="button" className="border-0 bg-transparent p-0 font-semibold text-blue-600 hover:text-blue-700" onClick={() => navigate('/login')}>返回登录</button>
+      </div>
+    </AuthShell>
   );
 };
 
