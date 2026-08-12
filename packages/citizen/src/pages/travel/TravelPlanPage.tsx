@@ -12,6 +12,7 @@ const TravelPlanPage: React.FC = () => {
   const [mode, setMode] = useState<string>('drive');
   const [origin, setOrigin] = useState('我的位置');
   const [dest, setDest] = useState(prefillDest);
+  const [waypoints, setWaypoints] = useState<string[]>([]);
   const [departTime, setDepartTime] = useState('现在出发');
   const [busLines, setBusLines] = useState<TransitLine[]>([]);
   const [metroLines, setMetroLines] = useState<TransitLine[]>([]);
@@ -63,10 +64,12 @@ const TravelPlanPage: React.FC = () => {
   }, [searchQuery]);
 
   const modes = [
+    { key:'new-energy', icon:'⚡', label:'新能源' },
     { key:'drive', icon:'🚗', label:'驾车' },
     { key:'bus', icon:'🚌', label:'公交地铁' },
     { key:'bike', icon:'🚲', label:'骑行' },
     { key:'walk', icon:'🚶', label:'步行' },
+    { key:'accessible', icon:'♿', label:'无障碍' },
   ];
 
   const quickDests = ['天安门', '王府井', '北京南站', '国贸CBD', '三里屯', '北京西站'];
@@ -95,17 +98,37 @@ const TravelPlanPage: React.FC = () => {
     );
   };
 
-  // ⇅ 交换起终点
+  // ⇅ 反转完整路线顺序
   const handleSwap = () => {
-    if (origin === '我的位置') return;
-    const tmp = origin;
-    setOrigin(dest || '请输入目的地');
-    setDest(tmp);
+    setOrigin(dest);
+    setDest(origin);
+    setWaypoints(currentWaypoints => [...currentWaypoints].reverse());
+  };
+
+  const handleAddWaypoint = () => {
+    setWaypoints(currentWaypoints => [...currentWaypoints, '']);
+  };
+
+  const handleWaypointChange = (index: number, value: string) => {
+    setWaypoints(currentWaypoints => currentWaypoints.map((point, pointIndex) => (
+      pointIndex === index ? value : point
+    )));
+  };
+
+  const handleRemoveWaypoint = (index: number) => {
+    setWaypoints(currentWaypoints => currentWaypoints.filter((_, pointIndex) => pointIndex !== index));
   };
 
   const handleSearch = () => {
     if (!dest.trim()) return;
-    navigate('/travel/result', { state: { origin, destination: dest, mode } });
+    navigate('/travel/result', {
+      state: {
+        origin,
+        destination: dest,
+        waypoints: waypoints.map(point => point.trim()).filter(Boolean),
+        mode,
+      },
+    });
   };
 
   return (
@@ -123,17 +146,37 @@ const TravelPlanPage: React.FC = () => {
 
       {/* Input Area */}
       <div className={styles.inputArea}>
-        <div className={styles.inputRow}>
-          <span className={styles.poiDot} style={{background:'#52c41a'}}/>
-          <input className={styles.poiInput} value={origin} onChange={e=>setOrigin(e.target.value)}/>
-          <span className={styles.locBtn} onClick={handleLocate} title="获取当前位置">
-            {locating ? '⏳' : '📍'}
-          </span>
-        </div>
-        <div className={styles.inputRow}>
-          <span className={styles.poiDot} style={{background:'#f5222d'}}/>
-          <input className={styles.poiInput} placeholder="输入目的地" value={dest} onChange={e=>setDest(e.target.value)}/>
-          <span className={styles.swapBtn} onClick={handleSwap} title="交换起终点">⇅</span>
+        <div className={styles.routeEditor}>
+          <div className={styles.locationInputs}>
+            <div className={styles.inputRow}>
+              <span className={styles.poiDot} style={{background:'#52c41a'}}/>
+              <input className={styles.poiInput} aria-label="起始点" value={origin} onChange={e=>setOrigin(e.target.value)}/>
+              <button type="button" className={styles.locationBtn} onClick={handleLocate} title="获取当前位置" aria-label="获取当前位置">
+                {locating ? '⏳' : '📍'}
+              </button>
+            </div>
+            {waypoints.map((waypoint, index) => (
+              <div className={styles.inputRow} key={index}>
+                <span className={styles.poiDot} style={{background:'#faad14'}}/>
+                <input
+                  className={styles.poiInput}
+                  aria-label={`途经点${index + 1}`}
+                  placeholder={`输入途经点${index + 1}`}
+                  value={waypoint}
+                  onChange={event => handleWaypointChange(index, event.target.value)}
+                />
+                <button type="button" className={styles.removeWaypointBtn} aria-label={`删除途经点${index + 1}`} title="删除途经点" onClick={() => handleRemoveWaypoint(index)}>−</button>
+              </div>
+            ))}
+            <div className={styles.inputRow}>
+              <span className={styles.poiDot} style={{background:'#f5222d'}}/>
+              <input className={styles.poiInput} aria-label="目的地" placeholder="输入目的地" value={dest} onChange={e=>setDest(e.target.value)}/>
+            </div>
+          </div>
+          <div className={styles.routeActions}>
+            <button type="button" className={styles.routeActionBtn} onClick={handleSwap} title="反转完整路线" aria-label="反转路线">⇅</button>
+            <button type="button" className={styles.routeActionBtn} onClick={handleAddWaypoint} title="添加途经点" aria-label="添加途经点">+</button>
+          </div>
         </div>
         <div className={styles.departRow}>
           <span className={styles.departLabel}>出发时间</span>

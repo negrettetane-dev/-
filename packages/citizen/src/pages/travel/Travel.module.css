@@ -1,15 +1,24 @@
 .page { }
-.modeTabs { display: flex; gap: 8px; background: #fff; border-radius: 12px; padding: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); margin-bottom: 20px; width: fit-content; }
+.modeTabs { display: flex; gap: 8px; background: #fff; border-radius: 12px; padding: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); margin: 0 auto 20px; width: fit-content; }
 .modeTab { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 22px; border-radius: 8px; cursor: pointer; transition: all 0.2s; color: var(--text-secondary); }
 .modeTab:hover { background: var(--bg-page); }
 .modeActive { background: var(--primary-light); color: var(--primary); font-weight: 600; }
 
-.inputArea { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); display: flex; flex-direction: column; gap: 12px; }
+.inputArea { width: 50%; box-sizing: border-box; margin: 0 auto; background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); display: flex; flex-direction: column; gap: 12px; }
+.routeEditor { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; }
+.locationInputs { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .inputRow { display: flex; align-items: center; gap: 8px; padding: 10px 14px; background: var(--bg-page); border-radius: 10px; }
 .poiDot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 .poiInput { flex: 1; border: none; outline: none; background: none; font-size: 15px; color: var(--text-primary); }
 .poiInput::placeholder { color: var(--text-hint); }
-.locBtn, .swapBtn { font-size: 18px; cursor: pointer; flex-shrink: 0; }
+.locBtn, .locationBtn { font-size: 18px; flex-shrink: 0; }
+.locationBtn { display: inline-flex; align-items: center; justify-content: center; padding: 0; border: none; background: transparent; cursor: pointer; }
+.routeActions { display: flex; align-items: center; justify-content: center; gap: 8px; }
+.routeActionBtn, .removeWaypointBtn { display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--border-color); background: #fff; color: var(--text-primary); cursor: pointer; transition: all 0.2s; }
+.routeActionBtn { width: 36px; height: 36px; border-radius: 10px; font-size: 22px; line-height: 1; }
+.removeWaypointBtn { width: 24px; height: 24px; border-radius: 50%; color: var(--text-hint); font-size: 18px; flex-shrink: 0; }
+.routeActionBtn:hover, .removeWaypointBtn:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-light); }
+.routeActionBtn:focus-visible, .removeWaypointBtn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .departRow { display: flex; align-items: center; justify-content: space-between; padding: 4px 0; }
 .departLabel { font-size: 13px; color: var(--text-secondary); }
 .departSelect { border: 1px solid var(--border-color); border-radius: 6px; padding: 6px 10px; font-size: 13px; background: #fff; }
@@ -96,6 +105,9 @@
 .navBtn:hover { opacity: 0.9; }
 
 @media (max-width: 768px) {
+  .inputArea { width: 100%; }
+  .modeTabs { width: 100%; overflow-x: auto; box-sizing: border-box; }
+  .modeTab { min-width: 72px; padding: 10px 14px; }
   .busList, .metroList { grid-template-columns: 1fr; }
   .customBusBanner { flex-direction: column; align-items: flex-start; }
 }
