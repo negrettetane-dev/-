@@ -4,6 +4,7 @@ import { useAuthStore } from '../stores/authStore';
 import { useElderly } from '../App';
 import { maskPhone } from '@zhitu/shared';
 import styles from './MainLayout.module.css';
+import ClickSpark from '../components/ClickSpark/ClickSpark';
 
 const ABOUT_CONTENT: Record<string, string> = {
   '平台介绍': '智途云枢是面向城市交通治理的智慧出行平台，融合多源交通数据与智能决策能力，为市民提供实时路况、出行规划、公交地铁、停车充电、事件上报、碳积分等一站式出行服务。',
@@ -43,6 +44,14 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   }
 
   return (
+    <ClickSpark
+      sparkColors={['#ff9fb3', '#ffe29a', '#9de5c3', '#a8d8ff', '#d9b8ff']}
+      sparkSize={10}
+      sparkRadius={24}
+      sparkCount={10}
+      duration={500}
+      extraScale={1.1}
+    >
     <div className={styles.site}>
       {/* ===== 顶部导航栏 ===== */}
       <header className={styles.header}>
@@ -145,6 +154,7 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         </div>
       )}
     </div>
+    </ClickSpark>
   );
 };
 
