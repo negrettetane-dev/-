@@ -1,7 +1,7 @@
-// ===== 智途云枢 · 乘车码服务 =====
+// ===== 智途云枢 · 统一乘车码服务 =====
 // 公交码 / 地铁码完全独立，内容不同，仅用于演示。
 
-export type QrMode = 'bus' | 'metro';
+export type TransitQrMode = 'bus' | 'metro';
 
 export interface QrState {
   content: string;
@@ -11,15 +11,11 @@ export interface QrState {
 
 const VALIDITY_MS = 60 * 1000; // 60 秒有效期
 
-function generateQrContent(mode: QrMode, userId: string, ts: number): string {
+/** 生成指定模式的演示乘车码（公交/地铁内容互不相同） */
+export function generateTransitQr(mode: TransitQrMode, userId: string = 'u1', now: number = Date.now()): QrState {
   const prefix = mode === 'bus' ? 'ZHITU-DEMO-BUS' : 'ZHITU-DEMO-METRO';
-  return `${prefix}-${userId}-${ts}`;
-}
-
-/** 生成指定模式的演示乘车码（内容与模式强相关，公交/地铁互不相同） */
-export function generateQr(mode: QrMode, userId: string = 'u1', now: number = Date.now()): QrState {
   return {
-    content: generateQrContent(mode, userId, now),
+    content: `${prefix}-${userId}-${now}`,
     expiresAt: now + VALIDITY_MS,
     isDemo: true,
   };

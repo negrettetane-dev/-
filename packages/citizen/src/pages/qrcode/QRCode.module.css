@@ -198,15 +198,11 @@
   color: #52c41a;
 }
 
-/* FAQ */
-.faq {
-  background: #fff;
-  border-radius: 12px;
-  padding: 16px 20px;
-  box-shadow: 0 2px 12px rgba(0,0,0,0.05);
-  margin-bottom: 16px;
-}
-
+/* FAQ 居中弹窗 */
+.faqOverlay { position: fixed; inset: 0; z-index: 1200; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; padding: 24px; }
+.faqModal { background: #fff; border-radius: 14px; width: 100%; max-width: 440px; padding: 20px 24px; box-shadow: 0 16px 48px rgba(0,0,0,0.2); max-height: 75vh; overflow-y: auto; }
+.faqHeader { display: flex; justify-content: space-between; align-items: center; font-size: 16px; font-weight: 700; margin-bottom: 12px; }
+.faqClose { cursor: pointer; color: #999; font-size: 16px; }
 .faqItem {
   font-size: 13px;
   color: var(--text-secondary, #666);
@@ -217,3 +213,6 @@
 .faqItem b {
   color: var(--primary, #1677ff);
 }
+
+.faqBtn { width: 100%; padding: 10px; margin-top: 12px; background: var(--primary, #1677ff); color: #fff; border: none; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; }
+.faqBtn:hover { opacity: 0.9; }

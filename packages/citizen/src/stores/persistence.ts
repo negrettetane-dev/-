@@ -267,9 +267,10 @@ export interface RedemptionRecord {
   reward_id: string | number;
   reward_name: string;
   points_cost: number;
-  status: 'unused' | 'used' | 'expired';
-  redeemed_at: string;
-  expires_at: string;
+  /** 后端可能返回中文状态或英文状态，也可能是任意未知值 */
+  status: 'unused' | 'used' | 'expired' | '未使用' | '已使用' | '已过期' | string;
+  redeemed_at: string | null;
+  expires_at: string | null;
 }
 
 const REDEMPTIONS_KEY = 'redemptions';

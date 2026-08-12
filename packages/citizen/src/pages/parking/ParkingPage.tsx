@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { loadAMap } from '../../lib/amap';
 import styles from './Parking.module.css';
+import { apiGet } from '../../services/apiClient';
 
 interface ParkingLot { id:string; name:string; address:string; position:[number,number]; totalSpots:number; availableSpots:number; price:string; type:string; distance:number; hasCharging:boolean }
 interface ChargingStation { id:string; name:string; address:string; position:[number,number]; operator:string; totalPiles:number; availablePiles:number; power:string; price:string; distance:number; status:string }
@@ -17,8 +18,8 @@ const ParkingPage: React.FC = () => {
   const mapRef = useRef<any>(null);
 
   useEffect(() => {
-    fetch('/api/parking/lots').then(r=>r.json()).then(d=>setParking(d.data||[]));
-    fetch('/api/parking/charging').then(r=>r.json()).then(d=>setCharging(d.data||[]));
+    apiGet<ParkingLot[]>('/parking/lots').then(setParking).catch(() => setParking([]));
+    apiGet<ChargingStation[]>('/parking/charging').then(setCharging).catch(() => setCharging([]));
   }, []);
 
   // 加载地图
@@ -178,7 +179,14 @@ const ParkingPage: React.FC = () => {
                     </div>
                     <div style={{textAlign:'right'}}>
                       <div style={{fontWeight:600,fontSize:15}}>{c.price}</div>
-                      <button className={styles.navBtn} onClick={() => navigate('/qrcode')}>🔌 扫码充电</button>
+                      <button className={styles.navBtn} onClick={() => navigate('/charging/scan', { state: {
+                        stationId: c.id,
+                        stationName: c.name,
+                        operator: c.operator,
+                        power: c.power,
+                        price: c.price,
+                        address: c.address,
+                      } })}>🔌 扫码充电</button>
                     </div>
                   </div>
                 </div>

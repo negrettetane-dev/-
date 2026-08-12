@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { MockIntersection } from '../mocks/mockData';
 import type { IntersectionDetail, SignalPhase } from '../services/signalService';
-import { generateIntersections, generatePhases } from '../mocks/mockData';
+import { signalService } from '../services/signalService';
 
 interface SignalState {
   intersections: MockIntersection[];
@@ -13,29 +13,27 @@ interface SignalState {
   updatePhases: (phases: SignalPhase[]) => Promise<void>;
 }
 
-export const useSignalStore = create<SignalState>((set) => ({
+export const useSignalStore = create<SignalState>((set, get) => ({
   intersections: [],
   selectedIntersection: null,
   loading: false,
 
   fetchList: async () => {
     set({ loading: true });
-    await new Promise((r) => setTimeout(r, 400));
-    set({ intersections: generateIntersections(), loading: false });
+    try { set({ intersections: await signalService.getList(), loading: false }); }
+    catch { set({ intersections: [], loading: false }); }
   },
 
   fetchById: async (id: string) => {
     set({ loading: true });
-    await new Promise((r) => setTimeout(r, 300));
-    const intersections = generateIntersections();
-    const found = intersections.find((i) => i.id === id) || intersections[0];
-    const phases = generatePhases(found.id, found.phaseCount);
-    set({ selectedIntersection: { ...found, phases }, loading: false });
+    try { set({ selectedIntersection: await signalService.getById(id), loading: false }); }
+    catch { set({ selectedIntersection: null, loading: false }); }
   },
 
   updatePhases: async (phases) => {
     set({ loading: true });
-    await new Promise((r) => setTimeout(r, 300));
+    const id = get().selectedIntersection?.id || '';
+    if (id) await signalService.updatePhases(id, phases);
     set((state) => ({
       selectedIntersection: state.selectedIntersection
         ? { ...state.selectedIntersection, phases }

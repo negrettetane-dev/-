@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { addReport } from '../../stores/persistence';
+import { apiPost } from '../../services/apiClient';
 import styles from './Report.module.css';
 
 const MAX_PHOTOS = 6;
@@ -62,49 +62,24 @@ const ReportFormPage: React.FC = () => {
     previewUrls.forEach(u => URL.revokeObjectURL(u));
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!category) { setValidationError('请选择问题类型'); return; }
     if (!description.trim()) { setValidationError('请填写问题描述'); return; }
     setValidationError('');
 
-    // 构建 FormData：文本字段 + 图片文件一起发送
-    const formData = new FormData();
-    formData.append('category', CATEGORY_LABELS[category] || category);
-    formData.append('description', description.trim());
-    formData.append('location', '北京市西城区天安门附近');
-    formData.append('position', JSON.stringify([116.40, 39.90]));
-    if (phone) formData.append('phone', phone);
-    // 追加所有图片文件（字段名统一用 photos）
-    photoFiles.forEach(file => formData.append('photos', file));
-
-    // 发送 POST 请求（目前使用 fetch mock，真实后端会接收 FormData）
-    fetch('/api/report/submit', {
-      method: 'POST',
-      body: formData,
-      // 注意：不要手动设置 Content-Type，浏览器会自动带 multipart/form-data + boundary
-    })
-      .then(async r => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json();
-      })
-      .then(() => {
-        // 持久化保存（不含图片文件本身，只保存上报元数据）
-        addReport({
-          id: 'r_' + Date.now(),
-          workOrderNo: 'ZT' + Date.now().toString(36).toUpperCase().slice(-8),
-          category: CATEGORY_LABELS[category] || category,
-          description: description.trim(),
-          location: '北京市西城区天安门附近',
-          status: 'pending',
-          createdAt: Date.now(),
-          phone: phone || undefined,
-        });
-        revokeAllPreviews();
-        setSubmitted(true);
-      })
-      .catch(() => {
-        setValidationError('提交失败，请检查网络后重试');
+    try {
+      await apiPost('/report/submit', {
+        category,
+        description: description.trim(),
+        lng: 116.40,
+        lat: 39.90,
+        address: '北京市西城区天安门附近',
       });
+      revokeAllPreviews();
+      setSubmitted(true);
+    } catch (error) {
+      setValidationError(error instanceof Error ? error.message : '提交失败，请检查网络后重试');
+    }
   };
 
   return (
@@ -171,6 +146,11 @@ const ReportFormPage: React.FC = () => {
         <div style={{fontSize:12,color:'var(--text-hint)',marginTop:8}}>
           💡 支持 JPG/PNG，单张≤10MB，最多{MAX_PHOTOS}张。拍摄全景照片有助于快速定位。
         </div>
+        {photoFiles.length > 0 && (
+          <div style={{fontSize:12,color:'#ad6800',marginTop:6}}>
+            当前后端尚未提供图片上传接口，本次只提交事件文字与位置，所选图片不会上传。
+          </div>
+        )}
       </div>
 
       {/* Description */}

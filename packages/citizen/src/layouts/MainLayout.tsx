@@ -1,9 +1,15 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import { useElderly } from '../App';
 import { maskPhone } from '@zhitu/shared';
 import styles from './MainLayout.module.css';
+
+const ABOUT_CONTENT: Record<string, string> = {
+  '平台介绍': '智途云枢是面向城市交通治理的智慧出行平台，融合多源交通数据与智能决策能力，为市民提供实时路况、出行规划、公交地铁、停车充电、事件上报、碳积分等一站式出行服务。',
+  '隐私政策': '我们重视您的隐私保护。您的账号信息、位置数据仅用于提供出行服务，不会向无关第三方披露。详细隐私政策请以官网公示版本为准。',
+  '用户协议': '使用智途云枢即表示您同意遵守平台服务条款。请勿利用平台进行违法违规活动，事件上报请确保信息真实准确，恶意上报需承担相应责任。',
+};
 
 const NAV_ITEMS = [
   { key: '/', label: '首页', icon: '🏠' },
@@ -21,6 +27,7 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isLoggedIn, user, logout } = useAuthStore();
   const { elderlyMode } = useElderly();
   const currentPath = location.pathname;
+  const [aboutModal, setAboutModal] = useState('');
 
   // 长辈模式或详情页时不显示标准导航
   const isFullScreen = currentPath.startsWith('/elderly');
@@ -108,9 +115,9 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           </div>
           <div className={styles.footerCol}>
             <div className={styles.footerTitle}>关于我们</div>
-            <div className={styles.footerLink}>平台介绍</div>
-            <div className={styles.footerLink}>隐私政策</div>
-            <div className={styles.footerLink}>用户协议</div>
+            <div className={styles.footerLink} onClick={() => setAboutModal('平台介绍')}>平台介绍</div>
+            <div className={styles.footerLink} onClick={() => setAboutModal('隐私政策')}>隐私政策</div>
+            <div className={styles.footerLink} onClick={() => setAboutModal('用户协议')}>用户协议</div>
           </div>
           <div className={styles.footerCol}>
             <div className={styles.footerTitle}>联系我们</div>
@@ -123,6 +130,20 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           © 2026 智途云枢 · 城市智慧交通平台 · 计算机设计大赛参赛作品
         </div>
       </footer>
+
+      {/* 关于我们说明弹窗 */}
+      {aboutModal && (
+        <div className={styles.aboutOverlay} onClick={() => setAboutModal('')}>
+          <div className={styles.aboutModal} onClick={e => e.stopPropagation()}>
+            <div className={styles.aboutHeader}>
+              <span className={styles.aboutTitle}>{aboutModal}</span>
+              <span className={styles.aboutClose} onClick={() => setAboutModal('')}>✕</span>
+            </div>
+            <div className={styles.aboutBody}>{ABOUT_CONTENT[aboutModal] || ''}</div>
+            <button className={styles.aboutBtn} onClick={() => setAboutModal('')}>知道了</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

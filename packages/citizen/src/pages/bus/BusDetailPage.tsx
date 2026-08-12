@@ -3,10 +3,11 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { loadAMap } from '../../lib/amap';
 import { getLineDetail, getArrivalInfo } from '../../services/transitService';
 import {
-  getBusRouteGeometry, fetchRealRoadPath, generateVehicles,
+  fetchRealRoadPath,
   type BusDirection, type BusRouteGeometry, type BusVehicle,
 } from '../../services/busRealtimeService';
 import type { TransitLine, ArrivalInfo } from '../../types/transit';
+import { apiGet } from '../../services/apiClient';
 import styles from './BusDetail.module.css';
 
 const CROWD: Record<string, { emoji: string; label: string; color: string }> = {
@@ -164,7 +165,16 @@ const BusDetailPage: React.FC = () => {
     const map = amapRef.current;
     if (!map || !line || !mapReady) return;
     const direction: BusDirection = dirIdx === 0 ? 'outbound' : 'inbound';
-    const geometry = getBusRouteGeometry(lineId, direction);
+    const lineStations = direction === 'outbound' ? line.stations : [...line.stations].reverse();
+    const stations = lineStations
+      .filter(station => station.longitude !== undefined && station.latitude !== undefined)
+      .map(station => ({ name: station.name, location: [station.longitude!, station.latitude!] as [number, number] }));
+    const geometry: BusRouteGeometry | null = stations.length >= 2 ? {
+      lineId,
+      lineName: line.name,
+      stations,
+      path: stations.map(station => station.location),
+    } : null;
     if (!geometry) { setMapError('该线路暂无可用路线坐标'); return; }
 
     setMapError('');
@@ -216,10 +226,32 @@ const BusDetailPage: React.FC = () => {
         }));
       });
 
-      // ❹ 演示车辆：位置严格从 routePath 计算（与 polyline 同源）
-      const vehiclesData = generateVehicles(routePath, geometry.stations);
-      vehiclesRef.current = vehiclesData;
-      vehicleMarkersRef.current = vehiclesData.map(v => {
+      apiGet<{
+        vehicles?:Array<{ vehicleId:string; plate:string; lng:number; lat:number; speed:number; direction:string }>;
+        busId?:string; vehicleId?:string; plate?:string; lng?:number; lat?:number; speed?:number; direction?:string;
+        nextStop?:string; nextStopArrivalSeconds?:number; crowding?:string; timestamp?:number;
+      }>(`/route/bus/realtime/${lineId}`)
+        .then(result => {
+          const rawVehicles = result.vehicles || (result.lng !== undefined && result.lat !== undefined ? [{
+            vehicleId: result.vehicleId || result.busId || lineId,
+            plate: result.plate || '', lng: result.lng, lat: result.lat,
+            speed: result.speed || 0, direction: result.direction || '',
+          }] : []);
+          const vehiclesData: BusVehicle[] = rawVehicles.map(vehicle => ({
+            vehicleId: vehicle.vehicleId,
+            progress: 0,
+            lng: vehicle.lng,
+            lat: vehicle.lat,
+            speed: vehicle.speed,
+            currentStation: '',
+            nextStation: result.nextStop || '',
+            distanceToNextStation: 0,
+            eta: result.nextStopArrivalSeconds || 0,
+            isDemo: true,
+            updatedAt: result.timestamp || Date.now(),
+          }));
+          vehiclesRef.current = vehiclesData;
+          vehicleMarkersRef.current = vehiclesData.map(v => {
         const m = new AMap.Marker({
           position: [v.lng, v.lat],
           content: '<div style="width:34px;height:34px;border-radius:50%;background:#1677ff;border:2px solid #fff;box-shadow:0 2px 10px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;font-size:17px;">🚌</div>',
@@ -227,37 +259,18 @@ const BusDetailPage: React.FC = () => {
         });
         m.on('click', () => {
           new AMap.InfoWindow({
-            content: `<div style="padding:10px 12px;font-size:13px;min-width:180px"><b>🚌 ${geometry.lineName} 公交</b><br/>车辆编号：${v.vehicleId}（演示）<br/>速度：<b style="color:#1677ff">${v.speed} km/h</b><br/>下一站：${v.nextStation}<br/>预计：${formatCountdown(v.eta)}到站</div>`,
+            content: `<div style="padding:10px 12px;font-size:13px;min-width:180px"><b>🚌 ${geometry.lineName} 公交</b><br/>车辆编号：${v.vehicleId}<br/>速度：<b style="color:#1677ff">${v.speed} km/h</b></div>`,
             offset: new AMap.Pixel(0, -34),
           }).open(amapRef.current!, [v.lng, v.lat]);
         });
         amapRef.current!.add(m);
         return { vehicleId: v.vehicleId, marker: m };
-      });
+          });
+          setVehicles(vehiclesData);
+        })
+        .catch(() => setVehicles([]));
 
       amapRef.current!.setFitView([polyline], false, [50, 50, 50, 50]);
-      setVehicles(vehiclesData);
-
-      // ❺ 车辆沿 routePath 移动动画（只读 geometryRef.current.path）
-      if (animTimerRef.current) clearInterval(animTimerRef.current);
-      animTimerRef.current = setInterval(() => {
-        const geo = geometryRef.current;
-        if (!geo) return;
-        const now = Date.now();
-        vehiclesRef.current = vehiclesRef.current.map(v => {
-          v.progress = (v.progress + 0.0016) % 1;
-          const pos = pointAtProgress(geo.path, v.progress);
-          const info = stationAtProgress(geo, v.progress);
-          v.lng = pos[0]; v.lat = pos[1];
-          v.currentStation = info.currentStation; v.nextStation = info.nextStation;
-          v.distanceToNextStation = info.distanceToNext;
-          v.speed = Math.round((26 + Math.sin(now / 2500 + v.vehicleId.length) * 5) * 10) / 10;
-          v.eta = Math.max(15, Math.round(info.distanceToNext / (v.speed / 3.6)));
-          vehicleMarkersRef.current.find(r => r.vehicleId === v.vehicleId)?.marker.setPosition([v.lng, v.lat]);
-          return { ...v };
-        });
-        setVehicles([...vehiclesRef.current]);
-      }, 300);
     });
 
     return () => { if (animTimerRef.current) { clearInterval(animTimerRef.current); animTimerRef.current = null; } };
@@ -299,7 +312,7 @@ const BusDetailPage: React.FC = () => {
       {line && (
         <div className={styles.lineInfo}>
           <span>首班 {line.first} · 末班 {line.last}</span>
-          <span style={{ fontSize: 11, color: 'var(--text-hint)' }}>演示数据 · 非官方实时</span>
+          <span style={{ fontSize: 11, color: 'var(--text-hint)' }}>后端公交位置数据</span>
         </div>
       )}
 

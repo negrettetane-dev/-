@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import styles from './News.module.css';
+import { apiGet } from '../../services/apiClient';
 
 interface News { id:string; category:string; title:string; content:string; source:string; publishTime:number; tags:string[] }
 
@@ -14,7 +15,7 @@ const NewsDetailPage: React.FC = () => {
   const navigate = useNavigate();
   const [news, setNews] = useState<News | null>(null);
 
-  useEffect(() => { fetch(`/api/news/detail/${id}`).then(r=>r.json()).then(d=>setNews(d.data)); }, [id]);
+  useEffect(() => { apiGet<News>(`/news/detail/${id}`).then(setNews).catch(() => setNews(null)); }, [id]);
 
   if (!news) return <div className={styles.detailPage}><div style={{textAlign:'center',padding:40}}>加载中...</div></div>;
 

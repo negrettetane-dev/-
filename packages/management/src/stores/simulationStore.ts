@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { MockScenario } from '../mocks/mockData';
 import type { SimulationResults } from '../services/simulationService';
 import { SIMULATION_SCENARIOS } from '../mocks/mockData';
+import { simulationService } from '../services/simulationService';
 
 type SimulationStatus = 'idle' | 'running' | 'paused' | 'completed';
 
@@ -31,19 +32,20 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
   progress: 0,
 
   fetchScenarios: async () => {
-    await new Promise((r) => setTimeout(r, 300));
-    set({ scenarios: SIMULATION_SCENARIOS });
+    try { set({ scenarios: await simulationService.getScenarios() }); }
+    catch { set({ scenarios: [] }); }
   },
 
   selectScenario: (id) => {
-    const found = SIMULATION_SCENARIOS.find((s) => s.id === id) || null;
+    const found = get().scenarios.find((s) => s.id === id) || null;
     set({ selectedScenario: found, results: null, progress: 0, status: 'idle' });
   },
 
   start: async () => {
     const { selectedScenario } = get();
     if (!selectedScenario) return;
-    set({ status: 'running', sessionId: `sim-${Date.now()}`, progress: 0 });
+    const result = await simulationService.start(selectedScenario.id, selectedScenario.parameters);
+    set({ status: 'running', sessionId: result.sessionId, progress: 0 });
 
     // Simulate progress over ~5 seconds
     const duration = selectedScenario.duration / 30; // scale down for demo
@@ -56,25 +58,20 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
       const newProgress = Math.min(state.progress + (100 / duration) * 0.5, 100);
       if (newProgress >= 100) {
         clearInterval(interval);
-        set({
-          progress: 100,
-          status: 'completed',
-          results: {
-            avgSpeedImprovement: 15 + Math.random() * 15,
-            travelTimeReduction: 18 + Math.random() * 15,
-            queueLengthReduction: 25 + Math.random() * 20,
-            congestionIndexChange: -(1 + Math.random() * 3),
-            fuelSaving: `约${Math.floor(8 + Math.random() * 20)}千升/月`,
-          },
-        });
+        const sessionId = get().sessionId;
+        if (sessionId) {
+          void simulationService.getResults(sessionId)
+            .then(results => set({ progress: 100, status: 'completed', results }))
+            .catch(() => set({ progress: 100, status: 'completed' }));
+        }
       } else {
         set({ progress: newProgress });
       }
     }, 200);
   },
 
-  pause: () => set({ status: 'paused' }),
+  pause: () => { void simulationService.pause(); set({ status: 'paused' }); },
   resume: () => set({ status: 'running' }),
-  stop: () => set({ status: 'idle', results: null, progress: 0, sessionId: null }),
+  stop: () => { void simulationService.stop(); set({ status: 'idle', results: null, progress: 0, sessionId: null }); },
   resetResults: () => set({ results: null, progress: 0, status: 'idle' }),
 }));

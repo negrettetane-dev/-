@@ -2,7 +2,6 @@ import { create } from 'zustand';
 import type { HourlyMetrics, AiAlert } from '../mocks/mockData';
 import type { DistrictCongestionData, RealTimeMetrics } from '../services/dashboardService';
 import { dashboardService } from '../services/dashboardService';
-import { generateRoadSegments, generateDistrictCongestion, generateRealTimeMetrics, generateAiAlerts, generateHourlyMetrics } from '../mocks/mockData';
 import type { MockRoadSegment } from '../mocks/mockData';
 
 interface DashboardState {
@@ -36,67 +35,42 @@ export const useDashboardStore = create<DashboardState>((set) => ({
     try {
       const data = await dashboardService.getMetrics();
       set({ metrics: data });
-    } catch {
-      // fallback to direct mock
-      set({ metrics: generateRealTimeMetrics() });
-    }
+    } catch { set({ metrics: null }); }
   },
   fetchHourlyData: async () => {
     try {
       const data = await dashboardService.getHourlyTraffic();
       set({ hourlyData: data });
-    } catch {
-      set({ hourlyData: generateHourlyMetrics() });
-    }
+    } catch { set({ hourlyData: [] }); }
   },
   fetchDistrictData: async () => {
     try {
       const data = await dashboardService.getDistrictCongestion();
       set({ districtData: data });
-    } catch {
-      set({ districtData: generateDistrictCongestion() });
-    }
+    } catch { set({ districtData: [] }); }
   },
   fetchRoadSegments: async () => {
     try {
       const data = await dashboardService.getRoadSegments();
       set({ roadSegments: data });
-    } catch {
-      set({ roadSegments: generateRoadSegments() });
-    }
+    } catch { set({ roadSegments: [] }); }
   },
   fetchAiAlerts: async () => {
     try {
       const data = await dashboardService.getAiAlerts();
       set({ aiAlerts: data });
-    } catch {
-      set({ aiAlerts: generateAiAlerts() });
-    }
+    } catch { set({ aiAlerts: [] }); }
   },
   fetchAll: async () => {
     set({ loading: true });
-    set({
-      metrics: generateRealTimeMetrics(),
-      hourlyData: generateHourlyMetrics(),
-      districtData: generateDistrictCongestion(),
-      roadSegments: generateRoadSegments(),
-      aiAlerts: generateAiAlerts(),
-      loading: false,
-    });
+    const [metrics, hourlyData, districtData, roadSegments, aiAlerts] = await Promise.all([
+      dashboardService.getMetrics().catch(() => null),
+      dashboardService.getHourlyTraffic().catch(() => []),
+      dashboardService.getDistrictCongestion().catch(() => []),
+      dashboardService.getRoadSegments().catch(() => []),
+      dashboardService.getAiAlerts().catch(() => []),
+    ]);
+    set({ metrics, hourlyData, districtData, roadSegments, aiAlerts, loading: false });
   },
-  tick: () => {
-    set((state) => {
-      if (!state.metrics) return state;
-      const variation = () => Math.floor(Math.random() * 200 - 100);
-      return {
-        metrics: {
-          ...state.metrics,
-          timestamp: Date.now(),
-          activeVehicles: state.metrics.activeVehicles + variation(),
-          avgSpeed: Math.round((state.metrics.avgSpeed + (Math.random() - 0.5) * 2) * 10) / 10,
-          congestionIndex: Math.round((state.metrics.congestionIndex + (Math.random() - 0.5) * 0.3) * 10) / 10,
-        },
-      };
-    });
-  },
+  tick: () => { void dashboardService.getMetrics().then(metrics => set({ metrics })).catch(() => undefined); },
 }));

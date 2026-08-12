@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Layout, Menu, Badge, Dropdown, Avatar, Breadcrumb, Space, Typography } from 'antd';
 import type { MenuProps } from 'antd';
+import { isAdminLoggedIn, getAdminInfo, adminLogout } from '../stores/adminAuth';
 import {
   DashboardOutlined,
   AlertOutlined,
@@ -48,6 +49,13 @@ export default function DashboardLayout() {
   const location = useLocation();
   const { sidebarCollapsed, toggleSidebar } = useUIStore();
   const [currentTime, setCurrentTime] = useState(new Date());
+
+  // ===== 登录守卫：无管理员 token 跳转登录页 =====
+  useEffect(() => {
+    if (!isAdminLoggedIn()) {
+      navigate('/admin/login', { replace: true });
+    }
+  }, [location.pathname]);
 
   // Update clock every second
   useEffect(() => {
@@ -198,14 +206,15 @@ export default function DashboardLayout() {
             </Badge>
             <Dropdown menu={{
               items: [
-                { key: 'profile', label: '个人设置' },
-                { key: 'logout', label: '退出登录' },
+                { key: 'name', label: getAdminInfo()?.realName || '管理员', disabled: true },
+                { type: 'divider' },
+                { key: 'logout', label: '退出登录', onClick: () => { adminLogout(); navigate('/admin/login', { replace: true }); } },
               ],
             }} trigger={['click']}>
               <Space style={{ cursor: 'pointer' }}>
                 <Avatar size={32} icon={<UserOutlined />} style={{ background: '#1677ff' }} />
                 <span style={{ color: isDashboard ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.65)', fontSize: 14 }}>
-                  管理员
+                  {getAdminInfo()?.realName || '管理员'}
                 </span>
               </Space>
             </Dropdown>

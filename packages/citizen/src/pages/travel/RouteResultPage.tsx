@@ -147,6 +147,7 @@ const RouteResultPage: React.FC = () => {
 
   // 导航状态
   const [navActive, setNavActive] = useState(false);
+  const [navMode, setNavMode] = useState<TravelMode | null>(null);
   const [navDistance, setNavDistance] = useState(0);
   const [navRouteError, setNavRouteError] = useState('');
 
@@ -156,14 +157,15 @@ const RouteResultPage: React.FC = () => {
   const [displayOrigin, setDisplayOrigin] = useState('我的位置');
   const [displayDest, setDisplayDest] = useState('目的地');
 
-  // 地图 refs
-  const mapContainerRef = useRef<HTMLDivElement>(null);
-  const navMapContainerRef = useRef<HTMLDivElement>(null);
+  // ===== 唯一地图实例 refs（导航复用同一张地图，不创建第二张） =====
+  const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<any>(null);
-  const navMapRef = useRef<any>(null);
+  const trafficLayerRef = useRef<any>(null);
   const polylineRef = useRef<any>(null);
+  const startMarkerRef = useRef<any>(null);
+  const endMarkerRef = useRef<any>(null);
   const carMarkerRef = useRef<any>(null);
-  const movePathRef = useRef<any[]>([]);
+  const movePathRef = useRef<[number, number][]>([]);
   const pathIdxRef = useRef(0);
   const moveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [mapReady, setMapReady] = useState(false);
@@ -395,20 +397,22 @@ const RouteResultPage: React.FC = () => {
     });
   }, [origin, destination]);
 
-  // ===== 加载地图 + 绘制当前选中路线 =====
+  // ===== 唯一地图初始化（只创建一次，导航复用） =====
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
     if (!AMAP_KEY) { setMapError('未配置高德地图 Key'); return; }
 
+    let disposed = false;
     loadAMap().then((AMap: any) => {
-      if (!mapContainerRef.current || mapRef.current) return;
+      if (disposed || !mapContainerRef.current || mapRef.current) return;
       const map = new AMap.Map(mapContainerRef.current, {
         zoom: 13, center: startCoord.current,
-        viewMode: '2D', resizeEnable: true,
+        viewMode: '3D', pitch: 0, rotation: 0,
+        resizeEnable: true, showBuildingBlock: true,
       });
-      map.add(new AMap.TileLayer.Traffic({ zIndex: 10 }));
+      const trafficLayer = new AMap.TileLayer.Traffic({ zIndex: 10 });
+      map.add(trafficLayer);
 
-      // 起终点标记
       const startIcon = new AMap.Marker({
         position: startCoord.current,
         icon: makeMarkerIcon(AMap, '#52c41a', '起', 28),
@@ -418,22 +422,59 @@ const RouteResultPage: React.FC = () => {
         icon: makeMarkerIcon(AMap, '#f5222d', '终', 28),
       });
       map.add([startIcon, endIcon]);
+
       mapRef.current = map;
+      trafficLayerRef.current = trafficLayer;
+      startMarkerRef.current = startIcon;
+      endMarkerRef.current = endIcon;
       setMapReady(true);
     }).catch((e: unknown) => {
+      if (disposed) return;
       console.error('AMap init failed:', e);
       setMapError('地图初始化失败');
     });
-  }, [origin, destination]);
 
-  // ===== 切换路线时重绘 polyline =====
+    return () => {
+      disposed = true;
+      if (moveTimerRef.current) { clearInterval(moveTimerRef.current); moveTimerRef.current = null; }
+      mapRef.current?.destroy();
+      mapRef.current = null;
+      trafficLayerRef.current = null;
+      polylineRef.current = null;
+      startMarkerRef.current = null;
+      endMarkerRef.current = null;
+      carMarkerRef.current = null;
+    };
+  }, []);
+
+  // ===== 起终点变化时更新 Marker 与地图中心（不重建地图） =====
   useEffect(() => {
     const map = mapRef.current;
-    if (!map) return;
+    if (!map || !mapReady) return;
+    const AMap = (window as any).AMap;
+    if (!AMap) return;
+
+    if (startMarkerRef.current) { map.remove(startMarkerRef.current); }
+    startMarkerRef.current = new AMap.Marker({
+      position: startCoord.current,
+      icon: makeMarkerIcon(AMap, '#52c41a', '起', 28),
+    });
+    if (endMarkerRef.current) { map.remove(endMarkerRef.current); }
+    endMarkerRef.current = new AMap.Marker({
+      position: endCoord.current,
+      icon: makeMarkerIcon(AMap, '#f5222d', '终', 28),
+    });
+    map.add([startMarkerRef.current, endMarkerRef.current]);
+    map.setCenter(startCoord.current);
+  }, [origin, destination, mapReady]);
+
+  // ===== 切换路线时重绘 polyline（导航时不自动 setFitView） =====
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
     const route = routeResults[selectedMode];
     if (!route?.path?.length) return;
 
-    // 移除旧路线
     if (polylineRef.current) { map.remove(polylineRef.current); polylineRef.current = null; }
 
     const color = MODE_META[selectedMode].color;
@@ -450,182 +491,145 @@ const RouteResultPage: React.FC = () => {
     });
     map.add(pl);
     polylineRef.current = pl;
-    map.setFitView([pl], false, [80, 60, 80, 60]);
-    console.log(`绘制 ${selectedMode} 路线，路径点数:`, route.path.length);
-  }, [selectedMode, routeResults, mapReady]);
+    // 仅在普通规划状态调整视野；导航状态保持导航视角
+    if (!navActive) map.setFitView([pl], false, [80, 60, 80, 60]);
+  }, [selectedMode, routeResults, mapReady, navActive]);
 
-  // ===== 导航模式 =====
+  // ===== 导航模式：复用唯一地图，只切换视角 + 车辆 Marker =====
   useEffect(() => {
-    if (!navActive) return;
-    setNavRouteError('');
-    const navRoute = routeResults[selectedMode];
+    if (!navActive || !navMode) return;
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+
+    const navRoute = routeResults[navMode];
     if (!navRoute?.path?.length) {
       setNavRouteError('当前路线无可用路径');
       return;
     }
+    setNavRouteError('');
 
-    const timer = setTimeout(() => {
-      if (!navMapContainerRef.current || navMapRef.current) return;
-      loadAMap().then((AMap: any) => {
-        if (!navMapContainerRef.current || navMapRef.current) return;
+    // 清理旧的移动 Timer 和车辆 Marker
+    if (moveTimerRef.current) { clearInterval(moveTimerRef.current); moveTimerRef.current = null; }
+    if (carMarkerRef.current) { map.remove(carMarkerRef.current); carMarkerRef.current = null; }
 
-        const map = new AMap.Map(navMapContainerRef.current, {
-          zoom: 16, center: startCoord.current,
-          viewMode: '3D', pitch: 60, rotation: 0,
-          showBuildingBlock: true, buildingAnimation: true,
-          resizeEnable: true,
-        });
-        map.add(new AMap.TileLayer.Traffic({ zIndex: 10 }));
+    const AMap = (window as any).AMap;
+    if (!AMap) return;
 
-        // 车辆标记
-        const modeIcon = MODE_META[selectedMode].icon;
-        const carMarker = new AMap.Marker({
-          position: startCoord.current, anchor: 'center',
-          icon: new AMap.Icon({
-            image: 'data:image/svg+xml,' + encodeURIComponent(
-              `<svg xmlns="http://www.w3.org/2000/svg" width="44" height="44"><circle cx="22" cy="22" r="20" fill="${MODE_META[selectedMode].color}" stroke="#fff" stroke-width="3"/><text x="22" y="29" text-anchor="middle" fill="#fff" font-size="20">${modeIcon}</text></svg>`
-            ),
-            size: new AMap.Size(44, 44),
-          }),
-        });
-        const endMarker = new AMap.Marker({
-          position: endCoord.current, anchor: 'center',
-          icon: makeMarkerIcon(AMap, '#f5222d', '终', 32),
-        });
-        map.add([carMarker, endMarker]);
-        carMarkerRef.current = carMarker;
+    // 创建唯一车辆 Marker
+    const modeIcon = MODE_META[navMode].icon;
+    const carMarker = new AMap.Marker({
+      position: startCoord.current, anchor: 'center',
+      icon: new AMap.Icon({
+        image: 'data:image/svg+xml,' + encodeURIComponent(
+          `<svg xmlns="http://www.w3.org/2000/svg" width="44" height="44"><circle cx="22" cy="22" r="20" fill="${MODE_META[navMode].color}" stroke="#fff" stroke-width="3"/><text x="22" y="29" text-anchor="middle" fill="#fff" font-size="20">${modeIcon}</text></svg>`
+        ),
+        size: new AMap.Size(44, 44),
+      }),
+    });
+    map.add(carMarker);
+    carMarkerRef.current = carMarker;
 
-        // 路线
-        map.add(new AMap.Polyline({
-          path: navRoute.path,
-          strokeColor: MODE_META[selectedMode].color,
-          strokeWeight: 6, strokeOpacity: 0.85,
-          lineJoin: 'round', lineCap: 'round',
-        }));
+    movePathRef.current = navRoute.path;
+    pathIdxRef.current = 0;
+    setNavDistance(Math.round(navRoute.distance));
 
-        movePathRef.current = navRoute.path;
-        pathIdxRef.current = 0;
+    // 导航视角（不重建地图）
+    map.setZoom(16);
+    map.setPitch(60);
+    map.setRotation(0);
+    map.setCenter(startCoord.current);
+    map.resize?.();
 
-        // 车辆移动动画
-        const startMoving = () => {
-          if (moveTimerRef.current) clearInterval(moveTimerRef.current);
-          moveTimerRef.current = setInterval(() => {
-            const p = movePathRef.current;
-            const idx = pathIdxRef.current;
-            if (!p.length || !carMarkerRef.current) return;
-            if (idx >= p.length - 1) {
-              clearInterval(moveTimerRef.current!); moveTimerRef.current = null;
-              setNavDistance(0);
-              return;
-            }
-            pathIdxRef.current += 1;
-            const next = p[pathIdxRef.current];
-            carMarkerRef.current.setPosition(next);
-            map.setCenter(next);
-            setNavDistance(d => Math.max(0, d - (navRoute.distance / p.length)));
-          }, 150);
-        };
-
-        navMapRef.current = map;
-        setNavDistance(Math.round(navRoute.distance));
-        startMoving();
-      }).catch((e: unknown) => {
-        console.error('Nav map failed:', e);
-        setNavRouteError('导航地图初始化失败');
-      });
-    }, 250);
+    // 车辆移动动画
+    const moveTimer = setInterval(() => {
+      const p = movePathRef.current;
+      const idx = pathIdxRef.current;
+      if (!p.length || !carMarkerRef.current) return;
+      if (idx >= p.length - 1) {
+        clearInterval(moveTimer);
+        if (moveTimerRef.current === moveTimer) moveTimerRef.current = null;
+        setNavDistance(0);
+        return;
+      }
+      pathIdxRef.current += 1;
+      const next = p[pathIdxRef.current];
+      carMarkerRef.current.setPosition(next);
+      map.setCenter(next);
+      setNavDistance(d => Math.max(0, d - (navRoute.distance / p.length)));
+    }, 150);
+    moveTimerRef.current = moveTimer;
 
     return () => {
-      clearTimeout(timer);
+      // 只清理导航资源，不销毁主地图
       if (moveTimerRef.current) { clearInterval(moveTimerRef.current); moveTimerRef.current = null; }
-      if (navMapRef.current) { navMapRef.current.destroy(); navMapRef.current = null; }
+      if (carMarkerRef.current && map) { map.remove(carMarkerRef.current); }
       carMarkerRef.current = null;
       movePathRef.current = [];
       pathIdxRef.current = 0;
     };
-  }, [navActive, selectedMode]);
+  }, [navActive, navMode, mapReady]);
+
+  // ===== 退出导航：恢复普通视角，保留地图 =====
+  const stopNavigation = () => {
+    if (moveTimerRef.current) { clearInterval(moveTimerRef.current); moveTimerRef.current = null; }
+    const map = mapRef.current;
+    if (map && carMarkerRef.current) { map.remove(carMarkerRef.current); }
+    carMarkerRef.current = null;
+    movePathRef.current = [];
+    pathIdxRef.current = 0;
+    setNavActive(false);
+    setNavMode(null);
+    requestAnimationFrame(() => {
+      map?.setPitch(0);
+      map?.setRotation(0);
+      map?.resize?.();
+      if (polylineRef.current) map?.setFitView([polylineRef.current], false, [80, 60, 80, 60]);
+    });
+  };
 
   const congestionColor = (l: string) =>
     ({ free: '#52c41a', slow: '#fadb14', congested: '#ff7a00', blocked: '#f5222d' } as Record<string, string>)[l] || '#999';
   const formatDuration = (s: number) => s < 3600 ? `${Math.floor(s / 60)}分钟` : `${Math.floor(s / 3600)}h${Math.floor((s % 3600) / 60)}min`;
 
-  // ===== 全屏导航模式 =====
-  if (navActive) {
-    // 只导航真实存在的高德路线；按钮仅在可用卡片上渲染，理论上必有路线
-    const navRoute = routeResults[selectedMode];
-    if (!navRoute?.path?.length) {
-      return (
-        <div className={styles.page}>
-          <div style={{ textAlign: 'center', padding: 60, color: 'var(--text-hint)' }}>
-            <div style={{ fontSize: 36, marginBottom: 12 }}>⚠️</div>
-            <div>该方式暂无可用路线</div>
-            <button className={styles.navBtn} style={{ marginTop: 16, maxWidth: 220 }} onClick={() => setNavActive(false)}>
-              返回路线列表
-            </button>
-          </div>
-        </div>
-      );
-    }
-    return (
-      <div className={styles.navFullscreen}>
-        <div ref={navMapContainerRef} className={styles.navFullMap} />
-        <div className={styles.navTopBar}>
-          <span className={styles.navCloseBtn} onClick={() => setNavActive(false)}>✕ 退出导航</span>
-          <span className={styles.navModeTag}>{MODE_META[selectedMode].icon} {MODE_META[selectedMode].label}</span>
-        </div>
-        <div className={styles.navBottomCard}>
-          <div className={styles.navNextAction}>
-            <span className={styles.navTurnIcon}>↗️</span>
-            <div>
-              <div className={styles.navTurnText}>沿当前路线行驶</div>
-              <div className={styles.navTurnSub}>{Math.round(navDistance)}m 后继续前行</div>
-            </div>
-          </div>
-          <div className={styles.navStats}>
-            <div className={styles.navStatItem}>
-              <span className={styles.navStatVal}>{(navDistance / 1000).toFixed(1)}</span>
-              <span className={styles.navStatLabel}>剩余 km</span>
-            </div>
-            <div className={styles.navStatDivider} />
-            <div className={styles.navStatItem}>
-              <span className={styles.navStatVal}>{formatDuration(navRoute.duration)}</span>
-              <span className={styles.navStatLabel}>预计到达</span>
-            </div>
-            <div className={styles.navStatDivider} />
-            <div className={styles.navStatItem}>
-              <span className={styles.navStatVal}>{selectedMode === 'bike' ? '15' : selectedMode === 'walk' ? '5' : '32'}</span>
-              <span className={styles.navStatLabel}>km/h</span>
-            </div>
-          </div>
-          {navRouteError ? (
-            <div style={{ fontSize: 12, color: '#faad14', textAlign: 'center', padding: '6px 8px', background: 'rgba(250,173,20,0.1)', borderRadius: 6 }}>
-              ⚠️ {navRouteError}
-            </div>
-          ) : (
-            <div className={styles.navSimTip}>📍 {MODE_META[selectedMode].label}模式 · 高德实时路线 + 3D 导航</div>
-          )}
-        </div>
-      </div>
-    );
-  }
-
   // 只有高德规划成功的方案才展示
   const availableModes = VALID_MODES.filter(m => routeResults[m]);
+  const navRoute = navMode ? routeResults[navMode] : null;
 
-  // ===== 路线规划列表模式 =====
+  // ===== 单一 return：唯一地图容器始终挂载，导航只切换布局与覆盖层 =====
   return (
-    <div className={styles.page}>
-      <div className={styles.resultHeader}>
-        <span onClick={() => navigate(-1)} style={{ cursor: 'pointer', fontSize: 18 }}>←</span>
-        <div className={styles.resultRoute}>
-          <span>{displayOrigin}</span>
-          <span style={{ margin: '0 4px' }}>→</span>
-          <span>{displayDest}</span>
+    <div className={navActive ? styles.navFullscreen : styles.page}>
+      {!navActive && (
+        <div className={styles.resultHeader}>
+          <span onClick={() => navigate(-1)} style={{ cursor: 'pointer', fontSize: 18 }}>←</span>
+          <div className={styles.resultRoute}>
+            <span>{displayOrigin}</span>
+            <span style={{ margin: '0 4px' }}>→</span>
+            <span>{displayDest}</span>
+          </div>
         </div>
+      )}
+
+      {/* 唯一地图容器（导航时铺满全屏，普通模式嵌入页面） */}
+      <div className={navActive ? styles.navFullMap : styles.resultMap}>
+        <div ref={mapContainerRef} className={styles.sharedMap} />
+        {!mapReady && (
+          <div className={styles.mapOverlay}>
+            {mapError ? (
+              <><span style={{ fontSize: 36 }}>⚠️</span><span style={{ fontSize: 14, lineHeight: 1.6 }}>{mapError}</span></>
+            ) : (
+              <>🗺️ 加载地图中...</>
+            )}
+          </div>
+        )}
+        {!navActive && (
+          <div className={styles.mapLegend}>
+            <span>🟢 畅通</span><span>🟡 缓行</span><span>🟠 拥堵</span><span>🔴 严重</span>
+          </div>
+        )}
       </div>
 
-      {/* 加载中 */}
-      {isPlanning && (
+      {/* 加载中（仅普通模式） */}
+      {!navActive && isPlanning && (
         <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--text-hint)', background: '#fff', borderRadius: 12, marginBottom: 16 }}>
           <div>🚗 正在规划驾车路线...</div>
           <div>🚌 正在规划公交路线...</div>
@@ -634,22 +638,51 @@ const RouteResultPage: React.FC = () => {
         </div>
       )}
 
-      {/* 地图 */}
-      <div className={styles.resultMap}>
-        <div ref={mapContainerRef} style={{ width: '100%', height: '100%', borderRadius: 12, overflow: 'hidden' }} />
-        {!mapReady && (
-          <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#1a1a2e', borderRadius: 12, color: '#fff', fontSize: 18, gap: 8, padding: 20, textAlign: 'center' }}>
-            {mapError ? (
-              <><span style={{ fontSize: 36 }}>⚠️</span><span style={{ fontSize: 14, lineHeight: 1.6 }}>{mapError}</span></>
+      {/* 导航态 UI（覆盖在地图上，不占布局高度） */}
+      {navActive && (
+        <>
+          <div className={styles.navTopBar}>
+            <span className={styles.navCloseBtn} onClick={stopNavigation}>✕ 退出导航</span>
+            <span className={styles.navModeTag}>
+              {navMode ? `${MODE_META[navMode].icon} ${MODE_META[navMode].label}` : ''}
+            </span>
+          </div>
+          <div className={styles.navBottomCard}>
+            <div className={styles.navNextAction}>
+              <span className={styles.navTurnIcon}>↗️</span>
+              <div>
+                <div className={styles.navTurnText}>沿当前路线行驶</div>
+                <div className={styles.navTurnSub}>{Math.round(navDistance)}m 后继续前行</div>
+              </div>
+            </div>
+            <div className={styles.navStats}>
+              <div className={styles.navStatItem}>
+                <span className={styles.navStatVal}>{(navDistance / 1000).toFixed(1)}</span>
+                <span className={styles.navStatLabel}>剩余 km</span>
+              </div>
+              <div className={styles.navStatDivider} />
+              <div className={styles.navStatItem}>
+                <span className={styles.navStatVal}>{navRoute ? formatDuration(navRoute.duration) : '--'}</span>
+                <span className={styles.navStatLabel}>预计到达</span>
+              </div>
+              <div className={styles.navStatDivider} />
+              <div className={styles.navStatItem}>
+                <span className={styles.navStatVal}>
+                  {navMode === 'bike' ? '15' : navMode === 'walk' ? '5' : '32'}
+                </span>
+                <span className={styles.navStatLabel}>km/h</span>
+              </div>
+            </div>
+            {navRouteError ? (
+              <div style={{ fontSize: 12, color: '#faad14', textAlign: 'center', padding: '6px 8px', background: 'rgba(250,173,20,0.1)', borderRadius: 6 }}>
+                ⚠️ {navRouteError}
+              </div>
             ) : (
-              <>🗺️ 加载地图中...</>
+              <div className={styles.navSimTip}>📍 {navMode ? MODE_META[navMode].label : ''}模式 · 高德实时路线 + 3D 导航</div>
             )}
           </div>
-        )}
-        <div className={styles.mapLegend}>
-          <span>🟢 畅通</span><span>🟡 缓行</span><span>🟠 拥堵</span><span>🔴 严重</span>
-        </div>
-      </div>
+        </>
+      )}
 
       {/* 仅渲染高德规划成功的方案；失败的方式不显示卡片 */}
       {unavailableNote && (
@@ -745,7 +778,8 @@ const RouteResultPage: React.FC = () => {
                 <button className={styles.navBtn} onClick={(e) => {
                   e.stopPropagation();
                   setSelectedMode(mode);
-                  setTimeout(() => setNavActive(true), 50);
+                  setNavMode(mode);
+                  setNavActive(true);
                 }}>
                   {MODE_META[mode].icon} 开始导航 · {MODE_META[mode].label}
                 </button>

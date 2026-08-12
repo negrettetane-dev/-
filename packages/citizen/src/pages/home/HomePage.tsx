@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { loadAMap } from '../../lib/amap';
 import AIAssistant from '../../components/AIAssistant';
 import styles from './HomePage.module.css';
+import { apiGet } from '../../services/apiClient';
 
 interface Alert { id:string; category:string; title:string; summary:string; severity:string; publishTime:number }
 interface News { id:string; title:string; summary:string; source:string; publishTime:number }
@@ -97,9 +98,27 @@ const HomePage: React.FC = () => {
 
   // 加载数据
   useEffect(() => {
-    fetch('/api/traffic/alerts').then(r=>r.json()).then(d=>setAlerts(d.data||[]));
-    fetch('/api/news/list').then(r=>r.json()).then(d=>setNews(d.data?.slice(0,4)||[]));
-    fetch('/api/traffic/snapshot').then(r=>r.json()).then(d=>setSnapshot(d.data));
+    apiGet<Array<{
+      id:string; type?:string; category?:string; title:string; description?:string; summary?:string;
+      severity:string; time?:number; publishTime?:number;
+    }>>('/traffic/alerts')
+      .then(data => setAlerts(data.map(item => ({
+        id:item.id, category:item.category || item.type || 'other', title:item.title,
+        summary:item.summary || item.description || '',
+        severity:item.severity,
+        publishTime:item.publishTime ?? item.time ?? Date.now(),
+      }))))
+      .catch(() => setAlerts([]));
+    apiGet<News[]>('/news/list').then(data => setNews(data.slice(0, 4))).catch(() => setNews([]));
+    apiGet<Partial<Snapshot> & { congestionIndex?:number; activeAlerts?:number }>('/traffic/snapshot')
+      .then(data => setSnapshot({
+        cityIndex:data.cityIndex ?? data.congestionIndex ?? 0,
+        avgSpeed:data.avgSpeed ?? 0,
+        congestedRoadCount:data.congestedRoadCount ?? data.activeAlerts ?? 0,
+        totalRoadCount:data.totalRoadCount ?? 0,
+        trend24h:data.trend24h ?? [],
+      }))
+      .catch(() => setSnapshot(null));
   }, []);
 
   const severityColor = (s:string) => (s==='critical'?'#f5222d':s==='warning'?'#faad14':'#1677ff');

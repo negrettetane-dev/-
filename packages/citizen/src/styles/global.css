@@ -32,9 +32,12 @@ body {
 ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); border-radius: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 
-/* Elderly Mode */
+/* Elderly Mode：全局放大（zoom 作用于整个页面，跳转后普通页面同样放大） */
+html[data-elderly="true"] {
+  zoom: 1.2;
+}
 html[data-elderly="true"] body {
-  font-size: 20px;
+  font-size: 18px;
   --bg-page: #fff;
 }
 

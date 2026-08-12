@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styles from './Report.module.css';
+import { apiGet } from '../../services/apiClient';
 
 const ReportQueryPage: React.FC = () => {
   const navigate = useNavigate();
@@ -8,10 +9,14 @@ const ReportQueryPage: React.FC = () => {
   const [result, setResult] = useState<unknown>(null);
   const [searched, setSearched] = useState(false);
 
-  const handleQuery = () => {
+  const handleQuery = async () => {
     setSearched(true);
     if (!orderNo.trim()) return;
-    fetch('/api/report/query').then(r=>r.json()).then(d=>setResult(d.data));
+    try {
+      setResult(await apiGet('/report/query', { workOrderNo: orderNo.trim() }));
+    } catch {
+      setResult(null);
+    }
   };
 
   return (

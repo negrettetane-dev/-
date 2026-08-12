@@ -22,6 +22,7 @@ export interface TransitLine {
   first?: string;
   last?: string;
   color?: string;
+  fare?: number;
   status?: 'normal' | 'delayed' | 'maintenance';
   stations: TransitStation[];
   source: DataSource;

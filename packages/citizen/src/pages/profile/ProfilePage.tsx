@@ -1,14 +1,23 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
 import { useElderly } from '../../App';
 import { maskPhone } from '@zhitu/shared';
 import styles from './Profile.module.css';
+import { apiGet } from '../../services/apiClient';
 
 const ProfilePage: React.FC = () => {
   const navigate = useNavigate();
-  const { isLoggedIn, user, logout } = useAuthStore();
+  const { isLoggedIn, user, logout, refreshProfile, updateUser } = useAuthStore();
   const { elderlyMode, toggleElderlyMode } = useElderly();
+
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    refreshProfile().catch(() => undefined);
+    apiGet<{ points: number }>('/points')
+      .then(data => updateUser({ carbonCredits: data.points }))
+      .catch(() => undefined);
+  }, [isLoggedIn, refreshProfile, updateUser]);
 
   const menus = [
     { icon:'🚗', label:'我的出行', desc:'历史路线、乘车记录', path:'/profile' },
