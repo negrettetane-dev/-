@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { MockWorkOrder } from '../mocks/mockData';
-import { generateWorkOrders } from '../mocks/mockData';
+import { workOrderService } from '../services/workOrderService';
 
 interface WorkOrderState {
   workOrders: MockWorkOrder[];
@@ -32,20 +32,16 @@ export const useWorkOrderStore = create<WorkOrderState>((set, get) => ({
   fetchList: async () => {
     set({ loading: true });
     const { filters, page, pageSize } = get();
-    await new Promise((r) => setTimeout(r, 400));
-    let list = generateWorkOrders();
-    if (filters.status) list = list.filter((w) => w.status === filters.status);
-    const total = list.length;
-    const paged = list.slice((page - 1) * pageSize, page * pageSize);
-    set({ workOrders: paged, total, loading: false });
+    try {
+      const data = await workOrderService.getList({ page, pageSize, status: filters.status || '' });
+      set({ workOrders: data.list, total: data.total, loading: false });
+    } catch { set({ workOrders: [], total: 0, loading: false }); }
   },
 
   fetchById: async (id: string) => {
     set({ loading: true });
-    await new Promise((r) => setTimeout(r, 300));
-    const all = generateWorkOrders();
-    const found = all.find((w) => w.id === id || w.workOrderNo === id) || all[0];
-    set({ selectedWorkOrder: found, loading: false });
+    try { set({ selectedWorkOrder: await workOrderService.getById(id), loading: false }); }
+    catch { set({ selectedWorkOrder: null, loading: false }); }
   },
 
   setFilters: (filters) => {
@@ -59,7 +55,7 @@ export const useWorkOrderStore = create<WorkOrderState>((set, get) => ({
   },
 
   updateStatus: async (id: string, status: string) => {
-    await new Promise((r) => setTimeout(r, 300));
+    await workOrderService.update(id, { status });
     set((state) => ({
       workOrders: state.workOrders.map((w) =>
         w.id === id ? { ...w, status: status as MockWorkOrder['status'], updateTime: Date.now() } : w,

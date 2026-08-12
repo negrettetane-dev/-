@@ -19,9 +19,38 @@ export interface RealTimeMetrics {
 }
 
 export const dashboardService = {
-  getMetrics: () => apiGet<RealTimeMetrics>('/dashboard/metrics'),
+  getMetrics: async () => {
+    const [hourly, roads, alerts] = await Promise.all([
+      apiGet<HourlyMetrics[]>('/dashboard/hourly'),
+      apiGet<MockRoadSegment[]>('/dashboard/roads'),
+      apiGet<AiAlert[]>('/dashboard/ai-alerts'),
+    ]);
+    const latest = hourly[hourly.length - 1];
+    return {
+      timestamp: Date.now(),
+      activeVehicles: latest?.activeVehicles ?? 0,
+      avgSpeed: latest?.avgSpeed ?? 0,
+      congestionIndex: latest?.congestionIndex ?? 0,
+      incidentCount: latest?.incidentCount ?? alerts.length,
+      congestedRoadCount: roads.filter(road => road.congestionLevel === 'congested' || road.congestionLevel === 'blocked').length,
+      deviceOnlineRate: 0,
+    };
+  },
   getHourlyTraffic: () => apiGet<HourlyMetrics[]>('/dashboard/hourly'),
   getDistrictCongestion: () => apiGet<DistrictCongestionData[]>('/dashboard/districts'),
   getRoadSegments: () => apiGet<MockRoadSegment[]>('/dashboard/roads'),
-  getAiAlerts: () => apiGet<AiAlert[]>('/dashboard/ai-alerts'),
+  getAiAlerts: async () => {
+    const data = await apiGet<Array<{
+      id:string; type:string; title:string; description:string; severity:string;
+      roadName:string; time:number; status:string;
+    }>>('/dashboard/ai-alerts');
+    return data.map((item): AiAlert => ({
+      id:item.id,
+      type:item.type || item.title,
+      location:item.roadName,
+      time:item.time,
+      confidence:item.severity === 'high' ? 0.9 : item.severity === 'medium' ? 0.7 : 0.5,
+      description:item.description,
+    }));
+  },
 };

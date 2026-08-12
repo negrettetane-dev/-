@@ -12,6 +12,7 @@ const CarbonManagementPage = lazy(() => import('../pages/carbon/CarbonManagement
 const ContentManagementPage = lazy(() => import('../pages/content/ContentManagementPage'));
 const AnalyticsPage = lazy(() => import('../pages/analytics/AnalyticsPage'));
 const SettingsPage = lazy(() => import('../pages/settings/SettingsPage'));
+const AdminLoginPage = lazy(() => import('../pages/login/AdminLoginPage'));
 
 const PageLoader = () => (
   <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', minHeight: 300 }}>
@@ -23,6 +24,7 @@ export default function AppRouter() {
   return (
     <Suspense fallback={<PageLoader />}>
       <Routes>
+        <Route path="/admin/login" element={<AdminLoginPage />} />
         <Route path="/admin" element={<DashboardLayout />}>
           <Route index element={<DashboardPage />} />
           <Route path="incidents" element={<IncidentListPage />} />

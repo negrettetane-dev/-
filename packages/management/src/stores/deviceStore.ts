@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { MockDevice } from '../mocks/mockData';
-import { generateDevices } from '../mocks/mockData';
+import { deviceService } from '../services/deviceService';
 
 interface DeviceState {
   devices: MockDevice[];
@@ -28,23 +28,17 @@ export const useDeviceStore = create<DeviceState>((set, get) => ({
   fetchList: async () => {
     set({ loading: true });
     const { filters } = get();
-    await new Promise((r) => setTimeout(r, 400));
-    let list = generateDevices();
-    if (filters.status) list = list.filter((d) => d.status === filters.status);
-    if (filters.type) list = list.filter((d) => d.type === filters.type);
-    if (filters.search) {
-      const s = filters.search.toLowerCase();
-      list = list.filter((d) => d.name.includes(s) || d.roadName.includes(s) || d.id.includes(s));
-    }
-    set({ devices: list, total: list.length, loading: false });
+    try {
+      const data = await deviceService.getList({ page: 1, pageSize: 100, status: filters.status || '', type: filters.type || '' });
+      const list = filters.search ? data.list.filter(d => `${d.name}${d.roadName}${d.id}`.includes(filters.search)) : data.list;
+      set({ devices: list, total: data.total, loading: false });
+    } catch { set({ devices: [], total: 0, loading: false }); }
   },
 
   fetchById: async (id: string) => {
     set({ loading: true });
-    await new Promise((r) => setTimeout(r, 300));
-    const all = generateDevices();
-    const found = all.find((d) => d.id === id) || all[0];
-    set({ selectedDevice: found, loading: false });
+    try { set({ selectedDevice: await deviceService.getById(id), loading: false }); }
+    catch { set({ selectedDevice: null, loading: false }); }
   },
 
   setFilters: (filters) => {

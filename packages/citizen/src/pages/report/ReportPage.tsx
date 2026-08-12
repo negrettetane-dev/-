@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getReports } from '../../stores/persistence';
-import type { PersistedReport } from '../../stores/persistence';
+import { apiGet } from '../../services/apiClient';
+import { useAuthStore } from '../../stores/authStore';
 import styles from './Report.module.css';
 
-interface WorkOrder { id:string; workOrderNo:string; category:string; description:string; status:string; createTime:number; }
+interface WorkOrder { id:string; workOrderNo:string; category:string; description:string; status:string; createTime:number; userId?: string|number; }
 
 const CATEGORY_ICONS: Record<string,string> = {
   '路面坑洼':'🕳️','路灯损坏':'💡','违停占道':'🚗','井盖破损':'⭕',
@@ -15,31 +15,35 @@ const STATUS_MAP: Record<string,{label:string;color:string;bg:string}> = {
   received:{label:'已受理',color:'#1677ff',bg:'#e6f4ff'},
   processing:{label:'处置中',color:'#ff7a00',bg:'#fff1f0'},
   completed:{label:'已办结',color:'#52c41a',bg:'#e6ffe6'},
+  resolved:{label:'已办结',color:'#52c41a',bg:'#e6ffe6'},
+  closed:{label:'已关闭',color:'#999',bg:'#f5f5f5'},
   rejected:{label:'已驳回',color:'#f5222d',bg:'#fff1f0'},
 };
 const formatTime = (ts:number) => new Date(ts).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});
 
 const ReportPage: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuthStore();
   const [reports, setReports] = useState<WorkOrder[]>([]);
+  const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
-    // 合并 mock 数据 + 持久化数据
-    fetch('/api/report/list').then(r=>r.json()).then(d=>{
-      const mockReports: WorkOrder[] = d.data||[];
-      const persisted: PersistedReport[] = getReports();
-      // 将 PersistedReport 转为 WorkOrder 格式
-      const persistedAsWorkOrders: WorkOrder[] = persisted.map(p => ({
-        id: p.id,
-        workOrderNo: p.workOrderNo,
-        category: p.category,
-        description: p.description,
-        status: p.status,
-        createTime: p.createdAt,
-      }));
-      setReports([...persistedAsWorkOrders, ...mockReports]);
-    });
+    apiGet<WorkOrder[]>('/report/list')
+      .then(setReports)
+      .catch(() => setLoadError('上报记录加载失败，请稍后重试'));
   }, []);
+
+  // 区分来源：有归属字段且匹配当前用户 → 我的上报；演示/联调记录 → 演示数据
+  const renderSource = (r: WorkOrder) => {
+    const mine = r.userId !== undefined && user && String(r.userId) === String(user.id);
+    if (mine) {
+      return <span style={{ fontSize: 11, background: '#e6f4ff', color: '#1677ff', padding: '2px 6px', borderRadius: 4 }}>我的上报</span>;
+    }
+    const isDemo = /联调|测试|演示/.test(r.description || '');
+    return isDemo
+      ? <span style={{ fontSize: 11, background: '#fff7e6', color: '#ad6800', padding: '2px 6px', borderRadius: 4 }}>演示数据</span>
+      : <span style={{ fontSize: 11, background: '#f0f0f0', color: '#666', padding: '2px 6px', borderRadius: 4 }}>市民上报</span>;
+  };
 
   return (
     <div className={styles.page}>
@@ -53,7 +57,9 @@ const ReportPage: React.FC = () => {
       </div>
 
       <div className={styles.sectionTitle}>我的上报记录</div>
-      {reports.length === 0 ? (
+      {loadError ? (
+        <div className={styles.empty}>{loadError}</div>
+      ) : reports.length === 0 ? (
         <div className={styles.empty}>还没有上报记录，点击"新建上报"反馈交通问题</div>
       ) : (
         <div className={styles.list}>
@@ -63,7 +69,10 @@ const ReportPage: React.FC = () => {
               <div key={r.id} className={styles.card} onClick={()=>navigate(`/report/detail/${r.id}`)}>
                 <div className={styles.cardHeader}>
                   <span>{(CATEGORY_ICONS[r.category]||'📝')} {r.category}</span>
-                  <span style={{fontSize:11,background:s.bg,color:s.color,padding:'3px 8px',borderRadius:4}}>{s.label}</span>
+                  <span style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    {renderSource(r)}
+                    <span style={{fontSize:11,background:s.bg,color:s.color,padding:'3px 8px',borderRadius:4}}>{s.label}</span>
+                  </span>
                 </div>
                 <div className={styles.cardDesc}>{r.description}</div>
                 <div className={styles.cardMeta}>

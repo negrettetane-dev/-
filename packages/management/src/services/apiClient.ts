@@ -3,7 +3,7 @@ import axios from 'axios';
 import type { ApiResponse } from '@zhitu/shared';
 
 const apiClient = axios.create({
-  baseURL: '/api',
+  baseURL: '/api/admin',
   timeout: 15000,
   headers: { 'Content-Type': 'application/json' },
 });
@@ -11,7 +11,8 @@ const apiClient = axios.create({
 // Request interceptor
 apiClient.interceptors.request.use(
   (config) => {
-    // Could add auth token here
+    const token = localStorage.getItem('zhitu_admin_token') || localStorage.getItem('zhitu_token');
+    if (token) config.headers.Authorization = `Bearer ${token}`;
     return config;
   },
   (error) => Promise.reject(error),
@@ -22,12 +23,11 @@ apiClient.interceptors.response.use(
   (response) => {
     const data = response.data as ApiResponse;
     if (data.code !== 0) {
-      console.warn(`[API] ${data.message}`);
+      return Promise.reject(new Error(data.message || '请求失败'));
     }
     return response;
   },
   (error) => {
-    console.error('[API] Error:', error.message);
     return Promise.reject(error);
   },
 );

@@ -22,6 +22,7 @@ import ElderlyHomePage from './pages/elderly/ElderlyHomePage';
 import LoginPage from './pages/auth/LoginPage';
 import RegisterPage from './pages/auth/RegisterPage';
 import QRCodePage from './pages/qrcode/QRCodePage';
+import ChargingScanPage from './pages/charging/ChargingScanPage';
 import MoveCarPage from './pages/movecar/MoveCarPage';
 import BusDetailPage from './pages/bus/BusDetailPage';
 import CustomBusPage from './pages/custombus/CustomBusPage';
@@ -39,7 +40,9 @@ export const ElderlyContext = createContext<ElderlyContextType>({
 export const useElderly = () => useContext(ElderlyContext);
 
 // 初始化 Mock 拦截器
-fetchInterceptor();
+if (import.meta.env.VITE_ENABLE_MOCK === 'true') {
+  fetchInterceptor();
+}
 
 /** 需要登录才能访问的页面 */
 const RequireAuth: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -100,6 +103,7 @@ const App: React.FC = () => {
             <Route path="/services" element={<ServicesPage />} />
             <Route path="/carbon" element={<CarbonPage />} />
             <Route path="/qrcode" element={<QRCodePage />} />
+            <Route path="/charging/scan" element={<ChargingScanPage />} />
             <Route path="/move-car" element={<MoveCarPage />} />
             <Route path="/travel/bus/:lineId" element={<BusDetailPage />} />
             <Route path="/travel/metro/:lineId" element={<MetroDetailPage />} />

@@ -1,12 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import AIAssistant from '../../components/AIAssistant';
-import { searchTransit, getNearbyStations } from '../../services/transitService';
+import { searchTransit, getNearbyStations, getBusLines, getMetroLines } from '../../services/transitService';
 import type { TransitLine, TransitSearchResult, NearbyStation } from '../../types/transit';
 import styles from './Travel.module.css';
-
-interface BusLine { id:string; name:string; from:string; to:string; stops:string[]; price:number }
-interface MetroLine { id:string; name:string; from:string; to:string; stations:string[] }
 
 const TravelPlanPage: React.FC = () => {
   const navigate = useNavigate();
@@ -17,8 +14,8 @@ const TravelPlanPage: React.FC = () => {
   const [dest, setDest] = useState(prefillDest);
   const [waypoints, setWaypoints] = useState<string[]>([]);
   const [departTime, setDepartTime] = useState('现在出发');
-  const [busLines, setBusLines] = useState<BusLine[]>([]);
-  const [metroLines, setMetroLines] = useState<MetroLine[]>([]);
+  const [busLines, setBusLines] = useState<TransitLine[]>([]);
+  const [metroLines, setMetroLines] = useState<TransitLine[]>([]);
   const [locating, setLocating] = useState(false);
 
   // 公交/地铁搜索
@@ -34,8 +31,8 @@ const TravelPlanPage: React.FC = () => {
   const METRO_FEATURED = ['m1', 'm2', 'm3', 'm4'];
 
   useEffect(() => {
-    fetch('/api/transit/bus-lines').then(r=>r.json()).then(d=>setBusLines(d.data||[]));
-    fetch('/api/transit/metro-lines').then(r=>r.json()).then(d=>setMetroLines(d.data||[]));
+    getBusLines().then(setBusLines).catch(() => setBusLines([]));
+    getMetroLines().then(setMetroLines).catch(() => setMetroLines([]));
 
     // 附近站点（定位失败用演示数据，不崩溃）
     if (navigator.geolocation) {
@@ -267,7 +264,7 @@ const TravelPlanPage: React.FC = () => {
                 <span className={styles.busRoute}>{b.from} → {b.to}</span>
               </div>
               <div className={styles.busMeta}>
-                <span>💰 {b.price ? `¥${b.price}` : '票价暂无数据'}</span>
+                <span>💰 {b.fare !== undefined ? `¥${b.fare}` : '票价暂无数据'}</span>
                 <span>🕐 约{Math.floor(Math.random()*10)+2}分钟到站</span>
                 <span className={styles.crowding} style={{color:'var(--text-hint)',fontSize:11}}>
                   （演示到站时间）
@@ -289,10 +286,7 @@ const TravelPlanPage: React.FC = () => {
             <div key={m.id} className={styles.metroCard} onClick={() => navigate(`/travel/metro/${m.id}`)} style={{cursor:'pointer'}}>
               <span className={styles.metroName}>{m.name}</span>
               <span className={styles.metroStations}>
-                {(Array.isArray(m.stations) && typeof m.stations[0] === 'object'
-                  ? (m.stations as any[]).slice(0,4).map((s:any) => s.name).join(' → ')
-                  : (m.stations as string[]).slice(0,4).join(' → ')
-                )} → ...
+                {m.stations.slice(0, 4).map(station => station.name).join(' → ')} → ...
               </span>
               <span style={{ fontSize: 12, color: 'var(--text-hint)' }}>›</span>
             </div>

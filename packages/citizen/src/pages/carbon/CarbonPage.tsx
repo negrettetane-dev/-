@@ -1,83 +1,87 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { getCarbonStats, addCarbonActivity } from '../../stores/persistence';
-import { getRedemptions } from '../../stores/persistence';
-import type { CarbonActivity, RedemptionRecord } from '../../stores/persistence';
+import type { RedemptionRecord } from '../../stores/persistence';
+import { apiGet, apiPost } from '../../services/apiClient';
+import { resolveRedemptionStatus, REDEMPTION_STATUS_META, formatDateSafe, formatExpiryDate } from '@zhitu/shared';
 import styles from './Carbon.module.css';
 
 interface CarbonRecord { id:string; type:string; date:string; distance:number; duration:number; carbonSaved:number; points:number; route?:string }
 interface Stats { totalPoints:number; totalCarbonSaved:number; treeEquivalent:number; carDistanceSaved:number; rankPercent:number; records:CarbonRecord[] }
-interface Reward { id:number; name:string; description:string; cost:number; type:string; stock:number }
+interface Reward { id:string; name:string; description:string; cost:number; type:string; stock:number }
 
 const CarbonPage: React.FC = () => {
   const [stats, setStats] = useState<Stats | null>(null);
   const [rewards, setRewards] = useState<Reward[]>([]);
   const [redemptions, setRedemptions] = useState<RedemptionRecord[]>([]);
-  const [confirmId, setConfirmId] = useState<number | null>(null);
+  const [confirmId, setConfirmId] = useState<string | null>(null);
   const [redeemMsg, setRedeemMsg] = useState('');
   const [msgType, setMsgType] = useState<'success' | 'error'>('success');
 
   const loadData = useCallback(() => {
-    // 积分从独立 /api/points 读取（后端控制，前端不写死）
-    fetch('/api/points').then(r=>r.json()).then(pd => {
-      fetch('/api/carbon/stats').then(r=>r.json()).then(d=>{
-        const base = d.data || {};
+    Promise.all([
+      apiGet<{ points: number }>('/points'),
+      apiGet<Partial<Stats>>('/carbon/stats'),
+      apiGet<Reward[]>('/rewards'),
+      apiGet<RedemptionRecord[]>('/redemptions'),
+    ]).then(([points, base, rewardList, redemptionList]) => {
         setStats({
-          totalPoints: pd.data?.points ?? 1250,
-          totalCarbonSaved: base.totalCarbonSaved ?? 5267,
-          treeEquivalent: Number((base.totalCarbonSaved / 5000).toFixed(2)) || 1.05,
-          carDistanceSaved: Math.round((base.totalCarbonSaved || 5267) / 200),
+          totalPoints: points.points,
+          totalCarbonSaved: base.totalCarbonSaved ?? 0,
+          treeEquivalent: base.treeEquivalent ?? 0,
+          carDistanceSaved: base.carDistanceSaved ?? 0,
           rankPercent: base.rankPercent ?? 15,
           records: base.records ?? [],
         });
-      });
-    });
-    fetch('/api/rewards').then(r=>r.json()).then(d=>setRewards(d.data||[]));
-    fetch('/api/redemptions').then(r=>r.json()).then(d=>setRedemptions(d.data||[]));
+        setRewards(rewardList);
+        setRedemptions(redemptionList);
+      })
+      .catch(() => setStats(prev => prev || { totalPoints: 0, totalCarbonSaved: 0, treeEquivalent: 0, carDistanceSaved: 0, rankPercent: 0, records: [] }));
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  // 模拟绿色出行
-  const simulateGreenTrip = useCallback(() => {
-    const trip: CarbonActivity = {
-      id: 'ct_' + Date.now(),
-      type: (['bus','metro','bike','walk'] as const)[Math.floor(Math.random()*4)],
-      date: new Date().toISOString().slice(0, 10),
-      distance: 3000 + Math.floor(Math.random() * 8000),
-      duration: 600 + Math.floor(Math.random() * 1800),
-      carbonSaved: Math.round(300 + Math.random() * 1200),
-      points: Math.round(10 + Math.random() * 40),
-      route: ['西单→王府井','国贸→中关村','天安门→前门','望京→三里屯'][Math.floor(Math.random()*4)],
-    };
-    addCarbonActivity(trip);
-    setStats(prev => {
-      if (!prev) return prev;
-      return { ...prev, totalPoints: prev.totalPoints + trip.points };
-    });
-  }, []);
+  const simulateGreenTrip = useCallback(async () => {
+    setRedeemMsg('');
+    try {
+      const result = await apiPost<{ earnedPoints: number; totalPoints: number }>('/travel/complete', {
+        mode: 'walk',
+        distance: 3000,
+        duration: 1800,
+        route: '演示步行：西单 → 王府井',
+      });
+      setMsgType('success');
+      setRedeemMsg(`✅ 出行记录已提交，获得 ${result.earnedPoints} 积分，当前共 ${result.totalPoints} 积分`);
+      loadData();
+    } catch (error) {
+      setMsgType('error');
+      setRedeemMsg(`❌ ${error instanceof Error ? error.message : '提交出行记录失败'}`);
+    }
+  }, [loadData]);
 
   // 兑换逻辑 — 前端只调 API，积分扣减由"后端"完成
   const handleRedeem = async () => {
     if (!confirmId) return;
     setRedeemMsg('');
+    const reward = rewards.find(r => r.id === confirmId);
     try {
-      const res = await fetch('/api/rewards/redeem', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rewardId: confirmId }),
-      });
-      const data = await res.json();
-      if (data.code === 0 && data.data?.success) {
-        setMsgType('success');
-        setRedeemMsg(`✅ 兑换成功：已扣除${data.data.pointsCost}积分，剩余${data.data.remainingPoints}积分`);
-        loadData(); // 刷新积分 & 兑换记录
-      } else {
-        setMsgType('error');
-        setRedeemMsg(`❌ ${data.message || '兑换失败'}`);
-      }
-    } catch {
+      const data = await apiPost<Record<string, unknown>>('/rewards/redeem', { rewardId: confirmId });
+      // 兼容后端不同返回字段：pointsCost/cost/商品价格
+      const cost = Number(data.pointsCost ?? data.cost ?? reward?.cost ?? 0);
+      const remaining = data.remainingPoints ?? data.remaining_points ?? data.points;
+      setMsgType('success');
+      setRedeemMsg(`✅ 兑换成功：已扣除${cost}积分${remaining !== undefined ? `，剩余${Number(remaining)}积分` : ''}`);
+      loadData(); // 刷新积分 & 兑换记录
+    } catch (error) {
       setMsgType('error');
-      setRedeemMsg('❌ 网络异常，兑换失败');
+      const raw = error instanceof Error ? error.message : '';
+      // 后端英文错误码 → 中文提示
+      const map: Record<string, string> = {
+        'insufficient points': '积分不足，无法兑换',
+        'reward not found': '商品不存在',
+        'out of stock': '商品库存不足',
+        'already redeemed': '该商品已兑换过',
+      };
+      const zh = map[raw.trim().toLowerCase()] || raw || '网络异常，兑换失败';
+      setRedeemMsg(`❌ ${zh}`);
     }
     setConfirmId(null);
   };
@@ -149,7 +153,7 @@ const CarbonPage: React.FC = () => {
 
       {/* Demo */}
       <div className={styles.demoBtn} onClick={simulateGreenTrip}>
-        🚶 模拟一次绿色出行（演示积分累积）
+        🚶 提交一次演示步行记录（由后端计算积分）
       </div>
 
       {/* Green Forest */}
@@ -216,17 +220,23 @@ const CarbonPage: React.FC = () => {
         <div className={styles.rewards} style={{marginTop:16}}>
           <div className={styles.sectionTitle}>📜 我的兑换记录</div>
           <div className={styles.rewardGrid}>
-            {redemptions.map(r => (
-              <div key={r.id} className={styles.rewardCard} style={{opacity:0.85}}>
-                <div className={styles.rewardName}>{r.reward_name}</div>
-                <div style={{fontSize:12,color:'var(--text-hint)',margin:'4px 0'}}>
-                  消耗 <b>{r.points_cost}</b> 积分 · {r.status === 'unused' ? '📌 未使用' : r.status === 'used' ? '✅ 已使用' : '⏰ 已过期'}
+            {redemptions.map(r => {
+              const status = resolveRedemptionStatus(r.status, r.expires_at);
+              const statusMeta = REDEMPTION_STATUS_META[status];
+              const redeemedDate = formatDateSafe(r.redeemed_at, '兑换时间未知');
+              const expiryDate = formatExpiryDate(r.expires_at);
+              return (
+                <div key={r.id} className={styles.rewardCard} style={{opacity:0.85}}>
+                  <div className={styles.rewardName}>{r.reward_name}</div>
+                  <div style={{fontSize:12,color:'var(--text-hint)',margin:'4px 0'}}>
+                    消耗 <b>{r.points_cost}</b> 积分 · {statusMeta.label}
+                  </div>
+                  <div style={{fontSize:11,color:'var(--text-hint)'}}>
+                    {redeemedDate} → {expiryDate}
+                  </div>
                 </div>
-                <div style={{fontSize:11,color:'var(--text-hint)'}}>
-                  {new Date(r.redeemed_at).toLocaleDateString('zh-CN')} → {new Date(r.expires_at).toLocaleDateString('zh-CN')}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

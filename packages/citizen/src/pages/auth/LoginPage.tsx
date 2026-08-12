@@ -5,6 +5,7 @@ import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { useAuthStore } from '../../stores/authStore';
 import { AuthShell } from './AuthShell';
+import { apiPost } from '../../services/apiClient';
 
 const LoginPage: React.FC = () => {
   const navigate = useNavigate();
@@ -26,10 +27,15 @@ const LoginPage: React.FC = () => {
 
   const from = (location.state as any)?.from || '/';
 
-  const sendCode = () => {
+  const sendCode = async () => {
     if (!/^1[3-9]\d{9}$/.test(phone)) { setError('请输入正确的手机号'); return; }
-    fetch('/api/user/send-code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone }) });
-    setError('');
+    try {
+      await apiPost('/user/send-code', { phone });
+      setError('');
+    } catch (error) {
+      setError(error instanceof Error ? error.message : '验证码发送失败');
+      return;
+    }
     setCountdown(60);
     const t = setInterval(() => {
       setCountdown(c => {

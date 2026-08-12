@@ -6,9 +6,8 @@ import { setupMockHandlers } from './mocks/handlers';
 
 export default function App() {
   useEffect(() => {
-    // Setup mock API interception
-    const cleanup = setupMockHandlers();
-    return cleanup;
+    if (import.meta.env.VITE_ENABLE_MOCK !== 'true') return;
+    return setupMockHandlers();
   }, []);
 
   return (

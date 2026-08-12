@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import styles from './News.module.css';
+import { apiGet } from '../../services/apiClient';
 
 interface News { id:string; category:string; title:string; summary:string; coverImage?:string; source:string; publishTime:number; tags:string[] }
 
@@ -15,7 +16,7 @@ const NewsListPage: React.FC = () => {
   const [news, setNews] = useState<News[]>([]);
 
   useEffect(() => {
-    fetch('/api/news/list').then(r=>r.json()).then(d=>setNews(d.data||[]));
+    apiGet<News[]>('/news/list').then(setNews).catch(() => setNews([]));
   }, []);
 
   const filtered = cat==='all' ? news : news.filter(n=>n.category===cat);

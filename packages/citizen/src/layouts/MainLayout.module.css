@@ -96,6 +96,16 @@
   font-size: 12px; color: rgba(255,255,255,0.4);
 }
 
+/* 关于我们弹窗 */
+.aboutOverlay { position: fixed; inset: 0; z-index: 2000; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; padding: 24px; }
+.aboutModal { background: #fff; border-radius: 14px; width: 100%; max-width: 420px; padding: 20px 24px; box-shadow: 0 16px 48px rgba(0,0,0,0.2); }
+.aboutHeader { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.aboutTitle { font-size: 18px; font-weight: 700; }
+.aboutClose { cursor: pointer; color: #999; font-size: 16px; }
+.aboutBody { font-size: 14px; line-height: 1.8; color: #444; margin-bottom: 16px; }
+.aboutBtn { width: 100%; padding: 10px; background: var(--primary, #1677ff); color: #fff; border: none; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; }
+.aboutBtn:hover { opacity: 0.9; }
+
 /* ===== 响应式 ===== */
 @media (max-width: 900px) {
   .headerInner { gap: 16px; padding: 0 16px; }

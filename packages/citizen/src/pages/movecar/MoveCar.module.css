@@ -100,6 +100,16 @@
   color: var(--text-secondary, #666);
 }
 
+.locationActions { display: flex; gap: 10px; margin-top: 8px; }
+.locateButton { flex: 1; padding: 9px; background: #f0f5ff; color: var(--primary, #1677ff); border: 1px solid var(--primary, #1677ff); border-radius: 8px; font-size: 13px; cursor: pointer; }
+.locateButton:hover { background: #e6f4ff; }
+.locateButton:disabled { opacity: 0.5; cursor: not-allowed; }
+.mapPickerButton { flex: 1; padding: 9px; background: var(--primary, #1677ff); color: #fff; border: none; border-radius: 8px; font-size: 13px; cursor: pointer; }
+.mapPickerButton:hover { opacity: 0.9; }
+.coordinateText { margin-top: 6px; font-size: 11px; color: var(--text-hint, #999); font-family: monospace; }
+.demoNote { margin-top: 8px; font-size: 12px; color: #ad6800; background: #fffbe6; padding: 8px 12px; border-radius: 8px; line-height: 1.6; }
+.error { color: #f5222d; font-size: 13px; margin-bottom: 10px; }
+
 /* 文本域 */
 .textarea {
   padding: 12px 14px;

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { MockIncident } from '../mocks/mockData';
-import { generateIncidents } from '../mocks/mockData';
+import { incidentService } from '../services/incidentService';
 
 interface IncidentState {
   incidents: MockIncident[];
@@ -34,28 +34,17 @@ export const useIncidentStore = create<IncidentState>((set, get) => ({
   fetchList: async () => {
     set({ loading: true });
     const { filters, page, pageSize } = get();
-    // Simulate API delay
-    await new Promise((r) => setTimeout(r, 400));
-    let list = generateIncidents();
-    if (filters.status) list = list.filter((i) => i.status === filters.status);
-    if (filters.severity) list = list.filter((i) => i.severity === filters.severity);
-    if (filters.search) {
-      const s = filters.search.toLowerCase();
-      list = list.filter(
-        (i) => i.title.includes(s) || i.roadName.includes(s) || i.id.includes(s),
-      );
-    }
-    const total = list.length;
-    const paged = list.slice((page - 1) * pageSize, page * pageSize);
-    set({ incidents: paged, total, loading: false });
+    try {
+      const data = await incidentService.getList({ page, pageSize, status: filters.status || '', severity: filters.severity || '' });
+      const list = filters.search ? data.list.filter(i => `${i.title}${i.roadName}${i.id}`.includes(filters.search)) : data.list;
+      set({ incidents: list, total: data.total, loading: false });
+    } catch { set({ incidents: [], total: 0, loading: false }); }
   },
 
   fetchById: async (id: string) => {
     set({ loading: true });
-    await new Promise((r) => setTimeout(r, 300));
-    const all = generateIncidents();
-    const found = all.find((i) => i.id === id) || all[0];
-    set({ selectedIncident: found, loading: false });
+    try { set({ selectedIncident: await incidentService.getById(id), loading: false }); }
+    catch { set({ selectedIncident: null, loading: false }); }
   },
 
   setFilters: (filters) => {
@@ -72,7 +61,7 @@ export const useIncidentStore = create<IncidentState>((set, get) => ({
   },
 
   updateStatus: async (id: string, status: string) => {
-    await new Promise((r) => setTimeout(r, 300));
+    await incidentService.update(id, { status });
     set((state) => ({
       incidents: state.incidents.map((i) =>
         i.id === id ? { ...i, status: status as MockIncident['status'] } : i,

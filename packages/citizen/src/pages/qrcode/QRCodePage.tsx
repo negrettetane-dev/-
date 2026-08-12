@@ -1,23 +1,8 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { generateQr, type QrState } from '../../services/qrCodeService';
+import { generateTransitQr, type QrState } from '../../services/qrCodeService';
+import DemoQrCode from '../../components/DemoQrCode';
 import styles from './QRCode.module.css';
-
-/** 生成伪随机二维码图案（SVG模拟, 非真实编码）*/
-function makePattern(seed: string): number[][] {
-  let h = 0;
-  const hash = (s: string) => { let x = 0; for (let i = 0; i < s.length; i++) x = (x * 31 + s.charCodeAt(i)) % 100000; return x; };
-  const base = hash(seed);
-  return Array.from({ length: 21 }, (_, y) =>
-    Array.from({ length: 21 }, (_, x) => {
-      if (x < 7 && y < 7) return 1;
-      if (x > 13 && y < 7) return 1;
-      if (x < 7 && y > 13) return 1;
-      h = (Math.sin(x * 7 + y * 13 + base) * 10000) % 1;
-      return h > 0.35 ? 1 : 0;
-    })
-  );
-}
 
 const QR_VALIDITY = 60; // 秒
 
@@ -27,23 +12,20 @@ const QRCodePage: React.FC = () => {
   const [faqOpen, setFaqOpen] = useState(false);
 
   // 公交码 / 地铁码完全独立
-  const [busQr, setBusQr] = useState<QrState>(() => generateQr('bus'));
-  const [metroQr, setMetroQr] = useState<QrState>(() => generateQr('metro'));
+  const [busQr, setBusQr] = useState<QrState>(() => generateTransitQr('bus'));
+  const [metroQr, setMetroQr] = useState<QrState>(() => generateTransitQr('metro'));
   const [busCountdown, setBusCountdown] = useState(QR_VALIDITY);
   const [metroCountdown, setMetroCountdown] = useState(QR_VALIDITY);
 
   const activeQr = mode === 'bus' ? busQr : metroQr;
   const activeCountdown = mode === 'bus' ? busCountdown : metroCountdown;
-  const activePattern = useRef(makePattern(busQr.content));
-  activePattern.current = makePattern(activeQr.content);
 
   // 公交码独立倒计时
   useEffect(() => {
     const t = setInterval(() => {
       setBusCountdown(prev => {
         if (prev <= 1) {
-          const q = generateQr('bus');
-          setBusQr(q);
+          setBusQr(generateTransitQr('bus'));
           return QR_VALIDITY;
         }
         return prev - 1;
@@ -57,8 +39,7 @@ const QRCodePage: React.FC = () => {
     const t = setInterval(() => {
       setMetroCountdown(prev => {
         if (prev <= 1) {
-          const q = generateQr('metro');
-          setMetroQr(q);
+          setMetroQr(generateTransitQr('metro'));
           return QR_VALIDITY;
         }
         return prev - 1;
@@ -69,10 +50,10 @@ const QRCodePage: React.FC = () => {
 
   const refreshActive = useCallback(() => {
     if (mode === 'bus') {
-      setBusQr(generateQr('bus'));
+      setBusQr(generateTransitQr('bus'));
       setBusCountdown(QR_VALIDITY);
     } else {
-      setMetroQr(generateQr('metro'));
+      setMetroQr(generateTransitQr('metro'));
       setMetroCountdown(QR_VALIDITY);
     }
   }, [mode]);
@@ -103,13 +84,7 @@ const QRCodePage: React.FC = () => {
           {mode === 'bus' ? '🚌 北京公交' : '🚇 北京地铁'} · 演示乘车码
         </div>
         <div className={styles.qrBox}>
-          <svg viewBox="0 0 21 21" className={styles.qrSvg}>
-            {activePattern.current.map((row, y) =>
-              row.map((cell, x) =>
-                cell ? <rect key={`${y}-${x}`} x={x} y={y} width="1" height="1" fill="#000" /> : null
-              )
-            )}
-          </svg>
+          <DemoQrCode content={activeQr.content} className={styles.qrSvg} />
           {activeCountdown <= 10 && (
             <div className={styles.qrOverlay}>
               <span>即将过期</span>
@@ -165,16 +140,22 @@ const QRCodePage: React.FC = () => {
         ))}
       </div>
 
-      {/* FAQ */}
+      {/* FAQ 居中弹窗 */}
       {faqOpen && (
-        <div className={styles.faq}>
-          <div className={styles.sectionTitle}>💡 使用帮助</div>
-          <div className={styles.faqItem}><b>Q:</b> 公交码和地铁码内容相同吗？</div>
-          <div className={styles.faqItem}><b>A:</b> 完全不同。公交码内容以 ZHITU-DEMO-BUS 开头，地铁码以 ZHITU-DEMO-METRO 开头，各自独立计时刷新。</div>
-          <div className={styles.faqItem}><b>Q:</b> 为什么二维码会过期？</div>
-          <div className={styles.faqItem}><b>A:</b> 为防止截屏盗刷，二维码每60秒自动刷新。公交码和地铁码互不影响。</div>
-          <div className={styles.faqItem}><b>Q:</b> 这是官方乘车码吗？</div>
-          <div className={styles.faqItem}><b>A:</b> 不是。当前为演示二维码，仅用于功能展示，不能用于真实乘车支付。</div>
+        <div className={styles.faqOverlay} onClick={() => setFaqOpen(false)}>
+          <div className={styles.faqModal} onClick={e => e.stopPropagation()}>
+            <div className={styles.faqHeader}>
+              <span>💡 使用帮助</span>
+              <span className={styles.faqClose} onClick={() => setFaqOpen(false)}>✕</span>
+            </div>
+            <div className={styles.faqItem}><b>Q:</b> 公交码和地铁码内容相同吗？</div>
+            <div className={styles.faqItem}><b>A:</b> 完全不同。公交码内容以 ZHITU-DEMO-BUS 开头，地铁码以 ZHITU-DEMO-METRO 开头，各自独立计时刷新。</div>
+            <div className={styles.faqItem}><b>Q:</b> 为什么二维码会过期？</div>
+            <div className={styles.faqItem}><b>A:</b> 为防止截屏盗刷，二维码每60秒自动刷新。公交码和地铁码互不影响。</div>
+            <div className={styles.faqItem}><b>Q:</b> 这是官方乘车码吗？</div>
+            <div className={styles.faqItem}><b>A:</b> 不是。当前为演示二维码，仅用于功能展示，不能用于真实乘车支付。</div>
+            <button className={styles.faqBtn} onClick={() => setFaqOpen(false)}>知道了</button>
+          </div>
         </div>
       )}
 

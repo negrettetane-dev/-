@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Card, Tabs, Table, Tag, Button, Switch, InputNumber, message, Space, Statistic, Row, Col } from 'antd';
 import { getPointRules, setPointRules, getPointTransactions, getRedemptionRecords, type PointRule, type PointTransaction } from '../../stores/adminPersistence';
+import { resolveRedemptionStatus, REDEMPTION_STATUS_META, formatDateSafe, formatExpiryDate } from '@zhitu/shared';
 
 export default function CarbonManagementPage() {
   const [rules, setRules] = useState<PointRule[]>(getPointRules());
@@ -56,9 +57,16 @@ export default function CarbonManagementPage() {
             { title: '用户', dataIndex: 'user_id', width: 60 },
             { title: '商品', dataIndex: 'reward_name', ellipsis: true },
             { title: '消耗积分', dataIndex: 'points_cost', width: 80, render: (v: number) => <span style={{ color: '#f5222d' }}>-{v}</span> },
-            { title: '状态', dataIndex: 'status', width: 80, render: (s: string) => s === 'unused' ? <Tag>未使用</Tag> : s === 'used' ? <Tag color="green">已使用</Tag> : <Tag color="red">已过期</Tag> },
-            { title: '兑换时间', dataIndex: 'redeemed_at', width: 160, render: (v: string) => new Date(v).toLocaleString('zh-CN') },
-            { title: '有效期至', dataIndex: 'expires_at', width: 160, render: (v: string) => new Date(v).toLocaleString('zh-CN') },
+            { title: '状态', dataIndex: 'status', width: 90, render: (_: string, r: { status?: unknown; expires_at?: unknown }) => {
+              const status = resolveRedemptionStatus(r.status, r.expires_at);
+              const meta = REDEMPTION_STATUS_META[status];
+              const colorMap: Record<string, string> = {
+                unused: 'default', used: 'green', expired: 'red', unknown: 'orange',
+              };
+              return <Tag color={colorMap[status]}>{meta.label}</Tag>;
+            }},
+            { title: '兑换时间', dataIndex: 'redeemed_at', width: 160, render: (v: string) => formatDateSafe(v, '兑换时间未知') },
+            { title: '有效期至', dataIndex: 'expires_at', width: 160, render: (v: string) => formatExpiryDate(v) },
           ]} />,
         },
       ]} />
