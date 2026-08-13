@@ -127,7 +127,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   updateUser: (patch) => {
     const current = get().user;
     if (!current) return;
-    const user = { ...current, ...patch };
+    const definedPatch = Object.fromEntries(
+      Object.entries(patch).filter(([, value]) => value !== undefined),
+    ) as Partial<User>;
+    const user = { ...current, ...definedPatch };
     localStorage.setItem('zhitu_user', JSON.stringify(user));
     set({ user });
   },
