@@ -18,6 +18,7 @@ import CarbonPage from './pages/carbon/CarbonPage';
 import ProfilePage from './pages/profile/ProfilePage';
 import MyReportsPage from './pages/profile/MyReportsPage';
 import SettingsPage from './pages/profile/SettingsPage';
+import AccountManagementPage from './pages/profile/AccountManagementPage';
 import ElderlyHomePage from './pages/elderly/ElderlyHomePage';
 import LoginPage from './pages/auth/LoginPage';
 import RegisterPage from './pages/auth/RegisterPage';
@@ -116,6 +117,12 @@ const App: React.FC = () => {
             } />
             <Route path="/profile/settings" element={
               <RequireAuth><SettingsPage /></RequireAuth>
+            } />
+            <Route path="/profile/account" element={
+              <RequireAuth><AccountManagementPage /></RequireAuth>
+            } />
+            <Route path="/profile/account/password" element={
+              <RequireAuth><AccountManagementPage mode="password" /></RequireAuth>
             } />
           </Routes>
         </MainLayout>
