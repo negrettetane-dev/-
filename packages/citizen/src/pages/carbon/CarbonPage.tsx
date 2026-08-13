@@ -1,6 +1,8 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { RedemptionRecord } from '../../stores/persistence';
 import { apiGet, apiPost } from '../../services/apiClient';
+import { useAuthStore } from '../../stores/authStore';
 import { resolveRedemptionStatus, REDEMPTION_STATUS_META, formatDateSafe, formatExpiryDate } from '@zhitu/shared';
 import styles from './Carbon.module.css';
 
@@ -9,6 +11,8 @@ interface Stats { totalPoints:number; totalCarbonSaved:number; treeEquivalent:nu
 interface Reward { id:string; name:string; description:string; cost:number; type:string; stock:number }
 
 const CarbonPage: React.FC = () => {
+  const navigate = useNavigate();
+  const { isLoggedIn } = useAuthStore();
   const [stats, setStats] = useState<Stats | null>(null);
   const [rewards, setRewards] = useState<Reward[]>([]);
   const [redemptions, setRedemptions] = useState<RedemptionRecord[]>([]);
@@ -17,6 +21,13 @@ const CarbonPage: React.FC = () => {
   const [msgType, setMsgType] = useState<'success' | 'error'>('success');
 
   const loadData = useCallback(() => {
+    // 未登录：只加载公共商品列表，不调用个人接口（/points /carbon/stats /redemptions）
+    if (!isLoggedIn) {
+      setStats(null);
+      setRedemptions([]);
+      apiGet<Reward[]>('/rewards').then(setRewards).catch(() => setRewards([]));
+      return;
+    }
     Promise.all([
       apiGet<{ points: number }>('/points'),
       apiGet<Partial<Stats>>('/carbon/stats'),
@@ -35,7 +46,7 @@ const CarbonPage: React.FC = () => {
         setRedemptions(redemptionList);
       })
       .catch(() => setStats(prev => prev || { totalPoints: 0, totalCarbonSaved: 0, treeEquivalent: 0, carDistanceSaved: 0, rankPercent: 0, records: [] }));
-  }, []);
+  }, [isLoggedIn]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -87,6 +98,24 @@ const CarbonPage: React.FC = () => {
   };
 
   const typeEmoji: { [key: string]: string } = { bus:'🚌', metro:'🚇', bike:'🚲', walk:'🚶' };
+
+  // 未登录：不展示个人积分，引导登录
+  if (!isLoggedIn) {
+    return (
+      <div className={styles.page}>
+        <div className={styles.header}>
+          <span className={styles.title}>🌳 碳积分</span>
+        </div>
+        <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-hint)' }}>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>🌱</div>
+          <div style={{ fontSize: 15, marginBottom: 16 }}>登录后查看积分余额、绿色出行记录与兑换</div>
+          <button onClick={() => navigate('/login')} style={{ padding: '10px 32px', background: '#1677ff', color: '#fff', border: 'none', borderRadius: 8, fontSize: 15, cursor: 'pointer' }}>
+            立即登录
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (!stats) return <div className={styles.page}><div style={{textAlign:'center',padding:40,color:'var(--text-hint)'}}>加载中...</div></div>;
 

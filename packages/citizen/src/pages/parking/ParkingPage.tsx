@@ -99,6 +99,9 @@ const ParkingPage: React.FC = () => {
 
   return (
     <div className={styles.page}>
+      <div style={{ fontSize: 12, color: '#ad8b00', background: '#fffbe6', padding: '6px 10px', borderRadius: 8, marginBottom: 10 }}>
+        余位 / 空闲桩为演示余位，数据来源待确认
+      </div>
       <div className={styles.tabRow}>
         <button className={`${styles.tab} ${tab==='parking'?styles.tabActive:''}`} onClick={()=>setTab('parking')}>🅿️ 停车场</button>
         <button className={`${styles.tab} ${tab==='charging'?styles.tabActive:''}`} onClick={()=>setTab('charging')}>⚡ 充电桩</button>

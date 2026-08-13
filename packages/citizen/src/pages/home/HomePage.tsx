@@ -173,8 +173,8 @@ const HomePage: React.FC = () => {
           {snapshot && (
             <div className={styles.indexCard}>
               <div className={styles.indexHead}>
-                <span>北京 · 实时拥堵指数</span>
-                <span className={styles.indexTrend}>↑ 较昨日</span>
+                <span>北京 · 拥堵指数</span>
+                <span style={{ fontSize: 11, color: 'var(--text-hint)' }}>模拟数据 · 非官方实时</span>
               </div>
               <div className={styles.indexBody}>
                 <span className={styles.indexNum} style={{ color: snapshot.cityIndex>7?'#f5222d':snapshot.cityIndex>5?'#ff7a00':'#52c41a' }}>
@@ -226,8 +226,8 @@ const HomePage: React.FC = () => {
         <div className={styles.featureGrid}>
           {[
             { icon:'🧭', title:'一体化出行规划', desc:'驾车/公交/骑行多模式 · AI拥堵预测', path:'/travel', color:'#1677ff' },
-            { icon:'🅿️', title:'智慧停车诱导', desc:'实时空位 · 收费标准 · 导航直达', path:'/parking', color:'#722ed1' },
-            { icon:'⚡', title:'充电桩查询', desc:'空闲状态 · 功率 · 扫码充电', path:'/parking', color:'#13c2c2' },
+            { icon:'🅿️', title:'智慧停车诱导', desc:'空位信息 · 收费标准 · 导航直达', path:'/parking', color:'#722ed1' },
+            { icon:'⚡', title:'充电桩查询', desc:'站点信息 · 功率 · 扫码充电', path:'/parking', color:'#13c2c2' },
             { icon:'📷', title:'事件上报', desc:'拍照上报 · 工单追踪 · 处理反馈', path:'/report', color:'#fa541c' },
             { icon:'📰', title:'交通资讯', desc:'施工公告 · 管制通知 · 出行提示', path:'/news', color:'#eb2f96' },
             { icon:'🌳', title:'绿色碳普惠', desc:'绿色出行积累碳积分 · 兑换权益', path:'/carbon', color:'#52c41a' },

@@ -15,6 +15,11 @@ export interface ResolvedLocation extends LocatedPosition {
   source: 'geolocation' | 'map';
 }
 
+export interface GeocodedLocation extends LocatedPosition {
+  name: string;
+  address: string;
+}
+
 /** 高德定位：优先（GCJ-02，与高德地图一致） */
 function locateWithAMap(timeout = 10000): Promise<LocatedPosition> {
   return loadAMap().then((AMap: any) => new Promise<LocatedPosition>((resolve, reject) => {
@@ -75,6 +80,32 @@ export function reverseGeocode(lng: number, lat: number): Promise<string> {
         resolve(address);
       } else {
         reject(new Error('geocode-failed'));
+      }
+    });
+  }));
+}
+
+/** 地理编码：地点名称/地址 → 高德 GCJ-02 坐标。 */
+export function geocodeLocation(keyword: string, city = '北京'): Promise<GeocodedLocation> {
+  const query = keyword.trim();
+  if (!query) return Promise.reject(new Error('empty-location'));
+
+  return loadAMap().then((AMap: any) => new Promise<GeocodedLocation>((resolve, reject) => {
+    const geocoder = new AMap.Geocoder({ city });
+    geocoder.getLocation(query, (status: string, result: any) => {
+      const item = result?.geocodes?.[0];
+      const location = item?.location;
+      const lng = Number(location?.lng);
+      const lat = Number(location?.lat);
+      if (status === 'complete' && isValidCoord(lng, lat)) {
+        resolve({
+          name: query,
+          address: String(item.formattedAddress || query),
+          lng,
+          lat,
+        });
+      } else {
+        reject(new Error('location-not-found'));
       }
     });
   }));

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { generateTransitQr, type QrState } from '../../services/qrCodeService';
+import { useAuthStore } from '../../stores/authStore';
 import DemoQrCode from '../../components/DemoQrCode';
 import styles from './QRCode.module.css';
 
@@ -8,6 +9,7 @@ const QR_VALIDITY = 60; // 秒
 
 const QRCodePage: React.FC = () => {
   const navigate = useNavigate();
+  const { isLoggedIn } = useAuthStore();
   const [mode, setMode] = useState<'bus' | 'metro'>('bus');
   const [faqOpen, setFaqOpen] = useState(false);
 
@@ -95,50 +97,77 @@ const QRCodePage: React.FC = () => {
         <div className={styles.qrTimer}>
           ⏱️ 二维码有效 <b style={{ color: activeCountdown <= 10 ? '#f5222d' : '#52c41a' }}>{activeCountdown}s</b> · 自动刷新
         </div>
+        <button
+          type="button"
+          onClick={refreshActive}
+          style={{
+            marginTop: 10,
+            padding: '8px 22px',
+            border: '1px solid #1677ff',
+            borderRadius: 18,
+            background: '#fff',
+            color: '#1677ff',
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: 'pointer',
+          }}
+        >
+          🔄 刷新二维码
+        </button>
         <div style={{ marginTop: 8, padding: '6px 10px', background: '#fffbe6', borderRadius: 6, fontSize: 11, color: '#ad6800' }}>
           ⚠️ 当前为演示二维码（{activeQr.content.slice(0, 28)}...），不能用于真实乘车支付
         </div>
       </div>
 
-      {/* 余额信息 */}
-      <div className={styles.balanceCard}>
-        <div className={styles.balanceItem}>
-          <span className={styles.balanceLabel}>公交余额</span>
-          <span className={styles.balanceValue}>¥ 38.50</span>
-        </div>
-        <div className={styles.balanceDivider} />
-        <div className={styles.balanceItem}>
-          <span className={styles.balanceLabel}>地铁余额</span>
-          <span className={styles.balanceValue}>¥ 52.00</span>
-        </div>
-        <div className={styles.balanceDivider} />
-        <div className={styles.balanceItem}>
-          <span className={styles.balanceLabel}>碳积分</span>
-          <span className={styles.balanceValue}>🌳 1250</span>
-        </div>
-      </div>
-
-      {/* 最近乘车 */}
-      <div className={styles.ridesCard}>
-        <div className={styles.sectionTitle}>📋 最近乘车记录</div>
-        {[
-          { icon: '🚌', route: '1路', from: '西单', to: '王府井', time: '今天 08:30', cost: '-¥2.00' },
-          { icon: '🚇', route: '1号线', from: '国贸', to: '西单', time: '昨天 18:15', cost: '-¥4.00' },
-          { icon: '🚌', route: '52路', from: '王府井', to: '北京站', time: '07/31 09:00', cost: '-¥2.00' },
-        ].map((r, i) => (
-          <div key={i} className={styles.rideRow}>
-            <span className={styles.rideIcon}>{r.icon}</span>
-            <div className={styles.rideInfo}>
-              <span className={styles.rideRoute}>{r.route}</span>
-              <span className={styles.rideStops}>{r.from} → {r.to}</span>
+      {/* 个人账户信息：未登录不展示余额/乘车记录 */}
+      {isLoggedIn ? (
+        <>
+          <div className={styles.balanceCard}>
+            <div className={styles.balanceItem}>
+              <span className={styles.balanceLabel}>公交余额</span>
+              <span className={styles.balanceValue}>¥ 38.50</span>
             </div>
-            <div className={styles.rideMeta}>
-              <span className={styles.rideTime}>{r.time}</span>
-              <span className={styles.rideCost}>{r.cost}</span>
+            <div className={styles.balanceDivider} />
+            <div className={styles.balanceItem}>
+              <span className={styles.balanceLabel}>地铁余额</span>
+              <span className={styles.balanceValue}>¥ 52.00</span>
+            </div>
+            <div className={styles.balanceDivider} />
+            <div className={styles.balanceItem}>
+              <span className={styles.balanceLabel}>碳积分</span>
+              <span className={styles.balanceValue}>🌳 1250</span>
             </div>
           </div>
-        ))}
-      </div>
+
+          <div className={styles.ridesCard}>
+            <div className={styles.sectionTitle}>📋 最近乘车记录</div>
+            {[
+              { icon: '🚌', route: '1路', from: '西单', to: '王府井', time: '今天 08:30', cost: '-¥2.00' },
+              { icon: '🚇', route: '1号线', from: '国贸', to: '西单', time: '昨天 18:15', cost: '-¥4.00' },
+              { icon: '🚌', route: '52路', from: '王府井', to: '北京站', time: '07/31 09:00', cost: '-¥2.00' },
+            ].map((r, i) => (
+              <div key={i} className={styles.rideRow}>
+                <span className={styles.rideIcon}>{r.icon}</span>
+                <div className={styles.rideInfo}>
+                  <span className={styles.rideRoute}>{r.route}</span>
+                  <span className={styles.rideStops}>{r.from} → {r.to}</span>
+                </div>
+                <div className={styles.rideMeta}>
+                  <span className={styles.rideTime}>{r.time}</span>
+                  <span className={styles.rideCost}>{r.cost}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      ) : (
+        <div className={styles.balanceCard} style={{ flexDirection: 'column', gap: 8, padding: '18px 20px', textAlign: 'center' }}>
+          <div style={{ fontSize: 14, color: 'var(--text-secondary)' }}>登录后查看公交余额、地铁余额与乘车记录</div>
+          <button onClick={() => navigate('/login')} style={{ padding: '8px 28px', background: '#1677ff', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, cursor: 'pointer' }}>
+            立即登录
+          </button>
+        </div>
+      )}
 
       {/* FAQ 居中弹窗 */}
       {faqOpen && (

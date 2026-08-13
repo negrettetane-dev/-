@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import DataSourceBadge from '../../components/DataSourceBadge';
 import styles from './News.module.css';
 import { apiGet } from '../../services/apiClient';
 
@@ -23,7 +24,7 @@ const NewsListPage: React.FC = () => {
 
   return (
     <div className={styles.page}>
-      <div className={styles.pageTitle}>📰 交通资讯</div>
+      <div className={styles.pageTitle}>📰 交通资讯 <DataSourceBadge source="unknown" /></div>
 
       <div className={styles.catScroll}>
         {CATS.map(c=>(

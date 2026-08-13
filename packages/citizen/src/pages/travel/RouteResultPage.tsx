@@ -1,7 +1,12 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { AMAP_KEY, loadAMap } from '../../lib/amap';
 import { formatDistance } from '@zhitu/shared';
+import { getRouteForecast } from '../../services/routeForecastService';
+import type { RouteForecastPoint, TravelMode as ForecastMode } from '../../types/routeForecast';
+import { calculateRouteScore, recommendBestRoute, generateRecommendationReason, generateDepartureAdvice } from '../../utils/routeRecommendation';
+import RouteForecastPanel from '../../components/travel/RouteForecastPanel';
+import { geocodeLocation, isValidCoord } from '../../services/locationService';
 import styles from './Travel.module.css';
 
 // ===== 统一路线类型 =====
@@ -37,6 +42,24 @@ interface SegmentData {
   stationCount?: number;
   duration?: number;
   instruction?: string;
+}
+
+function hasSegmentContent(segment: SegmentData): boolean {
+  return Boolean(
+    segment.lineName?.trim() ||
+    segment.instruction?.trim() ||
+    segment.fromStation?.trim() ||
+    segment.toStation?.trim() ||
+    segment.fromStop?.trim() ||
+    segment.toStop?.trim()
+  );
+}
+
+function inferTransitType(value: unknown, name = ''): 'bus' | 'metro' {
+  const raw = `${String(value ?? '')} ${name}`.toLowerCase();
+  return ['subway', 'metro', 'railway', 'rail', 'tram', 'train', '地铁', '轻轨', '有轨'].some(k => raw.includes(k))
+    ? 'metro'
+    : 'bus';
 }
 
 interface RouteCardData {
@@ -124,20 +147,16 @@ const DEST_COORDS: Record<string, [number, number]> = {
   '北京南站停车场': [116.383, 39.861],
 };
 
-const ORIGIN_ADDRESSES = [
-  '北京市朝阳区建国路88号·SOHO现代城',
-  '北京市海淀区中关村大街27号·中关村广场',
-  '北京市东城区东长安街1号·东方广场',
-];
 
 const RouteResultPage: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { origin = '我的位置', destination = '目的地', waypoints = [] } = (location.state || {}) as {
+  const { origin = '我的位置', destination = '目的地', waypoints = [], originCoords = null } = (location.state || {}) as {
     origin?: string;
     destination?: string;
     waypoints?: string[];
     mode?: string;
+    originCoords?: { lng: number; lat: number } | null;
   };
   const requestedMode = (location.state as { mode?: string } | null)?.mode;
   const initMode = requestedMode === 'new-energy'
@@ -155,53 +174,101 @@ const RouteResultPage: React.FC = () => {
   const [unavailableNote, setUnavailableNote] = useState('');
   const [cardData, setCardData] = useState<RouteCardData[]>([]);
 
+  // 未来拥堵预测（模拟 Service）
+  const [forecasts, setForecasts] = useState<Partial<Record<TravelMode, RouteForecastPoint[]>>>({});
+  const [forecastLoading, setForecastLoading] = useState(false);
+  const [forecastError, setForecastError] = useState('');
+  const [recommendationId, setRecommendationId] = useState<TravelMode | null>(null);
+  const [departureAdvice, setDepartureAdvice] = useState('');
+  const [compareOpen, setCompareOpen] = useState(false);
+
   // 导航状态
   const [navActive, setNavActive] = useState(false);
   const [navMode, setNavMode] = useState<TravelMode | null>(null);
   const [navDistance, setNavDistance] = useState(0);
   const [navRouteError, setNavRouteError] = useState('');
 
-  // 起终点
-  const startCoord = useRef<[number, number]>([116.397, 39.908]);
-  const endCoord = useRef<[number, number]>([116.458, 39.920]);
+  // 起终点：没有解析成功前保持 null，禁止用天安门等固定位置冒充用户起点。
+  const startCoord = useRef<[number, number] | null>(null);
+  const endCoord = useRef<[number, number] | null>(null);
   const [displayOrigin, setDisplayOrigin] = useState('我的位置');
   const [displayDest, setDisplayDest] = useState('目的地');
+  const [locationsReady, setLocationsReady] = useState(false);
+  const [locationError, setLocationError] = useState('');
 
   // ===== 唯一地图实例 refs（导航复用同一张地图，不创建第二张） =====
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<any>(null);
   const trafficLayerRef = useRef<any>(null);
   const polylineRef = useRef<any>(null);
+  const routePolylineRefs = useRef<Partial<Record<TravelMode, any>>>({});
   const startMarkerRef = useRef<any>(null);
   const endMarkerRef = useRef<any>(null);
   const carMarkerRef = useRef<any>(null);
   const movePathRef = useRef<[number, number][]>([]);
   const pathIdxRef = useRef(0);
   const moveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const routeRequestIdRef = useRef(0);
   const [mapReady, setMapReady] = useState(false);
   const [mapError, setMapError] = useState('');
 
-  // ===== 解析起终点 =====
+  // ===== 解析起终点：标题、Marker、路线规划和导航共用这一对坐标 =====
   useEffect(() => {
-    if (origin === '我的位置' || !origin || origin.includes('坐标') || origin.startsWith('经度')) {
-      setDisplayOrigin(ORIGIN_ADDRESSES[Math.floor(Math.random() * ORIGIN_ADDRESSES.length)]);
-      startCoord.current = [116.38 + Math.random() * 0.08, 39.89 + Math.random() * 0.05];
-    } else {
-      setDisplayOrigin(origin);
-      const sm = DEST_COORDS[origin];
-      if (sm) startCoord.current = sm;
-    }
-    const dm = Object.entries(DEST_COORDS).find(([k]) => destination.includes(k) || k.includes(destination));
-    if (dm) {
-      endCoord.current = dm[1];
-      setDisplayDest(dm[0]);
-    } else {
-      setDisplayDest(destination);
-    }
-  }, [origin, destination]);
+    let cancelled = false;
+    // 立即使上一次起终点对应的规划请求失效，避免旧请求晚返回后重新画回旧路线。
+    routeRequestIdRef.current += 1;
+    startCoord.current = null;
+    endCoord.current = null;
+    setLocationsReady(false);
+    setLocationError('');
+    setRouteResults({});
+
+    const resolveOrigin = async (): Promise<{ coord: [number, number]; label: string }> => {
+      if (originCoords && isValidCoord(originCoords.lng, originCoords.lat)) {
+        return { coord: [originCoords.lng, originCoords.lat], label: origin || '当前位置' };
+      }
+      const result = await geocodeLocation(origin);
+      return { coord: [result.lng, result.lat], label: result.address || origin };
+    };
+
+    const resolveDestination = async (): Promise<{ coord: [number, number]; label: string }> => {
+      const known = Object.entries(DEST_COORDS).find(([key]) => destination.includes(key) || key.includes(destination));
+      if (known) return { coord: known[1], label: destination || known[0] };
+      const result = await geocodeLocation(destination);
+      return { coord: [result.lng, result.lat], label: result.address || destination };
+    };
+
+    Promise.all([resolveOrigin(), resolveDestination()])
+      .then(([resolvedOrigin, resolvedDestination]) => {
+        if (cancelled) return;
+        startCoord.current = resolvedOrigin.coord;
+        endCoord.current = resolvedDestination.coord;
+        setDisplayOrigin(resolvedOrigin.label);
+        setDisplayDest(resolvedDestination.label);
+        setLocationsReady(true);
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        console.error('Location resolve failed:', error);
+        startCoord.current = null;
+        endCoord.current = null;
+        setDisplayOrigin(origin || '请选择起点');
+        setDisplayDest(destination || '请选择终点');
+        setLocationError('无法解析起点或终点，请返回重新定位或从搜索结果中选择地点');
+        setIsPlanning(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [origin, destination, originCoords]);
 
   // ===== 三路并发规划 =====
   useEffect(() => {
+    if (!locationsReady || !startCoord.current || !endCoord.current) {
+      setIsPlanning(false);
+      return;
+    }
+    // 请求序号：起点/终点变化后，旧请求结果不再覆盖
+    const requestId = ++routeRequestIdRef.current;
     setIsPlanning(true);
     setRouteResults({});
     setUnavailableNote('');
@@ -218,6 +285,7 @@ const RouteResultPage: React.FC = () => {
     withTimeout(loadAMap(), 'AMap load').then((AMap: any) => {
       const s = startCoord.current;
       const e = endCoord.current;
+      if (!s || !e) throw new Error('起点或终点坐标无效');
       const startLngLat = new AMap.LngLat(s[0], s[1]);
       const endLngLat = new AMap.LngLat(e[0], e[1]);
 
@@ -269,16 +337,16 @@ const RouteResultPage: React.FC = () => {
                 if (seg.bus?.buslines?.length) {
                   // 只取主选线路 buslines[0]，不要把所有候选线路都渲染
                   const line = seg.bus.buslines[0];
-                  const rawType = String(line.type || line.lineType || seg.bus.type || '').toLowerCase();
-                  const isMetro = ['subway', 'metro', 'railway', 'rail', 'tram', 'train', '高铁', '动车', '地铁'].some(k => rawType.includes(k));
-                  segs.push({
-                    type: isMetro ? 'metro' : 'bus',
-                    lineName: line.name || line.lineName || line.route || '',
+                  const lineName = String(line.name || line.lineName || line.route || '').trim();
+                  const segment: SegmentData = {
+                    type: inferTransitType(line.type || line.lineType || seg.bus.type, lineName),
+                    lineName,
                     fromStation: line.departure_stop?.name || line.departureStop?.name || line.startStation?.name || '',
                     toStation: line.arrival_stop?.name || line.arrivalStop?.name || line.endStation?.name || '',
                     stationCount: line.station_count || line.stationCount,
                     duration: seg.bus.duration || line.duration,
-                  });
+                  };
+                  if (hasSegmentContent(segment)) segs.push(segment);
                   if (Array.isArray(line.path)) paths.push(...line.path);
                   else if (Array.isArray(seg.bus.path)) paths.push(...seg.bus.path);
                   return;
@@ -286,37 +354,38 @@ const RouteResultPage: React.FC = () => {
                 // 3) 铁路 / 轨道交通段
                 if (seg.railway) {
                   const rw = seg.railway;
-                  segs.push({
+                  const segment: SegmentData = {
                     type: 'metro',
                     lineName: rw.name || rw.lineName || '轨道交通',
                     fromStation: rw.departure_stop?.name || rw.startStation?.name || '',
                     toStation: rw.arrival_stop?.name || rw.endStation?.name || '',
                     stationCount: rw.station_count || rw.stationCount,
                     duration: rw.duration,
-                  });
+                  };
+                  if (hasSegmentContent(segment)) segs.push(segment);
                   if (Array.isArray(rw.path)) paths.push(...rw.path);
                   return;
                 }
                 // 4) 兜底：旧版 transit 结构 / 纯指令段
                 if (seg.transit) {
                   const t = seg.transit;
-                  const rawType = String(t.type || t.transitType || '').toLowerCase();
-                  const isMetro = ['subway', 'metro', 'railway', 'rail', 'tram', 'train', '高铁', '动车', '地铁'].some(k => rawType.includes(k));
-                  segs.push({
-                    type: isMetro ? 'metro' : 'bus',
-                    lineName: t.name || t.line || t.route || t.transitName || '',
+                  const lineName = String(t.name || t.line || t.route || t.transitName || '').trim();
+                  const segment: SegmentData = {
+                    type: inferTransitType(t.type || t.transitType, lineName),
+                    lineName,
                     fromStation: (t.departureStop || t.startStation || t.onStation)?.name || '',
                     toStation: (t.arrivalStop || t.endStation || t.offStation)?.name || '',
                     stationCount: t.stationCount,
                     duration: seg.transit.duration,
-                  });
+                  };
+                  if (hasSegmentContent(segment)) segs.push(segment);
                   if (seg.transit.path) paths.push(...seg.transit.path);
                   return;
                 }
                 // 5) 纯指令段兜底
                 if (seg.instruction) {
-                  const text = seg.instruction.text || seg.instruction.instruction || '';
-                  segs.push({ type: text.includes('步行') ? 'walk' : 'bus', instruction: text, duration: 0 });
+                  const text = String(seg.instruction.text || seg.instruction.instruction || '').trim();
+                  if (text) segs.push({ type: text.includes('步行') ? 'walk' : 'bus', instruction: text, duration: 0 });
                 }
               });
               // 只有高德返回了真实路径才视为成功；无路径不补模拟路线（按需求隐藏该方案）
@@ -384,6 +453,8 @@ const RouteResultPage: React.FC = () => {
       // 真实结果驱动：高德规划成功才保留该路线，失败不展示、不补模拟路线
       Promise.allSettled([planDrive(), planTransit(), planRiding(), planWalking()])
         .then((results: PromiseSettledResult<PlannedRoute>[]) => {
+          // 旧请求结果不覆盖新起点/终点
+          if (requestId !== routeRequestIdRef.current) return;
           const res: Partial<Record<TravelMode, PlannedRoute>> = {};
           results.forEach((r) => {
             if (r.status === 'fulfilled') {
@@ -403,12 +474,62 @@ const RouteResultPage: React.FC = () => {
           setIsPlanning(false);
         });
     }).catch((e) => {
+      if (requestId !== routeRequestIdRef.current) return;
       console.error('AMap load failed:', e);
       setMapError('地图加载失败，请检查高德 Key / 安全密钥 / 域名白名单');
       setRouteResults({});
       setIsPlanning(false);
     });
-  }, [origin, destination, waypoints]);
+  }, [origin, destination, waypoints, originCoords, locationsReady]);
+
+  // ===== 规划完成后加载每条成功路线的未来拥堵预测（模拟 Service） =====
+  useEffect(() => {
+    if (isPlanning) return;
+    let cancelled = false;
+    setForecastLoading(true);
+    setForecastError('');
+
+    const modes = VALID_MODES.filter(m => routeResults[m]);
+    Promise.all(modes.map(async (mode) => {
+      const result = await getRouteForecast(mode);
+      return { mode, points: result.points };
+    }))
+      .then(items => {
+        if (cancelled) return;
+        const map: Partial<Record<TravelMode, RouteForecastPoint[]>> = {};
+        items.forEach(({ mode, points }) => { map[mode] = points; });
+        setForecasts(map);
+        setForecastLoading(false);
+        // 智能推荐 + 出发时间建议（基于当前选中方案）
+        const best = recommendBestRoute(modes.map(m => {
+          const r = routeResults[m]!;
+          return {
+            mode: m, label: MODE_META[m].label,
+            distance: r.distance, duration: r.duration, toll: r.cost ?? 0,
+            forecast: map[m] || undefined,
+          };
+        }));
+        if (best) setRecommendationId(best.mode);
+        const selected = routeResults[selectedMode];
+        if (selected) {
+          setDepartureAdvice(generateDepartureAdvice(map[selectedMode] || []));
+        }
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setForecastError('预测服务暂不可用');
+        setForecastLoading(false);
+      });
+
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPlanning]);
+
+  // ===== 切换路线时更新出发时间建议 =====
+  useEffect(() => {
+    setDepartureAdvice(generateDepartureAdvice(forecasts[selectedMode] || []));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedMode, forecasts]);
 
   // ===== 唯一地图初始化（只创建一次，导航复用） =====
   useEffect(() => {
@@ -419,27 +540,15 @@ const RouteResultPage: React.FC = () => {
     loadAMap().then((AMap: any) => {
       if (disposed || !mapContainerRef.current || mapRef.current) return;
       const map = new AMap.Map(mapContainerRef.current, {
-        zoom: 13, center: startCoord.current,
+        zoom: 11, center: [116.397, 39.909],
         viewMode: '3D', pitch: 0, rotation: 0,
         resizeEnable: true, showBuildingBlock: true,
       });
       const trafficLayer = new AMap.TileLayer.Traffic({ zIndex: 10 });
       map.add(trafficLayer);
 
-      const startIcon = new AMap.Marker({
-        position: startCoord.current,
-        icon: makeMarkerIcon(AMap, '#52c41a', '起', 28),
-      });
-      const endIcon = new AMap.Marker({
-        position: endCoord.current,
-        icon: makeMarkerIcon(AMap, '#f5222d', '终', 28),
-      });
-      map.add([startIcon, endIcon]);
-
       mapRef.current = map;
       trafficLayerRef.current = trafficLayer;
-      startMarkerRef.current = startIcon;
-      endMarkerRef.current = endIcon;
       setMapReady(true);
     }).catch((e: unknown) => {
       if (disposed) return;
@@ -454,6 +563,7 @@ const RouteResultPage: React.FC = () => {
       mapRef.current = null;
       trafficLayerRef.current = null;
       polylineRef.current = null;
+      routePolylineRefs.current = {};
       startMarkerRef.current = null;
       endMarkerRef.current = null;
       carMarkerRef.current = null;
@@ -467,45 +577,56 @@ const RouteResultPage: React.FC = () => {
     const AMap = (window as any).AMap;
     if (!AMap) return;
 
-    if (startMarkerRef.current) { map.remove(startMarkerRef.current); }
+    if (startMarkerRef.current) { map.remove(startMarkerRef.current); startMarkerRef.current = null; }
+    if (endMarkerRef.current) { map.remove(endMarkerRef.current); endMarkerRef.current = null; }
+    if (!locationsReady || !startCoord.current || !endCoord.current) return;
+
     startMarkerRef.current = new AMap.Marker({
       position: startCoord.current,
       icon: makeMarkerIcon(AMap, '#52c41a', '起', 28),
     });
-    if (endMarkerRef.current) { map.remove(endMarkerRef.current); }
     endMarkerRef.current = new AMap.Marker({
       position: endCoord.current,
       icon: makeMarkerIcon(AMap, '#f5222d', '终', 28),
     });
     map.add([startMarkerRef.current, endMarkerRef.current]);
     map.setCenter(startCoord.current);
-  }, [origin, destination, mapReady]);
+  }, [origin, destination, originCoords, mapReady, locationsReady]);
 
-  // ===== 切换路线时重绘 polyline（导航时不自动 setFitView） =====
+  // ===== 多路线 Polyline：同时绘制所有可用方案，当前高亮、其他淡化 =====
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
-    const route = routeResults[selectedMode];
-    if (!route?.path?.length) return;
-
-    if (polylineRef.current) { map.remove(polylineRef.current); polylineRef.current = null; }
-
-    const color = MODE_META[selectedMode].color;
     const AMap = (window as any).AMap;
     if (!AMap?.Polyline) return;
 
-    const pl = new AMap.Polyline({
-      path: route.path,
-      strokeColor: color,
-      strokeWeight: selectedMode === 'bike' ? 4 : 5,
-      strokeOpacity: 0.85,
-      strokeStyle: selectedMode === 'bus' ? 'dashed' : 'solid',
-      lineJoin: 'round', lineCap: 'round',
+    // 清除旧 Polyline
+    Object.values(routePolylineRefs.current).forEach(pl => { if (pl) map.remove(pl); });
+    routePolylineRefs.current = {};
+
+    const modes = VALID_MODES.filter(m => routeResults[m]?.path?.length);
+    if (!modes.length) return;
+
+    modes.forEach((mode) => {
+      const route = routeResults[mode]!;
+      const isSelected = mode === selectedMode;
+      const pl = new AMap.Polyline({
+        path: route.path,
+        strokeColor: MODE_META[mode].color,
+        strokeWeight: isSelected ? 6 : 4,
+        strokeOpacity: isSelected ? 0.9 : 0.25,
+        strokeStyle: mode === 'bus' ? 'dashed' : 'solid',
+        lineJoin: 'round', lineCap: 'round',
+      });
+      map.add(pl);
+      routePolylineRefs.current[mode] = pl;
     });
-    map.add(pl);
-    polylineRef.current = pl;
-    // 仅在普通规划状态调整视野；导航状态保持导航视角
-    if (!navActive) map.setFitView([pl], false, [80, 60, 80, 60]);
+
+    // 导航状态保持导航视角，不 setFitView
+    if (!navActive) {
+      const selectedPl = routePolylineRefs.current[selectedMode];
+      if (selectedPl) map.setFitView([selectedPl], false, [80, 60, 80, 60]);
+    }
   }, [selectedMode, routeResults, mapReady, navActive]);
 
   // ===== 导航模式：复用唯一地图，只切换视角 + 车辆 Marker =====
@@ -515,11 +636,21 @@ const RouteResultPage: React.FC = () => {
     if (!map || !mapReady) return;
 
     const navRoute = routeResults[navMode];
+    const resolvedStart = startCoord.current;
+    if (!resolvedStart) {
+      setNavRouteError('起点坐标无效，请返回重新选择起点');
+      return;
+    }
     if (!navRoute?.path?.length) {
       setNavRouteError('当前路线无可用路径');
       return;
     }
     setNavRouteError('');
+
+    // 导航时只显示当前路线，隐藏其他方案的 Polyline
+    Object.entries(routePolylineRefs.current).forEach(([m, pl]) => {
+      if (pl) pl.setOptions({ visible: m === navMode });
+    });
 
     // 清理旧的移动 Timer 和车辆 Marker
     if (moveTimerRef.current) { clearInterval(moveTimerRef.current); moveTimerRef.current = null; }
@@ -531,7 +662,7 @@ const RouteResultPage: React.FC = () => {
     // 创建唯一车辆 Marker
     const modeIcon = MODE_META[navMode].icon;
     const carMarker = new AMap.Marker({
-      position: startCoord.current, anchor: 'center',
+      position: resolvedStart, anchor: 'center',
       icon: new AMap.Icon({
         image: 'data:image/svg+xml,' + encodeURIComponent(
           `<svg xmlns="http://www.w3.org/2000/svg" width="44" height="44"><circle cx="22" cy="22" r="20" fill="${MODE_META[navMode].color}" stroke="#fff" stroke-width="3"/><text x="22" y="29" text-anchor="middle" fill="#fff" font-size="20">${modeIcon}</text></svg>`
@@ -550,7 +681,7 @@ const RouteResultPage: React.FC = () => {
     map.setZoom(16);
     map.setPitch(60);
     map.setRotation(0);
-    map.setCenter(startCoord.current);
+    map.setCenter(resolvedStart);
     map.resize?.();
 
     // 车辆移动动画
@@ -573,7 +704,8 @@ const RouteResultPage: React.FC = () => {
     moveTimerRef.current = moveTimer;
 
     return () => {
-      // 只清理导航资源，不销毁主地图
+      // 只清理导航资源，不销毁主地图；恢复所有路线可见
+      Object.values(routePolylineRefs.current).forEach(pl => { if (pl) pl.setOptions({ visible: true }); });
       if (moveTimerRef.current) { clearInterval(moveTimerRef.current); moveTimerRef.current = null; }
       if (carMarkerRef.current && map) { map.remove(carMarkerRef.current); }
       carMarkerRef.current = null;
@@ -590,13 +722,15 @@ const RouteResultPage: React.FC = () => {
     carMarkerRef.current = null;
     movePathRef.current = [];
     pathIdxRef.current = 0;
+    Object.values(routePolylineRefs.current).forEach(pl => { if (pl) pl.setOptions({ visible: true }); });
     setNavActive(false);
     setNavMode(null);
     requestAnimationFrame(() => {
       map?.setPitch(0);
       map?.setRotation(0);
       map?.resize?.();
-      if (polylineRef.current) map?.setFitView([polylineRef.current], false, [80, 60, 80, 60]);
+      const selectedPl = routePolylineRefs.current[selectedMode];
+      if (selectedPl) map?.setFitView([selectedPl], false, [80, 60, 80, 60]);
     });
   };
 
@@ -649,6 +783,19 @@ const RouteResultPage: React.FC = () => {
         </div>
       )}
 
+      {!navActive && locationError && (
+        <div style={{ padding: 14, background: '#fff2f0', color: '#a8071a', border: '1px solid #ffccc7', borderRadius: 10, marginBottom: 16 }}>
+          <div style={{ fontWeight: 600 }}>⚠️ {locationError}</div>
+          <button
+            type="button"
+            onClick={() => navigate(-1)}
+            style={{ marginTop: 10, border: 0, borderRadius: 6, padding: '7px 14px', background: '#1677ff', color: '#fff', cursor: 'pointer' }}
+          >
+            返回重新选择
+          </button>
+        </div>
+      )}
+
       {/* 导航态 UI（覆盖在地图上，不占布局高度） */}
       {navActive && (
         <>
@@ -689,7 +836,7 @@ const RouteResultPage: React.FC = () => {
                 ⚠️ {navRouteError}
               </div>
             ) : (
-              <div className={styles.navSimTip}>📍 {navMode ? MODE_META[navMode].label : ''}模式 · 高德实时路线 + 3D 导航</div>
+              <div className={styles.navSimTip}>📍 {navMode ? MODE_META[navMode].label : ''}模式 · 高德路线 + 3D 导航</div>
             )}
           </div>
         </>
@@ -746,7 +893,13 @@ const RouteResultPage: React.FC = () => {
                 {/* 公交：换乘段 */}
                 {mode === 'bus' && realRoute.segments && (
                   <div className={styles.segments}>
-                    {realRoute.segments.map((s, j) => (
+                    {realRoute.segments.filter(hasSegmentContent).length === 0 ? (
+                      <div className={styles.segment}>
+                        <span className={styles.segmentIcon}>🚌</span>
+                        <span style={{ fontSize: 12, fontWeight: 500 }}>公交地铁方案</span>
+                        <span style={{ fontSize: 11, color: 'var(--text-hint)' }}>详细换乘信息暂不可用</span>
+                      </div>
+                    ) : realRoute.segments.filter(hasSegmentContent).map((s, j) => (
                       <div key={j} className={styles.segment}>
                         <span className={styles.segmentIcon}>{getTransportIcon(s.type)}</span>
                         <span style={{ fontSize: 12, fontWeight: 500 }}>
@@ -799,6 +952,93 @@ const RouteResultPage: React.FC = () => {
           })
         )}
       </div>
+
+      {/* ===== 智能推荐 + 出发时间建议 ===== */}
+      {!navActive && !isPlanning && availableModes.length > 0 && recommendationId && (
+        <div className={styles.forecastSection} style={{ background: '#f0f5ff', border: '1px solid #d6e4ff' }}>
+          <div className={styles.forecastTitle}>
+            🧠 智能路线推荐
+            <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-hint)' }}>基于模拟预测</span>
+          </div>
+          {(() => {
+            const rec = routeResults[recommendationId];
+            const reason = generateRecommendationReason(
+              { mode: recommendationId, label: MODE_META[recommendationId].label, distance: rec?.distance ?? 0, duration: rec?.duration ?? 0, toll: rec?.cost ?? 0, forecast: forecasts[recommendationId] },
+              availableModes.map(m => ({
+                mode: m, label: MODE_META[m].label,
+                distance: routeResults[m]?.distance ?? 0, duration: routeResults[m]?.duration ?? 0,
+                toll: routeResults[m]?.cost ?? 0, forecast: forecasts[m],
+              })),
+            );
+            return (
+              <div className={styles.forecastReason}>
+                {MODE_META[recommendationId].icon} 推荐方案：<b>{MODE_META[recommendationId].label}</b>
+                <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 6 }}>{reason}</div>
+              </div>
+            );
+          })()}
+          <div className={styles.departAdvice} style={{ marginTop: 8, fontSize: 13, color: '#1677ff' }}>
+            🕐 出发时间建议：{departureAdvice}
+          </div>
+        </div>
+      )}
+
+      {/* ===== 未来拥堵预测面板 ===== */}
+      {!navActive && !isPlanning && availableModes.length > 0 && (
+        <RouteForecastPanel
+          forecast={forecasts[selectedMode] || []}
+          loading={forecastLoading}
+          error={forecastError}
+          onRetry={() => { setForecastLoading(true); setForecastError(''); getRouteForecast(selectedMode).then(r => {
+            setForecasts(prev => ({ ...prev, [selectedMode]: r.points }));
+            setForecastLoading(false);
+          }).catch(() => { setForecastError('预测服务暂不可用'); setForecastLoading(false); }); }}
+        />
+      )}
+
+      {/* ===== 路线横向比较（折叠） ===== */}
+      {!navActive && !isPlanning && availableModes.length > 1 && (
+        <div className={styles.forecastSection} style={{ background: '#fff' }}>
+          <div className={styles.forecastTitle} style={{ cursor: 'pointer' }} onClick={() => setCompareOpen(!compareOpen)}>
+            📊 路线比较 {compareOpen ? '▾' : '▸'}
+          </div>
+          {compareOpen && (
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid #f0f0f0', color: 'var(--text-hint)' }}>
+                  <th style={{ padding: 6, textAlign: 'left' }}>方案</th>
+                  <th style={{ padding: 6 }}>当前耗时</th>
+                  <th style={{ padding: 6 }}>距离</th>
+                  <th style={{ padding: 6 }}>收费</th>
+                  <th style={{ padding: 6 }}>30m预计</th>
+                  <th style={{ padding: 6 }}>未来趋势</th>
+                  <th style={{ padding: 6 }}>综合评分</th>
+                </tr>
+              </thead>
+              <tbody>
+                {availableModes.map(m => {
+                  const r = routeResults[m]!;
+                  const fc = forecasts[m];
+                  const fc30 = fc?.find(f => f.offsetMinutes === 30);
+                  const trend = fc && fc.length ? (fc[fc.length - 1].index - fc[0].index).toFixed(1) : '暂无预测';
+                  const score = calculateRouteScore({ mode: m, label: MODE_META[m].label, distance: r.distance, duration: r.duration, toll: r.cost ?? 0, forecast: fc });
+                  return (
+                    <tr key={m} style={{ borderBottom: '1px solid #f5f5f5', background: selectedMode === m ? '#f0f5ff' : '#fff' }}>
+                      <td style={{ padding: 6, textAlign: 'left' }}>{MODE_META[m].icon} {MODE_META[m].label}</td>
+                      <td style={{ padding: 6, textAlign: 'center' }}>{formatDuration(r.duration)}</td>
+                      <td style={{ padding: 6, textAlign: 'center' }}>{(r.distance / 1000).toFixed(1)}km</td>
+                      <td style={{ padding: 6, textAlign: 'center' }}>{r.cost ? `¥${r.cost}` : '-'}</td>
+                      <td style={{ padding: 6, textAlign: 'center' }}>{fc30 ? formatDuration(fc30.estimatedDuration) : '暂无预测'}</td>
+                      <td style={{ padding: 6, textAlign: 'center' }}>{trend === '暂无预测' ? trend : `${trend} 指数`}</td>
+                      <td style={{ padding: 6, textAlign: 'center', fontWeight: 600 }}>{score}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
     </div>
   );
 };

@@ -312,7 +312,7 @@ const BusDetailPage: React.FC = () => {
       {line && (
         <div className={styles.lineInfo}>
           <span>首班 {line.first} · 末班 {line.last}</span>
-          <span style={{ fontSize: 11, color: 'var(--text-hint)' }}>后端公交位置数据</span>
+          <span style={{ fontSize: 11, color: 'var(--text-hint)' }}>线路数据来源待确认 · 车辆为演示</span>
         </div>
       )}
 
@@ -339,7 +339,7 @@ const BusDetailPage: React.FC = () => {
 
         {/* 地图就绪 */}
         {mapReady && (
-          <div className={styles.mapHint}>🚌 演示车辆实时位置 · 沿线路移动</div>
+          <div className={styles.mapHint}>🚌 演示车辆位置 · 非官方实时，沿线路模拟移动</div>
         )}
       </div>
 

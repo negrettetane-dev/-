@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import { apiGet, apiPost } from '../services/apiClient';
+import { clearPersonalData } from './persistence';
+import { clearTravelOriginCache } from './travelLocationStore';
 
 export interface User {
   id: string;
@@ -20,8 +22,11 @@ export interface LoginResult {
   fieldError?: string;
 }
 
+export type AuthStatus = 'loading' | 'authenticated' | 'guest' | 'expired';
+
 interface AuthState {
   isLoggedIn: boolean;
+  authStatus: AuthStatus;
   user: User | null;
   token: string | null;
   loginWithPassword: (account: string, password: string) => Promise<LoginResult>;
@@ -69,6 +74,7 @@ function normalizeUser(raw: Partial<User> & Record<string, unknown>): User {
 
 export const useAuthStore = create<AuthState>((set, get) => ({
   isLoggedIn: Boolean(stored.token),
+  authStatus: stored.token ? 'authenticated' : 'guest',
   user: stored.user,
   token: stored.token,
 
@@ -81,7 +87,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       );
       const user = normalizeUser(data);
       persistLogin(user, data.token);
-      set({ isLoggedIn: true, user, token: data.token });
+      set({ isLoggedIn: true, authStatus: 'authenticated', user, token: data.token });
       return { ok: true };
     } catch (error) {
       return { ok: false, error: errorMessage(error, '登录失败，请重试') };
@@ -102,7 +108,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       );
       const user = { ...normalizeUser(data), nickname: data.nickname || nickname || username };
       persistLogin(user, data.token);
-      set({ isLoggedIn: true, user, token: data.token });
+      set({ isLoggedIn: true, authStatus: 'authenticated', user, token: data.token });
       return { ok: true };
     } catch (error) {
       return { ok: false, error: errorMessage(error, '注册失败，请重试') };
@@ -110,9 +116,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   logout: () => {
+    // 清 Token 与用户状态，同时清理个人作用域缓存（防止 A/B 用户串号）
     localStorage.removeItem('zhitu_token');
     localStorage.removeItem('zhitu_user');
-    set({ isLoggedIn: false, user: null, token: null });
+    clearPersonalData();
+    clearTravelOriginCache();
+    set({ isLoggedIn: false, authStatus: 'guest', user: null, token: null });
   },
 
   updateUser: (patch) => {
@@ -125,7 +134,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   refreshProfile: async () => {
     if (!get().token) return;
-    const profile = await apiGet<Partial<User>>('/user/profile');
-    get().updateUser(profile);
+    try {
+      const profile = await apiGet<Partial<User>>('/user/profile');
+      get().updateUser(profile);
+    } catch {
+      // Token 失效 → 标记 expired，页面据此清除并跳转登录
+      localStorage.removeItem('zhitu_token');
+      localStorage.removeItem('zhitu_user');
+      set({ isLoggedIn: false, authStatus: 'expired', user: null, token: null });
+    }
   },
 }));

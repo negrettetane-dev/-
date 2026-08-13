@@ -104,6 +104,11 @@
 .navBtn { width: 100%; padding: 12px; background: var(--primary); color: #fff; border: none; border-radius: 10px; font-size: 15px; font-weight: 600; cursor: pointer; }
 .navBtn:hover { opacity: 0.9; }
 
+/* ===== 智能推荐 / 路线比较 / 预测区 ===== */
+.forecastSection { border-radius: 12px; padding: 14px 18px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); margin: 14px 0; }
+.forecastTitle { font-size: 14px; font-weight: 700; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px; }
+.forecastReason { font-size: 14px; color: var(--text-primary); }
+
 @media (max-width: 768px) {
   .inputArea { width: 100%; }
   .modeTabs { width: 100%; overflow-x: auto; box-sizing: border-box; }

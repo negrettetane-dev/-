@@ -1,22 +1,26 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import AIAssistant from '../../components/AIAssistant';
+import DataSourceBadge from '../../components/DataSourceBadge';
 import { searchTransit, getNearbyStations, getBusLines, getMetroLines } from '../../services/transitService';
 import type { TransitLine, TransitSearchResult, NearbyStation } from '../../types/transit';
+import { useTravelLocationStore } from '../../stores/travelLocationStore';
 import styles from './Travel.module.css';
 
 const TravelPlanPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const prefillDest = (location.state as { dest?: string })?.dest || '';
+  const { origin: locOrigin, setOrigin: setLocOrigin, locate, status: locStatus, error: locError } = useTravelLocationStore();
   const [mode, setMode] = useState<string>('drive');
-  const [origin, setOrigin] = useState('我的位置');
   const [dest, setDest] = useState(prefillDest);
   const [waypoints, setWaypoints] = useState<string[]>([]);
   const [departTime, setDepartTime] = useState('现在出发');
   const [busLines, setBusLines] = useState<TransitLine[]>([]);
   const [metroLines, setMetroLines] = useState<TransitLine[]>([]);
-  const [locating, setLocating] = useState(false);
+
+  // 起点输入值允许为空；“请选择起点”只作为 placeholder，不能回填成用户无法删除的文本。
+  const originText = locOrigin.lng != null ? locOrigin.address : locOrigin.address;
 
   // 公交/地铁搜索
   const [searchQuery, setSearchQuery] = useState('');
@@ -74,34 +78,32 @@ const TravelPlanPage: React.FC = () => {
 
   const quickDests = ['天安门', '王府井', '北京南站', '国贸CBD', '三里屯', '北京西站'];
 
-  // 📍 获取真实地理位置
-  const handleLocate = () => {
-    if (!navigator.geolocation) {
-      setOrigin('北京 · 天安门广场（无法获取定位）');
-      return;
-    }
-    setLocating(true);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const { latitude, longitude } = pos.coords;
-        setOrigin(`经度 ${longitude.toFixed(4)}, 纬度 ${latitude.toFixed(4)}`);
-        setLocating(false);
-      },
-      () => {
-        // 降级：模拟北京坐标
-        const lat = 39.9042 + (Math.random() - 0.5) * 0.05;
-        const lng = 116.4074 + (Math.random() - 0.5) * 0.05;
-        setOrigin(`北京市 · 当前位置 (${lng.toFixed(3)}, ${lat.toFixed(3)})`);
-        setLocating(false);
-      },
-      { enableHighAccuracy: true, timeout: 5000, maximumAge: 60000 }
-    );
+  // 📍 获取真实位置（统一走 location store 高德定位，失败不伪造坐标）
+  const handleLocate = () => { void locate(); };
+
+  // 手动输入只代表待解析的地点名称，必须清除旧坐标，避免文字变了但 Marker/路线仍使用上一次定位。
+  const handleOriginInput = (value: string) => {
+    setLocOrigin({
+      name: value,
+      address: value,
+      lng: null,
+      lat: null,
+      source: 'manual',
+      timestamp: Date.now(),
+    });
   };
 
   // ⇅ 反转完整路线顺序
   const handleSwap = () => {
-    setOrigin(dest);
-    setDest(origin);
+    setLocOrigin({
+      name: dest || '请选择终点',
+      address: dest,
+      lng: null,
+      lat: null,
+      source: 'manual',
+      timestamp: Date.now(),
+    });
+    setDest(originText);
     setWaypoints(currentWaypoints => [...currentWaypoints].reverse());
   };
 
@@ -120,10 +122,12 @@ const TravelPlanPage: React.FC = () => {
   };
 
   const handleSearch = () => {
-    if (!dest.trim()) return;
+    if (!originText.trim() || !dest.trim()) return;
     navigate('/travel/result', {
       state: {
-        origin,
+        origin: originText,
+        originCoords: locOrigin.lng != null && locOrigin.lat != null ? { lng: locOrigin.lng, lat: locOrigin.lat } : null,
+        originSource: locOrigin.source,
         destination: dest,
         waypoints: waypoints.map(point => point.trim()).filter(Boolean),
         mode,
@@ -150,11 +154,14 @@ const TravelPlanPage: React.FC = () => {
           <div className={styles.locationInputs}>
             <div className={styles.inputRow}>
               <span className={styles.poiDot} style={{background:'#52c41a'}}/>
-              <input className={styles.poiInput} aria-label="起始点" value={origin} onChange={e=>setOrigin(e.target.value)}/>
+              <input className={styles.poiInput} aria-label="起始点" value={originText} onChange={e=>handleOriginInput(e.target.value)} placeholder="请选择起点"/>
               <button type="button" className={styles.locationBtn} onClick={handleLocate} title="获取当前位置" aria-label="获取当前位置">
-                {locating ? '⏳' : '📍'}
+                {locStatus === 'locating' ? '⏳' : '📍'}
               </button>
             </div>
+            {locError && locStatus !== 'success' && (
+              <div style={{ fontSize: 12, color: '#d4380d', marginTop: 6 }}>⚠️ {locError}</div>
+            )}
             {waypoints.map((waypoint, index) => (
               <div className={styles.inputRow} key={index}>
                 <span className={styles.poiDot} style={{background:'#faad14'}}/>
@@ -236,9 +243,12 @@ const TravelPlanPage: React.FC = () => {
         )}
       </div>
 
-      {/* 附近站点 */}
+      {/* 附近站点（距离为演示/来源待确认） */}
       <div className={styles.transitSection}>
-        <div className={styles.sectionTitle}>📍 附近公交 / 地铁</div>
+        <div className={styles.sectionTitle}>
+          📍 附近公交 / 地铁
+          <DataSourceBadge source="unknown" />
+        </div>
         {nearbyError && <div style={{ fontSize: 12, color: '#faad14', marginBottom: 8 }}>⚠️ {nearbyError}</div>}
         <div className={styles.nearbyList}>
           {nearby.map(n => (
@@ -253,9 +263,12 @@ const TravelPlanPage: React.FC = () => {
         </div>
       </div>
 
-      {/* 实时公交 */}
+      {/* 公交线路（数据来源待确认） */}
       <div className={styles.transitSection}>
-        <div className={styles.sectionTitle}>🚌 公交线路</div>
+        <div className={styles.sectionTitle}>
+          🚌 公交线路
+          <DataSourceBadge source="unknown" />
+        </div>
         <div className={styles.busList}>
           {busLines.slice(0, showAllMetro ? busLines.length : 4).map(b => (
             <div key={b.id} className={styles.busCard} onClick={() => navigate(`/travel/bus/${b.id}`)} style={{cursor:'pointer'}}>
@@ -278,9 +291,12 @@ const TravelPlanPage: React.FC = () => {
         </div>
       </div>
 
-      {/* 地铁线路 */}
+      {/* 地铁线路（数据来源待确认） */}
       <div className={styles.transitSection}>
-        <div className={styles.sectionTitle}>🚇 地铁路线</div>
+        <div className={styles.sectionTitle}>
+          🚇 地铁路线
+          <DataSourceBadge source="unknown" />
+        </div>
         <div className={styles.metroList}>
           {metroLines.filter(m => showAllMetro || METRO_FEATURED.includes(m.id)).map(m => (
             <div key={m.id} className={styles.metroCard} onClick={() => navigate(`/travel/metro/${m.id}`)} style={{cursor:'pointer'}}>

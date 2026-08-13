@@ -307,3 +307,26 @@ export function clearAllData(): void {
     .filter(k => k.startsWith(STORAGE_PREFIX))
     .forEach(k => localStorage.removeItem(k));
 }
+
+// ====== 退出登录：清理个人作用域缓存（防止 A/B 用户串号） ======
+// 保留公共缓存（公交线路、新闻、停车场、地图等不走 localStorage 的公共数据）。
+// 不删除 user_accounts 注册库。
+const PERSONAL_KEYS = [
+  'user_points',
+  'redemptions',
+  'reports',
+  'carbon',
+  'notification_settings',
+  'starred_buses',
+  'recent_destinations',
+  'process_records',
+  'point_transactions',
+];
+
+/** 退出时清除所有个人作用域数据，公共数据不受影响 */
+export function clearPersonalData(): void {
+  PERSONAL_KEYS.forEach(key => {
+    try { localStorage.removeItem(STORAGE_PREFIX + key); } catch { /* ignore */ }
+  });
+  try { localStorage.removeItem(STORAGE_PREFIX + USER_KEY); } catch { /* ignore */ }
+}

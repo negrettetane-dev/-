@@ -125,7 +125,7 @@ export default function DashboardPage() {
 
         <div className="dashboard-panel" style={{width:'32%',gap:10}}>
           <div style={{flex:'0 0 auto'}}>
-            <div className="panel-title">🤖 AI实时检测预警</div>
+            <div className="panel-title">🤖 AI检测预警 <span style={{ fontSize: 11, fontWeight: 400, color: 'rgba(255,255,255,0.4)', marginLeft: 6 }}>模拟数据 · 非官方实时</span></div>
             <div className="ai-alert-list">
               {aiAlerts.slice(0,6).map(a=>(
                 <div key={a.id} className="ai-alert-item">

@@ -23,27 +23,28 @@ const formatTime = (ts:number) => new Date(ts).toLocaleString('zh-CN',{month:'nu
 
 const ReportPage: React.FC = () => {
   const navigate = useNavigate();
-  const { user } = useAuthStore();
+  const { user, isLoggedIn } = useAuthStore();
   const [reports, setReports] = useState<WorkOrder[]>([]);
   const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
-    apiGet<WorkOrder[]>('/report/list')
-      .then(setReports)
-      .catch(() => setLoadError('上报记录加载失败，请稍后重试'));
-  }, []);
+    // 未登录不调用个人接口（避免 /events/mine 或旧 /report/list 泄漏记录）
+    if (!isLoggedIn) { setReports([]); return; }
+    let alive = true;
+    apiGet<WorkOrder[] | { list: WorkOrder[] }>('/events/mine')
+      .then(data => {
+        if (!alive) return;
+        const list = Array.isArray(data) ? data : (data?.list ?? []);
+        setReports(list);
+      })
+      .catch(() => { if (alive) setLoadError('上报记录加载失败，请稍后重试'); });
+    return () => { alive = false; };
+  }, [isLoggedIn]);
 
-  // 区分来源：有归属字段且匹配当前用户 → 我的上报；演示/联调记录 → 演示数据
-  const renderSource = (r: WorkOrder) => {
-    const mine = r.userId !== undefined && user && String(r.userId) === String(user.id);
-    if (mine) {
-      return <span style={{ fontSize: 11, background: '#e6f4ff', color: '#1677ff', padding: '2px 6px', borderRadius: 4 }}>我的上报</span>;
-    }
-    const isDemo = /联调|测试|演示/.test(r.description || '');
-    return isDemo
-      ? <span style={{ fontSize: 11, background: '#fff7e6', color: '#ad6800', padding: '2px 6px', borderRadius: 4 }}>演示数据</span>
-      : <span style={{ fontSize: 11, background: '#f0f0f0', color: '#666', padding: '2px 6px', borderRadius: 4 }}>市民上报</span>;
-  };
+  // 来源标签（events/mine 返回的均属当前用户）
+  const renderSource = () => (
+    <span style={{ fontSize: 11, background: '#e6f4ff', color: '#1677ff', padding: '2px 6px', borderRadius: 4 }}>我的上报</span>
+  );
 
   return (
     <div className={styles.page}>
@@ -57,7 +58,9 @@ const ReportPage: React.FC = () => {
       </div>
 
       <div className={styles.sectionTitle}>我的上报记录</div>
-      {loadError ? (
+      {!isLoggedIn ? (
+        <div className={styles.empty}>登录后查看我的上报记录</div>
+      ) : loadError ? (
         <div className={styles.empty}>{loadError}</div>
       ) : reports.length === 0 ? (
         <div className={styles.empty}>还没有上报记录，点击"新建上报"反馈交通问题</div>
@@ -70,13 +73,13 @@ const ReportPage: React.FC = () => {
                 <div className={styles.cardHeader}>
                   <span>{(CATEGORY_ICONS[r.category]||'📝')} {r.category}</span>
                   <span style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                    {renderSource(r)}
+                    {renderSource()}
                     <span style={{fontSize:11,background:s.bg,color:s.color,padding:'3px 8px',borderRadius:4}}>{s.label}</span>
                   </span>
                 </div>
                 <div className={styles.cardDesc}>{r.description}</div>
                 <div className={styles.cardMeta}>
-                  <span>{r.workOrderNo}</span>
+                  <span>{r.workOrderNo || r.id}</span>
                   <span>{formatTime(r.createTime)}</span>
                 </div>
               </div>
