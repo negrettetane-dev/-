@@ -9,7 +9,7 @@ import { AvatarIcon, AvatarPicker, DEFAULT_AVATAR } from '../../components/ui/av
 
 const ProfilePage: React.FC = () => {
   const navigate = useNavigate();
-  const { isLoggedIn, user, logout, refreshProfile, updateUser } = useAuthStore();
+  const { isLoggedIn, user, refreshProfile, updateUser } = useAuthStore();
   const { elderlyMode, toggleElderlyMode } = useElderly();
   const [isAvatarPickerOpen, setIsAvatarPickerOpen] = useState(false);
 
@@ -24,7 +24,6 @@ const ProfilePage: React.FC = () => {
   const menus = [
     { icon:'🚗', label:'我的出行', desc:'历史路线、乘车记录', path:'/profile' },
     { icon:'📋', label:'我的上报', desc:'全部工单记录', path:'/profile/reports' },
-    { icon:'🌳', label:'碳积分', desc:'绿色出行积分与兑换', path:'/carbon' },
     { icon:'⚙️', label:'消息设置', desc:'预警、工单、管制提醒', path:'/profile/settings' },
   ];
 
@@ -47,11 +46,9 @@ const ProfilePage: React.FC = () => {
           <div className={styles.userPhone}>
             {user?.phone ? maskPhone(user.phone) : (user?.email ? `📧 ${user.email}` : '未绑定手机号')}
           </div>
-          <div className={styles.verified}>{user?.isVerified ? '✅ 已实名认证' : '🕐 未实名认证'}</div>
         </div>
-        <button className={styles.logoutBtn} style={{ boxShadow: 'none', marginTop: 0, padding: '8px 16px', fontSize: 13 }}
-          onClick={() => { if (confirm('确定退出登录吗？')) logout(); }}>
-          退出登录
+        <button className={styles.accountBtn} onClick={() => navigate('/profile/account')}>
+          账号管理
         </button>
       </div>
 

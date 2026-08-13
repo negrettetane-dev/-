@@ -49,18 +49,6 @@ const SettingsPage: React.FC = () => {
             <div className={styles.toggleBall}/>
           </div>
         </div>
-        <div className={styles.settingsItem}>
-          <span className={styles.settingsLabel}>关于智途云枢</span>
-          <span style={{color:'var(--text-hint)',fontSize:13}}>v1.0.0 →</span>
-        </div>
-        <div className={styles.settingsItem}>
-          <span className={styles.settingsLabel}>隐私政策</span>
-          <span style={{color:'var(--text-hint)',fontSize:13}}>→</span>
-        </div>
-        <div className={styles.settingsItem}>
-          <span className={styles.settingsLabel}>用户协议</span>
-          <span style={{color:'var(--text-hint)',fontSize:13}}>→</span>
-        </div>
       </div>
 
       <div style={{textAlign:'center',padding:20,color:'var(--text-hint)',fontSize:13}}>
