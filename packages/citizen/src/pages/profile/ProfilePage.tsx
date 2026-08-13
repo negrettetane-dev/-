@@ -1,15 +1,17 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
 import { useElderly } from '../../App';
 import { maskPhone } from '@zhitu/shared';
 import styles from './Profile.module.css';
 import { apiGet } from '../../services/apiClient';
+import { AvatarIcon, AvatarPicker, DEFAULT_AVATAR } from '../../components/ui/avatar-picker';
 
 const ProfilePage: React.FC = () => {
   const navigate = useNavigate();
   const { isLoggedIn, user, logout, refreshProfile, updateUser } = useAuthStore();
   const { elderlyMode, toggleElderlyMode } = useElderly();
+  const [isAvatarPickerOpen, setIsAvatarPickerOpen] = useState(false);
 
   useEffect(() => {
     if (!isLoggedIn) return;
@@ -30,7 +32,16 @@ const ProfilePage: React.FC = () => {
     <div className={styles.page}>
       {/* 用户卡片 */}
       <div className={styles.userCard}>
-        <div className={styles.avatar}>👤</div>
+        <button
+          type="button"
+          className={styles.avatar}
+          onClick={() => setIsAvatarPickerOpen(open => !open)}
+          aria-expanded={isAvatarPickerOpen}
+          aria-controls="avatar-picker-panel"
+          aria-label={isAvatarPickerOpen ? '收起头像选择' : '更换头像'}
+        >
+          <AvatarIcon avatar={user?.avatar} size={58} />
+        </button>
         <div className={styles.userInfo}>
           <div className={styles.userName}>{user?.nickname || user?.username || '智途云枢用户'}</div>
           <div className={styles.userPhone}>
@@ -42,6 +53,22 @@ const ProfilePage: React.FC = () => {
           onClick={() => { if (confirm('确定退出登录吗？')) logout(); }}>
           退出登录
         </button>
+      </div>
+
+      <div className={`${styles.avatarPanel} ${isAvatarPickerOpen ? styles.avatarPanelOpen : ''}`}>
+        <section id="avatar-picker-panel" className={styles.avatarSection} aria-labelledby="avatar-title">
+          <div>
+            <div id="avatar-title" className={styles.avatarTitle}>选择你的性格头像</div>
+            <div className={styles.avatarHint}>选择后自动保存并收起</div>
+          </div>
+          <AvatarPicker
+            value={user?.avatar || DEFAULT_AVATAR}
+            onChange={avatar => {
+              updateUser({ avatar });
+              setIsAvatarPickerOpen(false);
+            }}
+          />
+        </section>
       </div>
 
       {/* 碳积分 */}

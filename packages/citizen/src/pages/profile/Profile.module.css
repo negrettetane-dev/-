@@ -1,6 +1,14 @@
 .page { }
 .userCard { display: flex; align-items: center; gap: 16px; background: #fff; border-radius: 12px; padding: 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
-.avatar { width: 64px; height: 64px; border-radius: 50%; background: var(--primary-light); display: flex; align-items: center; justify-content: center; font-size: 34px; }
+.avatar { width: 64px; height: 64px; padding: 0; border: 2px solid transparent; border-radius: 50%; background: var(--primary-light); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s; }
+.avatar:hover { transform: scale(1.04); border-color: #f4cfd9; box-shadow: 0 0 0 3px #fff0f4; }
+.avatar:focus-visible { outline: 2px solid #ff8eaa; outline-offset: 3px; }
+.avatarPanel { display: grid; grid-template-rows: 0fr; opacity: 0; transform: translateY(-10px); transition: grid-template-rows 0.28s ease, opacity 0.2s ease, transform 0.28s ease; }
+.avatarPanelOpen { grid-template-rows: 1fr; opacity: 1; transform: translateY(0); }
+.avatarSection { min-height: 0; overflow: hidden; display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-top: 0; padding: 0 24px; background: #fff; border: 0 solid #f8e1e8; border-radius: 12px; box-shadow: none; transition: margin-top 0.28s ease, padding 0.28s ease, border-width 0.28s ease, box-shadow 0.28s ease; }
+.avatarPanelOpen .avatarSection { margin-top: 16px; padding: 20px 24px; border-width: 1px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+.avatarTitle { font-size: 16px; font-weight: 600; color: var(--text-primary); }
+.avatarHint { margin-top: 4px; font-size: 13px; color: var(--text-secondary); }
 .userInfo { flex: 1; }
 .userName { font-size: 20px; font-weight: 700; }
 .userPhone { font-size: 14px; color: var(--text-secondary); margin-top: 2px; }
@@ -19,7 +27,7 @@
 .menuBody { flex: 1; }
 .menuLabel { font-size: 16px; font-weight: 500; }
 .menuDesc { font-size: 13px; color: var(--text-secondary); margin-top: 2px; }
-.logoutBtn { text-align: center; padding: 14px; color: var(--danger); font-size: 14px; cursor: pointer; margin-top: 16px; background: #fff; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); transition: all 0.2s; }
+.logoutBtn { text-align: center; padding: 14px; color: var(--danger); font-size: 14px; cursor: pointer; margin-top: 16px; background: #fff; border: 1px solid #f4cfd9; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); transition: all 0.2s; }
 .logoutBtn:hover { background: #fff1f0; }
 .toggle { width: 48px; height: 26px; background: #ddd; border-radius: 13px; position: relative; transition: background 0.3s; flex-shrink: 0; }
 .toggleOn { background: var(--primary); }
@@ -32,3 +40,7 @@
 .settingsItem { display: flex; justify-content: space-between; align-items: center; padding: 14px 0; border-bottom: 1px solid #f5f5f5; }
 .settingsItem:last-child { border-bottom: none; }
 .settingsLabel { font-size: 15px; font-weight: 500; }
+
+@media (max-width: 640px) {
+  .avatarSection { align-items: flex-start; flex-direction: column; }
+}
