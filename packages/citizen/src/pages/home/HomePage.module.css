@@ -16,7 +16,15 @@
   font-size: 14px; outline: none; transition: border-color 0.2s;
 }
 .searchInput:focus { border-color: var(--primary); }
-.searchBtn { padding: 10px 16px; background: var(--primary); color: #fff; border: none; border-radius: 8px; font-size: 14px; cursor: pointer; white-space: nowrap; }
+.searchBtn {
+  position: relative; overflow: hidden; padding: 10px 18px; border: 1px solid #2077d8; border-radius: 10px;
+  background: linear-gradient(135deg, #1677ff, #0f5fc9); box-shadow: inset 0 1px 0 rgba(140,205,255,0.65), 0 6px 15px rgba(22,119,255,0.28);
+  color: #fff; font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: transform 0.16s ease, box-shadow 0.16s ease;
+}
+.searchBtn::before { content: ''; position: absolute; top: -70%; bottom: -70%; left: -38%; width: 34%; transform: rotate(18deg); background: linear-gradient(90deg, transparent, rgba(96,190,255,0.88), transparent); transition: left 0.45s ease; }
+.searchBtn:hover, .searchBtn:focus-visible { transform: translateY(-1px); box-shadow: inset 0 1px 0 rgba(177,225,255,0.8), 0 8px 18px rgba(22,119,255,0.38); outline: none; }
+.searchBtn:hover::before, .searchBtn:focus-visible::before { left: 108%; }
+.searchBtn:active { transform: scale(0.97); }
 
 /* 搜索补全下拉 */
 .searchWrapper { flex: 1; position: relative; }
@@ -60,16 +68,18 @@
 /* 底部快捷入口 */
 .heroQuick {
   position: absolute; left: 50%; transform: translateX(-50%); bottom: 16px;
-  display: flex; gap: 8px; background: rgba(255,255,255,0.96); backdrop-filter: blur(8px);
-  padding: 8px; border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+  display: flex; align-items: flex-end; gap: 10px; background: rgba(255,255,255,0.96); backdrop-filter: blur(10px);
+  padding: 10px 12px; border: 1px solid rgba(15,23,42,0.12); border-radius: 18px; box-shadow: 0 10px 26px rgba(15,23,42,0.18);
 }
 .heroQuickItem {
-  display: flex; flex-direction: column; align-items: center; gap: 4px;
-  padding: 10px 18px; border-radius: 8px; cursor: pointer; transition: all 0.2s;
-  font-size: 12px; color: var(--text-primary);
+  position: relative; display: flex; width: 54px; height: 54px; align-items: center; justify-content: center;
+  padding: 0; border: 1px solid #e5e7eb; border-radius: 12px; background: #fff; color: #111827; cursor: pointer;
+  transition: width 0.2s ease, height 0.2s ease, transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
-.heroQuickItem:hover { background: var(--primary-light); color: var(--primary); }
-.heroQuickIcon { font-size: 22px; }
+.heroQuickItem:hover, .heroQuickItem:focus-visible { width: 66px; height: 66px; transform: translateY(-8px); border-color: #b9c8d8; box-shadow: 0 8px 18px rgba(15,23,42,0.16); outline: none; }
+.heroQuickIcon { font-size: 24px; line-height: 1; }
+.heroQuickLabel { position: absolute; left: 50%; top: -36px; z-index: 1; padding: 5px 9px; border: 1px solid #d9e1e9; border-radius: 6px; background: #fff; box-shadow: 0 4px 12px rgba(15,23,42,0.12); color: #111827; font-size: 12px; font-weight: 500; white-space: nowrap; opacity: 0; pointer-events: none; transform: translate(-50%, 6px); transition: opacity 0.18s ease, transform 0.18s ease; }
+.heroQuickItem:hover .heroQuickLabel, .heroQuickItem:focus-visible .heroQuickLabel { opacity: 1; transform: translate(-50%, 0); }
 
 /* 实时预警浮层 */
 .alertFloat { position: absolute; top: 16px; right: 16px; width: 320px; display: flex; flex-direction: column; gap: 8px; }

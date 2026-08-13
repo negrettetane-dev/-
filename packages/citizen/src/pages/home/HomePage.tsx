@@ -164,7 +164,7 @@ const HomePage: React.FC = () => {
                   </div>
                 )}
               </div>
-              <button className={styles.searchBtn} onClick={() => query.trim() ? navigate('/travel', { state: { dest: query.trim() } }) : navigate('/travel')}>出行规划</button>
+              <button type="button" className={styles.searchBtn} onClick={() => query.trim() ? navigate('/travel', { state: { dest: query.trim() } }) : navigate('/travel')}>出发</button>
             </div>
             <div className={styles.aiHint}>AI结合实时路况+拥堵预测，为您推荐最优路线</div>
           </div>
@@ -198,10 +198,10 @@ const HomePage: React.FC = () => {
             { icon:'🚶', label:'步行导航', path:'/travel' },
             { icon:'🅿️', label:'停车充电', path:'/parking' },
           ].map(item => (
-            <div key={item.label} className={styles.heroQuickItem} onClick={()=>navigate(item.path)}>
+            <button type="button" key={item.label} className={styles.heroQuickItem} onClick={()=>navigate(item.path)} aria-label={item.label}>
               <span className={styles.heroQuickIcon}>{item.icon}</span>
-              <span>{item.label}</span>
-            </div>
+              <span className={styles.heroQuickLabel}>{item.label}</span>
+            </button>
           ))}
         </div>
 
