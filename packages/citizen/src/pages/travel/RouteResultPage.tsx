@@ -3,64 +3,18 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { AMAP_KEY, loadAMap } from '../../lib/amap';
 import { formatDistance } from '@zhitu/shared';
 import { getRouteForecast } from '../../services/routeForecastService';
+import { hasSegmentContent, resolveRouteLocations, type PlannedRoute, type SegmentData } from '../../services/routePlanningService';
 import type { RouteForecastPoint, TravelMode as ForecastMode } from '../../types/routeForecast';
 import { calculateRouteScore, recommendBestRoute, generateRecommendationReason, generateDepartureAdvice } from '../../utils/routeRecommendation';
 import RouteForecastPanel from '../../components/travel/RouteForecastPanel';
-import { geocodeLocation, isValidCoord } from '../../services/locationService';
+import TravelModeSelector, { normalizeTravelMode, type RouteTravelMode, type TravelModeOption } from '../../components/travel/TravelModeSelector';
 import styles from './Travel.module.css';
 
 // ===== 统一路线类型 =====
-type TravelMode = 'drive' | 'bus' | 'bike' | 'walk';
+type TravelMode = RouteTravelMode;
 
 // 合法的交通方式（用于校验 URL state 传入的 mode）
 const VALID_MODES: TravelMode[] = ['drive', 'bus', 'bike', 'walk'];
-
-interface PlannedRoute {
-  mode: TravelMode;
-  distance: number;
-  duration: number;
-  path: [number, number][];
-  polyline: [number, number][];
-  segments?: SegmentData[];
-  cost?: number;
-  calories?: number;
-  bikeLaneRatio?: number;
-  congestionSegments?: { level: string; ratio: number }[];
-  aiAdvice?: string;
-  error?: string;
-}
-
-interface SegmentData {
-  type: 'walk' | 'metro' | 'bus';
-  lineName?: string;
-  fromStation?: string;
-  toStation?: string;
-  fromStop?: string;
-  toStop?: string;
-  crowding?: string;
-  nextBusArrival?: number;
-  stationCount?: number;
-  duration?: number;
-  instruction?: string;
-}
-
-function hasSegmentContent(segment: SegmentData): boolean {
-  return Boolean(
-    segment.lineName?.trim() ||
-    segment.instruction?.trim() ||
-    segment.fromStation?.trim() ||
-    segment.toStation?.trim() ||
-    segment.fromStop?.trim() ||
-    segment.toStop?.trim()
-  );
-}
-
-function inferTransitType(value: unknown, name = ''): 'bus' | 'metro' {
-  const raw = `${String(value ?? '')} ${name}`.toLowerCase();
-  return ['subway', 'metro', 'railway', 'rail', 'tram', 'train', '地铁', '轻轨', '有轨'].some(k => raw.includes(k))
-    ? 'metro'
-    : 'bus';
-}
 
 interface RouteCardData {
   id: string;
@@ -109,44 +63,22 @@ function getTransportLabel(type?: string): string {
   return '';
 }
 
-const ROUTE_TIMEOUT_MS = 15000;
+function inferTransitType(value: unknown, name = ''): 'bus' | 'metro' {
+  const raw = `${String(value ?? '')} ${name}`.toLowerCase();
+  return ['subway', 'metro', 'railway', 'rail', 'tram', 'train', '地铁', '轻轨', '有轨'].some(key => raw.includes(key))
+    ? 'metro'
+    : 'bus';
+}
 
-function withTimeout<T>(promise: Promise<T>, label: string, timeoutMs = ROUTE_TIMEOUT_MS): Promise<T> {
+function withTimeout<T>(promise: Promise<T>, label: string, timeoutMs = 15000): Promise<T> {
   return new Promise((resolve, reject) => {
     const timer = window.setTimeout(() => reject(new Error(`${label} timeout`)), timeoutMs);
     promise.then(
-      (value) => {
-        window.clearTimeout(timer);
-        resolve(value);
-      },
-      (error) => {
-        window.clearTimeout(timer);
-        reject(error);
-      },
+      value => { window.clearTimeout(timer); resolve(value); },
+      error => { window.clearTimeout(timer); reject(error); },
     );
   });
 }
-
-const DEST_COORDS: Record<string, [number, number]> = {
-  '天安门广场': [116.397, 39.909], '天安门': [116.397, 39.909],
-  '故宫博物院': [116.403, 39.918], '王府井步行街': [116.417, 39.914],
-  '王府井': [116.417, 39.914], '国贸CBD': [116.461, 39.909],
-  '国贸': [116.461, 39.909], '三里屯太古里': [116.455, 39.932],
-  '三里屯': [116.455, 39.932], '北京南站': [116.385, 39.863],
-  '北京西站': [116.322, 39.895], '北京站': [116.433, 39.903],
-  '首都国际机场': [116.608, 40.080], '大兴国际机场': [116.422, 39.516],
-  '中关村': [116.316, 39.983], '西单': [116.380, 39.913],
-  '望京SOHO': [116.489, 39.996], '颐和园': [116.278, 39.999],
-  '鸟巢': [116.395, 39.993], '南锣鼓巷': [116.410, 39.938],
-  '朝阳大悦城': [116.524, 39.924], '金融街': [116.361, 39.915],
-  '北京大学': [116.310, 39.993], '清华大学': [116.332, 40.001],
-  '王府井地下停车场': [116.415, 39.912],
-  '国贸CBD地下停车场': [116.462, 39.907],
-  '三里屯地下停车场': [116.454, 39.930],
-  '中关村购物中心停车场': [116.317, 39.981],
-  '北京南站停车场': [116.383, 39.861],
-};
-
 
 const RouteResultPage: React.FC = () => {
   const location = useLocation();
@@ -159,11 +91,10 @@ const RouteResultPage: React.FC = () => {
     originCoords?: { lng: number; lat: number } | null;
   };
   const requestedMode = (location.state as { mode?: string } | null)?.mode;
-  const initMode = requestedMode === 'new-energy'
-    ? 'drive'
-    : requestedMode === 'accessible'
-      ? 'bus'
-      : requestedMode as TravelMode | undefined;
+  const initialDisplayMode: TravelModeOption = ['new-energy', 'drive', 'bus', 'bike', 'walk', 'accessible'].includes(requestedMode || '')
+    ? requestedMode as TravelModeOption
+    : 'drive';
+  const initMode = normalizeTravelMode(initialDisplayMode);
 
   // 核心状态：selectedMode 必须来自出行规划页选择的交通方式
   const [isPlanning, setIsPlanning] = useState(true);
@@ -171,6 +102,7 @@ const RouteResultPage: React.FC = () => {
   const [selectedMode, setSelectedMode] = useState<TravelMode>(
     initMode && VALID_MODES.includes(initMode) ? initMode : 'drive'
   );
+  const [selectedDisplayMode, setSelectedDisplayMode] = useState<TravelModeOption>(initialDisplayMode);
   const [unavailableNote, setUnavailableNote] = useState('');
   const [cardData, setCardData] = useState<RouteCardData[]>([]);
 
@@ -191,8 +123,8 @@ const RouteResultPage: React.FC = () => {
   // 起终点：没有解析成功前保持 null，禁止用天安门等固定位置冒充用户起点。
   const startCoord = useRef<[number, number] | null>(null);
   const endCoord = useRef<[number, number] | null>(null);
-  const [displayOrigin, setDisplayOrigin] = useState('我的位置');
-  const [displayDest, setDisplayDest] = useState('目的地');
+  const [displayOrigin, setDisplayOrigin] = useState(origin || '我的位置');
+  const [displayDest, setDisplayDest] = useState(destination || '目的地');
   const [locationsReady, setLocationsReady] = useState(false);
   const [locationError, setLocationError] = useState('');
 
@@ -223,28 +155,13 @@ const RouteResultPage: React.FC = () => {
     setLocationError('');
     setRouteResults({});
 
-    const resolveOrigin = async (): Promise<{ coord: [number, number]; label: string }> => {
-      if (originCoords && isValidCoord(originCoords.lng, originCoords.lat)) {
-        return { coord: [originCoords.lng, originCoords.lat], label: origin || '当前位置' };
-      }
-      const result = await geocodeLocation(origin);
-      return { coord: [result.lng, result.lat], label: result.address || origin };
-    };
-
-    const resolveDestination = async (): Promise<{ coord: [number, number]; label: string }> => {
-      const known = Object.entries(DEST_COORDS).find(([key]) => destination.includes(key) || key.includes(destination));
-      if (known) return { coord: known[1], label: destination || known[0] };
-      const result = await geocodeLocation(destination);
-      return { coord: [result.lng, result.lat], label: result.address || destination };
-    };
-
-    Promise.all([resolveOrigin(), resolveDestination()])
-      .then(([resolvedOrigin, resolvedDestination]) => {
+    resolveRouteLocations(origin, destination, originCoords)
+      .then(({ start, end, originLabel, destinationLabel }) => {
         if (cancelled) return;
-        startCoord.current = resolvedOrigin.coord;
-        endCoord.current = resolvedDestination.coord;
-        setDisplayOrigin(resolvedOrigin.label);
-        setDisplayDest(resolvedDestination.label);
+        startCoord.current = start;
+        endCoord.current = end;
+        setDisplayOrigin(originLabel);
+        setDisplayDest(destinationLabel);
         setLocationsReady(true);
       })
       .catch((error: unknown) => {
@@ -450,27 +367,25 @@ const RouteResultPage: React.FC = () => {
         });
       }), 'Walking route');
 
-      // 真实结果驱动：高德规划成功才保留该路线，失败不展示、不补模拟路线
-      Promise.allSettled([planDrive(), planTransit(), planRiding(), planWalking()])
-        .then((results: PromiseSettledResult<PlannedRoute>[]) => {
-          // 旧请求结果不覆盖新起点/终点
+      const plannerByMode: Record<TravelMode, () => Promise<PlannedRoute>> = {
+        drive: planDrive,
+        bus: planTransit,
+        bike: planRiding,
+        walk: planWalking,
+      };
+
+      plannerByMode[selectedMode]()
+        .then((route) => {
           if (requestId !== routeRequestIdRef.current) return;
-          const res: Partial<Record<TravelMode, PlannedRoute>> = {};
-          results.forEach((r) => {
-            if (r.status === 'fulfilled') {
-              res[r.value.mode] = r.value;
-              console.log(`${r.value.mode} 规划成功，路径点数:`, r.value.path.length);
-            } else {
-              const mode = VALID_MODES[results.indexOf(r)];
-              console.error(`${mode} 规划失败（不展示该方案）:`, r.reason);
-              // 失败：不赋值 → 页面不显示该方式
-            }
-          });
-          setRouteResults(res);
-          // 若用户选中的方式不可用，自动切换到第一个可用方案
-          const firstAvailable = VALID_MODES.find(m => res[m]);
-          setSelectedMode(prev => (prev && res[prev] ? prev : (firstAvailable || 'drive')));
-          setUnavailableNote(initMode && !res[initMode] ? `该起终点暂无可用${MODE_META[initMode].label}路线` : '');
+          setRouteResults({ [route.mode]: route });
+          setUnavailableNote('');
+          setIsPlanning(false);
+        })
+        .catch((error) => {
+          if (requestId !== routeRequestIdRef.current) return;
+          console.error(`${selectedMode} 规划失败（不展示该方案）:`, error);
+          setRouteResults({});
+          setUnavailableNote(`该起终点暂无可用${MODE_META[selectedMode].label}路线`);
           setIsPlanning(false);
         });
     }).catch((e) => {
@@ -480,7 +395,7 @@ const RouteResultPage: React.FC = () => {
       setRouteResults({});
       setIsPlanning(false);
     });
-  }, [origin, destination, waypoints, originCoords, locationsReady]);
+  }, [origin, destination, waypoints, originCoords, locationsReady, selectedMode]);
 
   // ===== 规划完成后加载每条成功路线的未来拥堵预测（模拟 Service） =====
   useEffect(() => {
@@ -737,20 +652,28 @@ const RouteResultPage: React.FC = () => {
   const congestionColor = (l: string) =>
     ({ free: '#52c41a', slow: '#fadb14', congested: '#ff7a00', blocked: '#f5222d' } as Record<string, string>)[l] || '#999';
   const formatDuration = (s: number) => s < 3600 ? `${Math.floor(s / 60)}分钟` : `${Math.floor(s / 3600)}h${Math.floor((s % 3600) / 60)}min`;
+  const selectTravelMode = (mode: TravelModeOption) => {
+    setSelectedDisplayMode(mode);
+    setSelectedMode(normalizeTravelMode(mode));
+  };
 
   // 只有高德规划成功的方案才展示
   const availableModes = VALID_MODES.filter(m => routeResults[m]);
+  const displayedModes = routeResults[selectedMode] ? [selectedMode] : [];
   const navRoute = navMode ? routeResults[navMode] : null;
 
   // ===== 单一 return：唯一地图容器始终挂载，导航只切换布局与覆盖层 =====
   return (
     <div className={navActive ? styles.navFullscreen : styles.page}>
       {!navActive && (
-        <div className={styles.resultHeader}>
-          <span onClick={() => navigate(-1)} style={{ cursor: 'pointer', fontSize: 18 }}>←</span>
-          <div className={styles.resultRoute}>
-            <span>{waypoints.length ? [displayOrigin, ...waypoints, displayDest].join(' → ') : `${displayOrigin} → ${displayDest}`}</span>
+        <div className={styles.resultTopRow}>
+          <div className={styles.resultHeader}>
+            <button type="button" className={styles.backBtn} onClick={() => navigate(-1)} aria-label="返回">←</button>
+            <div className={styles.resultRoute}>
+              <span>{waypoints.length ? [displayOrigin, ...waypoints, displayDest].join(' → ') : `${displayOrigin} → ${displayDest}`}</span>
+            </div>
           </div>
+          <TravelModeSelector value={selectedDisplayMode} onChange={selectTravelMode} className={styles.resultModeSelector} />
         </div>
       )}
 
@@ -776,10 +699,7 @@ const RouteResultPage: React.FC = () => {
       {/* 加载中（仅普通模式） */}
       {!navActive && isPlanning && (
         <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--text-hint)', background: '#fff', borderRadius: 12, marginBottom: 16 }}>
-          <div>🚗 正在规划驾车路线...</div>
-          <div>🚌 正在规划公交路线...</div>
-          <div>🚲 正在规划骑行路线...</div>
-          <div>🚶 正在规划步行路线...</div>
+          <div>{MODE_META[selectedMode].icon} 正在规划{MODE_META[selectedMode].label}路线...</div>
         </div>
       )}
 
@@ -850,17 +770,17 @@ const RouteResultPage: React.FC = () => {
       )}
 
       <div className={styles.optionScroll}>
-        {availableModes.length === 0 ? (
+        {displayedModes.length === 0 ? (
           <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-hint)' }}>
-            {mapError ? `⚠️ ${mapError}` : '该起终点暂无可用路线方案'}
+            {isPlanning ? '正在规划当前出行方式...' : mapError ? `⚠️ ${mapError}` : `该起终点暂无可用${MODE_META[selectedMode].label}路线`}
           </div>
         ) : (
-          availableModes.map((mode, i) => {
+          displayedModes.map((mode) => {
             const realRoute = routeResults[mode]!;
             const mock = cardData.find(d => d.mode === mode);
             const distance = realRoute.distance;
             const duration = realRoute.duration;
-            const badge = i === 0 ? '推荐' : i === 1 ? '备选' : i === 2 ? '绿色' : '健康';
+            const badge = mode === 'drive' ? '推荐' : mode === 'bus' ? '便捷' : mode === 'bike' ? '绿色' : '健康';
 
             return (
               <div
@@ -872,7 +792,7 @@ const RouteResultPage: React.FC = () => {
                   <span style={{ fontSize: 18 }}>{MODE_META[mode].icon}</span>
                   <div>
                     <span className={styles.routeDuration}>{formatDuration(duration)}</span>
-                    <span style={{ fontSize: 12, color: i === 0 ? '#52c41a' : 'var(--text-hint)', marginLeft: 4 }}>
+                    <span style={{ fontSize: 12, color: '#52c41a', marginLeft: 4 }}>
                       {badge}
                     </span>
                   </div>

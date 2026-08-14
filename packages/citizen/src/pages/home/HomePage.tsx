@@ -1,9 +1,13 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { ArrowUpDown, LocateFixed, Plus, X } from 'lucide-react';
 import { loadAMap } from '../../lib/amap';
 import AIAssistant from '../../components/AIAssistant';
+import TravelModeSelector, { normalizeTravelMode, type TravelModeOption } from '../../components/travel/TravelModeSelector';
 import styles from './HomePage.module.css';
 import { apiGet } from '../../services/apiClient';
+import { planAmapRoute, resolveRouteLocations } from '../../services/routePlanningService';
+import { useTravelLocationStore } from '../../stores/travelLocationStore';
 
 interface Alert { id:string; category:string; title:string; summary:string; severity:string; publishTime:number }
 interface News { id:string; title:string; summary:string; source:string; publishTime:number }
@@ -13,33 +17,65 @@ const HomePage: React.FC = () => {
   const navigate = useNavigate();
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<any>(null);
+  const homeRoutePolyline = useRef<any>(null);
+  const homeRouteRequestId = useRef(0);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [news, setNews] = useState<News[]>([]);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [mapError, setMapError] = useState('');
-  const [query, setQuery] = useState('');
-  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const { origin, setOrigin, locate, status: locationStatus, error: locationError } = useTravelLocationStore();
+  const [destination, setDestination] = useState('');
+  const [waypoints, setWaypoints] = useState<string[]>([]);
+  const [departTime, setDepartTime] = useState('现在出发');
+  const [selectedMode, setSelectedMode] = useState<TravelModeOption>('drive');
+  const quickDestinations = ['天安门', '王府井', '北京南站', '国贸CBD', '三里屯', '北京西站'];
 
-  // 北京 POI 提示词库
-  const ALL_SUGGESTIONS = [
-    '天安门广场', '故宫博物院', '王府井步行街', '国贸CBD', '三里屯太古里',
-    '北京南站', '北京西站', '北京站', '首都国际机场', '大兴国际机场',
-    '中关村软件园', '西单大悦城', '望京SOHO', '五棵松体育馆', '颐和园',
-    '圆明园', '鸟巢·水立方', '簋街', '南锣鼓巷', '后海酒吧街',
-    '北京动物园', '朝阳大悦城', '蓝色港湾', '华熙LIVE', '金融街',
-    '北京大学', '清华大学', '中国人民大学', '北京航空航天大学', '北京理工大学',
-    '西二旗', '上地', '亦庄开发区', '通州万达', '回龙观', '天通苑',
-  ];
+  const setManualOrigin = (value: string) => setOrigin({
+    name: value,
+    address: value,
+    lng: null,
+    lat: null,
+    source: 'manual',
+    timestamp: Date.now(),
+  });
 
-  const handleQueryChange = (val: string) => {
-    setQuery(val);
-    if (val.trim().length > 0) {
-      const filtered = ALL_SUGGESTIONS.filter(s => s.includes(val.trim()));
-      setSuggestions(filtered.slice(0, 6));
-    } else {
-      setSuggestions([]);
+  const swapRoute = () => {
+    const previousOrigin = origin.address;
+    setManualOrigin(destination);
+    setDestination(previousOrigin);
+    setWaypoints(points => [...points].reverse());
+  };
+
+  const startRoute = () => {
+    if (!origin.address.trim() || !destination.trim()) return;
+    const openResult = () => navigate('/travel/result', {
+      state: {
+        origin: origin.address,
+        originCoords: origin.lng != null && origin.lat != null ? { lng: origin.lng, lat: origin.lat } : null,
+        originSource: origin.source,
+        destination: destination.trim(),
+        waypoints: waypoints.map(point => point.trim()).filter(Boolean),
+        mode: selectedMode,
+        departTime,
+      },
+    });
+    const transitionDocument = document as Document & {
+      startViewTransition?: (callback: () => void) => void;
+    };
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches || !transitionDocument.startViewTransition) {
+      openResult();
+      return;
     }
+    transitionDocument.startViewTransition(openResult);
+  };
+
+  const selectTravelMode = (mode: TravelModeOption) => {
+    if (!destination.trim()) {
+      window.alert('请填写目的地');
+      return;
+    }
+    setSelectedMode(mode);
   };
 
   // 加载高德地图（大图显示）
@@ -96,6 +132,50 @@ const HomePage: React.FC = () => {
     return () => { if (mapInstance.current) { mapInstance.current.destroy(); mapInstance.current = null; } };
   }, []);
 
+  useEffect(() => {
+    const map = mapInstance.current;
+    if (!map || !mapLoaded) return;
+
+    if (homeRoutePolyline.current) {
+      map.remove(homeRoutePolyline.current);
+      homeRoutePolyline.current = null;
+    }
+
+    if (!origin.address.trim() || !destination.trim()) return;
+
+    const requestId = ++homeRouteRequestId.current;
+    const routeMode = normalizeTravelMode(selectedMode);
+    resolveRouteLocations(
+      origin.address,
+      destination,
+      origin.lng != null && origin.lat != null ? { lng: origin.lng, lat: origin.lat } : null,
+    )
+      .then(({ start, end }) => planAmapRoute(routeMode, start, end))
+      .then((route) => {
+        if (requestId !== homeRouteRequestId.current || !mapInstance.current) return;
+        const AMap = (window as any).AMap;
+        if (!AMap?.Polyline) return;
+        const polyline = new AMap.Polyline({
+          path: route.path,
+          strokeColor: '#1677ff',
+          strokeWeight: 6,
+          strokeOpacity: 0.95,
+          strokeStyle: 'solid',
+          lineJoin: 'round',
+          lineCap: 'round',
+          zIndex: 80,
+        });
+        mapInstance.current.add(polyline);
+        homeRoutePolyline.current = polyline;
+        mapInstance.current.setFitView([polyline], false, [70, 70, 100, 440]);
+      })
+      .catch(error => console.warn('Home route planning failed:', error));
+
+    return () => {
+      homeRouteRequestId.current += 1;
+    };
+  }, [destination, mapLoaded, origin.address, origin.lat, origin.lng, selectedMode]);
+
   // 加载数据
   useEffect(() => {
     apiGet<Array<{
@@ -137,39 +217,106 @@ const HomePage: React.FC = () => {
           </div>
         )}
 
-        {/* 左侧：AI出行助手搜索 */}
+        {/* 左侧：AI 出行规划 */}
         <div className={styles.heroLeft}>
           <div className={styles.aiBox}>
-            <div className={styles.aiBoxTitle}>🤖 AI智能出行助手</div>
-            <div className={styles.searchRow}>
-              <div className={styles.searchWrapper}>
-                <input
-                  className={styles.searchInput}
-                  placeholder="输入目的地，如：天安门"
-                  value={query}
-                  onChange={e=>handleQueryChange(e.target.value)}
-                  onKeyDown={e=>{ if(e.key==='Enter' && query.trim()) navigate('/travel', { state: { dest: query.trim() } }); }}
-                  onBlur={()=>setTimeout(()=>setSuggestions([]),200)}
-                  onFocus={()=>{ if(query.trim()) handleQueryChange(query); }}
-                />
-                {/* 自动补全下拉 */}
-                {suggestions.length > 0 && (
-                  <div className={styles.suggestDropdown}>
-                    {suggestions.map(s => (
-                      <div key={s} className={styles.suggestItem} onMouseDown={e=>{ e.preventDefault(); setQuery(s); navigate('/travel', { state: { dest: s } }); }}>
-                        <span className={styles.suggestIcon}>📍</span>
-                        <span>{s}</span>
-                      </div>
-                    ))}
+            <div className={styles.aiBoxTitle}>AI智能出行助手</div>
+            <div className={styles.routeEditor}>
+              <div className={styles.locationInputs}>
+                <div className={styles.locationInputRow}>
+                  <span className={`${styles.poiDot} ${styles.originDot}`} />
+                  <input
+                    className={styles.locationInput}
+                    aria-label="出发地"
+                    placeholder="请输入出发地"
+                    value={origin.address}
+                    onChange={event => setManualOrigin(event.target.value)}
+                  />
+                  <button
+                    type="button"
+                    className={styles.locationButton}
+                    onClick={() => void locate()}
+                    title="获取当前位置"
+                    aria-label="获取当前位置"
+                    disabled={locationStatus === 'locating'}
+                  >
+                    <LocateFixed size={18} aria-hidden="true" />
+                  </button>
+                </div>
+                {waypoints.map((waypoint, index) => (
+                  <div className={styles.locationInputRow} key={index}>
+                    <span className={`${styles.poiDot} ${styles.waypointDot}`} />
+                    <input
+                      className={styles.locationInput}
+                      aria-label={`途经点${index + 1}`}
+                      placeholder={`请输入途经点${index + 1}`}
+                      value={waypoint}
+                      onChange={event => setWaypoints(points => points.map((point, pointIndex) => pointIndex === index ? event.target.value : point))}
+                    />
+                    <button
+                      type="button"
+                      className={styles.locationButton}
+                      onClick={() => setWaypoints(points => points.filter((_, pointIndex) => pointIndex !== index))}
+                      title="删除途经点"
+                      aria-label={`删除途经点${index + 1}`}
+                    >
+                      <X size={18} aria-hidden="true" />
+                    </button>
                   </div>
-                )}
+                ))}
+                <div className={styles.locationInputRow}>
+                  <span className={`${styles.poiDot} ${styles.destinationDot}`} />
+                  <input
+                    className={styles.locationInput}
+                    aria-label="目的地"
+                    placeholder="请输入目的地"
+                    value={destination}
+                    onChange={event => setDestination(event.target.value)}
+                    onKeyDown={event => { if (event.key === 'Enter') startRoute(); }}
+                  />
+                </div>
               </div>
-              <button type="button" className={styles.searchBtn} onClick={() => query.trim() ? navigate('/travel', { state: { dest: query.trim() } }) : navigate('/travel')}>出发</button>
+              <div className={styles.routeActions}>
+                <button type="button" className={styles.routeActionButton} onClick={swapRoute} title="切换出发地和目的地" aria-label="切换出发地和目的地">
+                  <ArrowUpDown size={19} aria-hidden="true" />
+                </button>
+                <button type="button" className={styles.routeActionButton} onClick={() => setWaypoints(points => [...points, ''])} title="添加途经点" aria-label="添加途经点">
+                  <Plus size={20} aria-hidden="true" />
+                </button>
+              </div>
             </div>
-            <div className={styles.aiHint}>AI结合实时路况+拥堵预测，为您推荐最优路线</div>
+            {locationError && locationStatus !== 'success' && <div className={styles.locationError}>{locationError}</div>}
+            <div className={styles.departRow}>
+              <span>出发时间</span>
+              <select value={departTime} onChange={event => setDepartTime(event.target.value)} aria-label="出发时间">
+                <option>现在出发</option>
+                <option>30分钟后</option>
+                <option>1小时后</option>
+              </select>
+            </div>
+            <button type="button" className={styles.startButton} onClick={startRoute} disabled={!origin.address.trim() || !destination.trim()}>出发</button>
+            <div className={styles.popularSection}>
+              <div className={styles.popularTitle}>热门目的地</div>
+              <div className={styles.popularList}>
+                {quickDestinations.map(place => (
+                  <button type="button" key={place} className={styles.popularDestination} onClick={() => setDestination(place)}>{place}</button>
+                ))}
+              </div>
+            </div>
           </div>
+        </div>
 
-          {/* 拥堵指数卡片 */}
+        <TravelModeSelector value={selectedMode} onChange={selectTravelMode} className={styles.heroModeSelector} />
+
+        {/* 实时预警浮动标签 */}
+        <div className={styles.alertFloat}>
+          {alerts.slice(0,3).map(a => (
+            <div key={a.id} className={styles.alertFloatItem}>
+              <span style={{color:severityColor(a.severity)}}>{alertIcon(a.category)}</span>
+              <span className={styles.alertFloatTitle}>{a.title}</span>
+              <span className={styles.alertFloatTime}>{formatRelative(a.publishTime)}</span>
+            </div>
+          ))}
           {snapshot && (
             <div className={styles.indexCard}>
               <div className={styles.indexHead}>
@@ -187,33 +334,6 @@ const HomePage: React.FC = () => {
               </div>
             </div>
           )}
-        </div>
-
-        {/* 底部：快捷出行入口 */}
-        <div className={styles.heroQuick}>
-          {[
-            { icon:'🚗', label:'驾车出行', path:'/travel' },
-            { icon:'🚌', label:'公交地铁', path:'/travel' },
-            { icon:'🚲', label:'骑行导航', path:'/travel' },
-            { icon:'🚶', label:'步行导航', path:'/travel' },
-            { icon:'🅿️', label:'停车充电', path:'/parking' },
-          ].map(item => (
-            <button type="button" key={item.label} className={styles.heroQuickItem} onClick={()=>navigate(item.path)} aria-label={item.label}>
-              <span className={styles.heroQuickIcon}>{item.icon}</span>
-              <span className={styles.heroQuickLabel}>{item.label}</span>
-            </button>
-          ))}
-        </div>
-
-        {/* 实时预警浮动标签 */}
-        <div className={styles.alertFloat}>
-          {alerts.slice(0,3).map(a => (
-            <div key={a.id} className={styles.alertFloatItem}>
-              <span style={{color:severityColor(a.severity)}}>{alertIcon(a.category)}</span>
-              <span className={styles.alertFloatTitle}>{a.title}</span>
-              <span className={styles.alertFloatTime}>{formatRelative(a.publishTime)}</span>
-            </div>
-          ))}
         </div>
       </section>
 
