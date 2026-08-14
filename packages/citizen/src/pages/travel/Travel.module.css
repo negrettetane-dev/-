@@ -1,35 +1,6 @@
 .page { }
-.modeTabs { display: flex; gap: 8px; background: #fff; border-radius: 12px; padding: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); margin: 0 auto 20px; width: fit-content; }
-.modeTab { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 22px; border-radius: 8px; cursor: pointer; transition: all 0.2s; color: var(--text-secondary); }
-.modeTab:hover { background: var(--bg-page); }
-.modeActive { background: var(--primary-light); color: var(--primary); font-weight: 600; }
-
-.inputArea { width: 50%; box-sizing: border-box; margin: 0 auto; background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); display: flex; flex-direction: column; gap: 12px; }
-.routeEditor { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; }
-.locationInputs { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-.inputRow { display: flex; align-items: center; gap: 8px; padding: 10px 14px; background: var(--bg-page); border-radius: 10px; }
-.poiDot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
-.poiInput { flex: 1; border: none; outline: none; background: none; font-size: 15px; color: var(--text-primary); }
-.poiInput::placeholder { color: var(--text-hint); }
-.locBtn, .locationBtn { font-size: 18px; flex-shrink: 0; }
-.locationBtn { display: inline-flex; align-items: center; justify-content: center; padding: 0; border: none; background: transparent; cursor: pointer; }
-.routeActions { display: flex; align-items: center; justify-content: center; gap: 8px; }
-.routeActionBtn, .removeWaypointBtn { display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--border-color); background: #fff; color: var(--text-primary); cursor: pointer; transition: all 0.2s; }
-.routeActionBtn { width: 36px; height: 36px; border-radius: 10px; font-size: 22px; line-height: 1; }
-.removeWaypointBtn { width: 24px; height: 24px; border-radius: 50%; color: var(--text-hint); font-size: 18px; flex-shrink: 0; }
-.routeActionBtn:hover, .removeWaypointBtn:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-light); }
-.routeActionBtn:focus-visible, .removeWaypointBtn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
-.departRow { display: flex; align-items: center; justify-content: space-between; padding: 4px 0; }
-.departLabel { font-size: 13px; color: var(--text-secondary); }
-.departSelect { border: 1px solid var(--border-color); border-radius: 6px; padding: 6px 10px; font-size: 13px; background: #fff; }
-.searchBtn { width: 100%; padding: 14px; background: var(--primary); color: #fff; border: none; border-radius: 10px; font-size: 16px; font-weight: 600; cursor: pointer; transition: opacity 0.2s; }
-.searchBtn:hover { opacity: 0.9; }
-
-.quickSection { margin-top: 24px; }
+.travelPageModeSelector { margin: 0 auto 20px; }
 .sectionTitle { font-size: 17px; font-weight: 600; margin-bottom: 12px; }
-.quickGrid { display: flex; flex-wrap: wrap; gap: 8px; }
-.quickDest { padding: 8px 18px; background: #fff; border-radius: 20px; font-size: 14px; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.06); transition: all 0.2s; }
-.quickDest:hover { background: var(--primary-light); color: var(--primary); }
 
 .transitSection { margin-top: 24px; }
 .busList, .metroList { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
@@ -72,9 +43,12 @@
 .showAllBtn:hover { opacity: 0.85; }
 
 /* ===== 路径结果页 ===== */
-.resultHeader { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
-.resultHeader .backBtn { cursor: pointer; font-size: 20px; }
+.resultTopRow { position: sticky; top: 72px; z-index: 20; display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
+.resultHeader { display: flex; min-width: 0; flex: 1; align-items: center; gap: 12px; }
+.backBtn { display: inline-flex; width: 40px; height: 40px; align-items: center; justify-content: center; padding: 0; border: 1px solid var(--border-color); border-radius: 10px; background: #fff; color: var(--text-primary); font-size: 20px; cursor: pointer; }
+.backBtn:hover, .backBtn:focus-visible { border-color: var(--primary); color: var(--primary); outline: none; }
 .resultRoute { flex: 1; font-size: 16px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.resultModeSelector { position: static; flex: 0 0 auto; margin-left: auto; }
 .resultMap { height: 320px; border-radius: 12px; overflow: hidden; margin-bottom: 16px; position: relative; }
 .sharedMap { width: 100%; height: 100%; }
 .mapOverlay {
@@ -110,9 +84,6 @@
 .forecastReason { font-size: 14px; color: var(--text-primary); }
 
 @media (max-width: 768px) {
-  .inputArea { width: 100%; }
-  .modeTabs { width: 100%; overflow-x: auto; box-sizing: border-box; }
-  .modeTab { min-width: 72px; padding: 10px 14px; }
   .busList, .metroList { grid-template-columns: 1fr; }
   .customBusBanner { flex-direction: column; align-items: flex-start; }
 }

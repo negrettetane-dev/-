@@ -7,56 +7,36 @@
 }
 
 /* 左侧浮层 */
-.heroLeft { position: absolute; top: 16px; left: 16px; width: 320px; display: flex; flex-direction: column; gap: 12px; }
+.heroLeft { position: absolute; top: 16px; left: 16px; width: 390px; display: flex; flex-direction: column; gap: 12px; }
 .aiBox { background: rgba(255,255,255,0.95); backdrop-filter: blur(8px); border-radius: 12px; padding: 16px; box-shadow: 0 4px 16px rgba(0,0,0,0.12); }
 .aiBoxTitle { font-size: 15px; font-weight: 700; margin-bottom: 12px; }
-.searchRow { display: flex; gap: 8px; }
-.searchInput {
-  flex: 1; padding: 10px 14px; border: 1px solid #e5e7eb; border-radius: 8px;
-  font-size: 14px; outline: none; transition: border-color 0.2s;
-}
-.searchInput:focus { border-color: var(--primary); }
-.searchBtn {
-  position: relative; overflow: hidden; padding: 10px 18px; border: 1px solid #2077d8; border-radius: 10px;
-  background: linear-gradient(135deg, #1677ff, #0f5fc9); box-shadow: inset 0 1px 0 rgba(140,205,255,0.65), 0 6px 15px rgba(22,119,255,0.28);
-  color: #fff; font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: transform 0.16s ease, box-shadow 0.16s ease;
-}
-.searchBtn::before { content: ''; position: absolute; top: -70%; bottom: -70%; left: -38%; width: 34%; transform: rotate(18deg); background: linear-gradient(90deg, transparent, rgba(96,190,255,0.88), transparent); transition: left 0.45s ease; }
-.searchBtn:hover, .searchBtn:focus-visible { transform: translateY(-1px); box-shadow: inset 0 1px 0 rgba(177,225,255,0.8), 0 8px 18px rgba(22,119,255,0.38); outline: none; }
-.searchBtn:hover::before, .searchBtn:focus-visible::before { left: 108%; }
-.searchBtn:active { transform: scale(0.97); }
-
-/* 搜索补全下拉 */
-.searchWrapper { flex: 1; position: relative; }
-.suggestDropdown {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  margin-top: 4px;
-  box-shadow: 0 6px 20px rgba(0,0,0,0.1);
-  z-index: 100;
-  overflow: hidden;
-}
-.suggestItem {
-  padding: 10px 14px;
-  font-size: 14px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  transition: background 0.15s;
-  border-bottom: 1px solid #f5f5f5;
-}
-.suggestItem:last-child { border-bottom: none; }
-.suggestItem:hover { background: #f0f5ff; color: var(--primary); }
-.suggestIcon { font-size: 14px; }
-
-.aiHint { font-size: 12px; color: var(--text-hint); margin-top: 10px; }
-
+.routeEditor { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; }
+.locationInputs { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.locationInputRow { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 12px; background: var(--bg-page); border: 1px solid transparent; border-radius: 8px; }
+.locationInputRow:focus-within { border-color: var(--primary); background: #fff; }
+.poiDot { width: 9px; height: 9px; flex: 0 0 9px; border-radius: 50%; }
+.originDot { background: #52c41a; }
+.waypointDot { background: #faad14; }
+.destinationDot { background: #f5222d; }
+.locationInput { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--text-primary); font-size: 14px; }
+.locationInput::placeholder { color: var(--text-hint); }
+.locationButton { display: inline-flex; width: 32px; height: 32px; flex: 0 0 32px; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--text-secondary); cursor: pointer; }
+.locationButton:hover, .locationButton:focus-visible { background: var(--primary-light); color: var(--primary); outline: none; }
+.locationButton:disabled { cursor: wait; opacity: 0.45; }
+.routeActions { display: flex; flex-direction: column; gap: 8px; }
+.routeActionButton { display: inline-flex; width: 40px; height: 40px; align-items: center; justify-content: center; padding: 0; border: 1px solid var(--border-color); border-radius: 8px; background: #fff; color: var(--text-primary); cursor: pointer; }
+.routeActionButton:hover, .routeActionButton:focus-visible { border-color: var(--primary); background: var(--primary-light); color: var(--primary); outline: none; }
+.locationError { margin-top: 8px; color: #d4380d; font-size: 12px; }
+.departRow { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; color: var(--text-secondary); font-size: 13px; }
+.departRow select { min-height: 36px; padding: 0 10px; border: 1px solid var(--border-color); border-radius: 7px; background: #fff; color: var(--text-primary); }
+.startButton { width: 100%; min-height: 44px; margin-top: 10px; border: 0; border-radius: 8px; background: var(--primary); color: #fff; font-size: 15px; font-weight: 600; cursor: pointer; }
+.startButton:hover, .startButton:focus-visible { opacity: 0.9; outline: 2px solid #fff; outline-offset: -4px; }
+.startButton:disabled { cursor: not-allowed; opacity: 0.45; }
+.popularSection { margin-top: 12px; }
+.popularTitle { margin-bottom: 8px; color: var(--text-secondary); font-size: 13px; font-weight: 600; }
+.popularList { display: flex; flex-wrap: wrap; gap: 6px; }
+.popularDestination { min-height: 32px; padding: 0 10px; border: 1px solid var(--border-color); border-radius: 16px; background: #fff; color: var(--text-secondary); font-size: 12px; cursor: pointer; }
+.popularDestination:hover, .popularDestination:focus-visible { border-color: var(--primary); background: var(--primary-light); color: var(--primary); outline: none; }
 .indexCard { background: rgba(255,255,255,0.95); backdrop-filter: blur(8px); border-radius: 12px; padding: 14px 16px; box-shadow: 0 4px 16px rgba(0,0,0,0.12); }
 .indexHead { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: var(--text-secondary); margin-bottom: 8px; }
 .indexTrend { font-size: 12px; color: #f5222d; }
@@ -65,21 +45,8 @@
 .indexMeta { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--text-secondary); }
 .indexMeta b { color: var(--text-primary); }
 
-/* 底部快捷入口 */
-.heroQuick {
-  position: absolute; left: 50%; transform: translateX(-50%); bottom: 16px;
-  display: flex; align-items: flex-end; gap: 10px; background: rgba(255,255,255,0.96); backdrop-filter: blur(10px);
-  padding: 10px 12px; border: 1px solid rgba(15,23,42,0.12); border-radius: 18px; box-shadow: 0 10px 26px rgba(15,23,42,0.18);
-}
-.heroQuickItem {
-  position: relative; display: flex; width: 54px; height: 54px; align-items: center; justify-content: center;
-  padding: 0; border: 1px solid #e5e7eb; border-radius: 12px; background: #fff; color: #111827; cursor: pointer;
-  transition: width 0.2s ease, height 0.2s ease, transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
-}
-.heroQuickItem:hover, .heroQuickItem:focus-visible { width: 66px; height: 66px; transform: translateY(-8px); border-color: #b9c8d8; box-shadow: 0 8px 18px rgba(15,23,42,0.16); outline: none; }
-.heroQuickIcon { font-size: 24px; line-height: 1; }
-.heroQuickLabel { position: absolute; left: 50%; top: -36px; z-index: 1; padding: 5px 9px; border: 1px solid #d9e1e9; border-radius: 6px; background: #fff; box-shadow: 0 4px 12px rgba(15,23,42,0.12); color: #111827; font-size: 12px; font-weight: 500; white-space: nowrap; opacity: 0; pointer-events: none; transform: translate(-50%, 6px); transition: opacity 0.18s ease, transform 0.18s ease; }
-.heroQuickItem:hover .heroQuickLabel, .heroQuickItem:focus-visible .heroQuickLabel { opacity: 1; transform: translate(-50%, 0); }
+/* 地图出行方式 */
+.heroModeSelector { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); }
 
 /* 实时预警浮层 */
 .alertFloat { position: absolute; top: 16px; right: 16px; width: 320px; display: flex; flex-direction: column; gap: 8px; }
@@ -130,13 +97,13 @@
 /* ===== 响应式 ===== */
 @media (max-width: 1024px) {
   .featureGrid { grid-template-columns: repeat(2, 1fr); }
-  .heroLeft { width: 280px; }
-  .alertFloat { width: 280px; }
+  .heroLeft { width: 350px; }
+  .alertFloat { width: 260px; }
 }
 @media (max-width: 768px) {
-  .hero { height: 380px; }
+  .hero { height: 520px; }
   .heroLeft { width: calc(100% - 32px); }
   .alertFloat { display: none; }
   .bottomSection { grid-template-columns: 1fr; }
-  .heroQuick { display: none; }
+  .heroModeSelector { left: 16px; right: 16px; width: auto; transform: none; }
 }

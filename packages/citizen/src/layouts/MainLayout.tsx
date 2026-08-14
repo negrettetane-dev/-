@@ -15,7 +15,6 @@ const ABOUT_CONTENT: Record<string, string> = {
 
 const NAV_ITEMS = [
   { key: '/', label: '首页', icon: '🏠' },
-  { key: '/travel', label: '出行规划', icon: '🧭' },
   { key: '/parking', label: '停车充电', icon: '🅿️' },
   { key: '/report', label: '事件上报', icon: '📷' },
   { key: '/news', label: '交通资讯', icon: '📰' },
@@ -35,7 +34,7 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const isFullScreen = currentPath.startsWith('/elderly');
 
   // 判断当前激活菜单
-  const activeKey = NAV_ITEMS.find(item => {
+  const activeKey = currentPath === '/travel/result' ? '/' : NAV_ITEMS.find(item => {
     if (item.key === '/') return currentPath === '/';
     return currentPath.startsWith(item.key);
   })?.key || '';
