@@ -11,6 +11,8 @@ import { recognizeIntent } from './intentRouter';
 import { searchTransit, getBusLines, getMetroLines } from '../transitService';
 import { getRouteForecast } from '../routeForecastService';
 import { FORECAST_LEVEL_LABEL } from '../../types/routeForecast';
+import { formatPrice } from '../../utils/price';
+import type { PriceValue } from '../../types/price';
 import type {
   AssistantCard,
   AssistantCardAction,
@@ -242,7 +244,7 @@ function extractTransitQuery(text: string): string {
 // ===== 停车场 =====
 interface ParkingLotShape {
   id: string; name: string; address: string; position: [number, number];
-  totalSpots: number; availableSpots: number; price: string; type: string; distance: number; hasCharging: boolean;
+  totalSpots: number; availableSpots: number; price: PriceValue; type: string; distance: number; hasCharging: boolean;
 }
 
 async function handleParking(): Promise<AssistantMessage> {
@@ -256,7 +258,7 @@ async function handleParking(): Promise<AssistantMessage> {
       subtitle: p.address,
       rows: [
         { label: '空位', value: `${p.availableSpots}/${p.totalSpots}`, valueColor: p.availableSpots / p.totalSpots > 0.3 ? '#52c41a' : p.availableSpots / p.totalSpots > 0.1 ? '#faad14' : '#f5222d' },
-        { label: '价格', value: p.price },
+        { label: '价格', value: formatPrice(p.price) },
         ...(p.hasCharging ? [{ label: '充电', value: '支持 ⚡' }] : []),
       ],
       source: SRC.demo,
@@ -272,7 +274,7 @@ async function handleParking(): Promise<AssistantMessage> {
 // ===== 充电站 =====
 interface ChargingStationShape {
   id: string; name: string; address: string; position: [number, number]; operator: string;
-  totalPiles: number; availablePiles: number; power: string; price: string; distance: number; status: string;
+  totalPiles: number; availablePiles: number; power: string; price: PriceValue; distance: number; status: string;
 }
 
 async function handleCharging(): Promise<AssistantMessage> {
@@ -287,7 +289,7 @@ async function handleCharging(): Promise<AssistantMessage> {
       rows: [
         { label: '空闲桩', value: `${c.availablePiles}/${c.totalPiles}`, valueColor: '#52c41a' },
         { label: '功率', value: c.power },
-        { label: '价格', value: c.price },
+        { label: '价格', value: formatPrice(c.price) },
         ...(c.status === 'offline' ? [{ label: '状态', value: '离线', valueColor: '#f5222d' }] : []),
       ],
       source: SRC.demo,

@@ -14,7 +14,7 @@ export default defineConfig({
     port: 3000,
     proxy: {
       '/api': {
-        target: process.env.VITE_API_PROXY_TARGET || 'https://frp-tip.com:32356',
+        target: process.env.VITE_API_PROXY_TARGET || 'https://frp-six.com:32356',
         changeOrigin: true,
         secure: false,
       },

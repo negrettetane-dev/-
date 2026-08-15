@@ -3,9 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import { loadAMap } from '../../lib/amap';
 import styles from './Parking.module.css';
 import { apiGet } from '../../services/apiClient';
+import { formatPrice } from '../../utils/price';
+import type { PriceValue } from '../../types/price';
 
-interface ParkingLot { id:string; name:string; address:string; position:[number,number]; totalSpots:number; availableSpots:number; price:string; type:string; distance:number; hasCharging:boolean }
-interface ChargingStation { id:string; name:string; address:string; position:[number,number]; operator:string; totalPiles:number; availablePiles:number; power:string; price:string; distance:number; status:string }
+interface ParkingLot { id:string; name:string; address:string; position:[number,number]; totalSpots:number; availableSpots:number; price:PriceValue; type:string; distance:number; hasCharging:boolean }
+interface ChargingStation { id:string; name:string; address:string; position:[number,number]; operator:string; totalPiles:number; availablePiles:number; power:string; price:PriceValue; distance:number; status:string }
 
 const ParkingPage: React.FC = () => {
   const navigate = useNavigate();
@@ -61,7 +63,7 @@ const ParkingPage: React.FC = () => {
           label: { content: `<div style="background:#1677ff;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px;white-space:nowrap">${p.name}</div>`, direction: 'top' },
         });
         m.on('click', () => {
-          const info = `<div style="padding:8px;font-size:13px"><b>${p.name}</b><br/>空位: ${p.availableSpots}/${p.totalSpots}<br/>${p.price}</div>`;
+          const info = `<div style="padding:8px;font-size:13px"><b>${p.name}</b><br/>空位: ${p.availableSpots}/${p.totalSpots}<br/>${formatPrice(p.price)}</div>`;
           const infoWin = new AMap.InfoWindow({ content: info, offset: new AMap.Pixel(0, -30) });
           infoWin.open(map, p.position);
         });
@@ -81,7 +83,7 @@ const ParkingPage: React.FC = () => {
           label: { content: `<div style="background:#52c41a;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">${c.name}</div>`, direction: 'top' },
         });
         m.on('click', () => {
-          const info = `<div style="padding:8px;font-size:13px"><b>${c.name}</b><br/>空闲: ${c.availablePiles}/${c.totalPiles}<br/>${c.power} · ${c.price}</div>`;
+          const info = `<div style="padding:8px;font-size:13px"><b>${c.name}</b><br/>空闲: ${c.availablePiles}/${c.totalPiles}<br/>${c.power} · ${formatPrice(c.price)}</div>`;
           const infoWin = new AMap.InfoWindow({ content: info, offset: new AMap.Pixel(0, -30) });
           infoWin.open(map, c.position);
         });
@@ -148,7 +150,7 @@ const ParkingPage: React.FC = () => {
                       </div>
                     </div>
                     <div style={{textAlign:'right'}}>
-                      <div style={{fontWeight:600,color:'#f5222d',fontSize:15}}>{p.price}</div>
+                      <div style={{fontWeight:600,color:'#f5222d',fontSize:15}}>{formatPrice(p.price)}</div>
                       <button className={styles.navBtn} onClick={() => {
                         const [lng, lat] = p.position;
                         navigate(`/travel/result`, { state: { origin: '我的位置', destination: p.name, mode: 'drive' } });
@@ -181,7 +183,7 @@ const ParkingPage: React.FC = () => {
                       <span style={{fontSize:11,color:'var(--text-hint)',marginLeft:6}}>⚡{c.power}</span>
                     </div>
                     <div style={{textAlign:'right'}}>
-                      <div style={{fontWeight:600,fontSize:15}}>{c.price}</div>
+                      <div style={{fontWeight:600,fontSize:15}}>{formatPrice(c.price)}</div>
                       <button className={styles.navBtn} onClick={() => navigate('/charging/scan', { state: {
                         stationId: c.id,
                         stationName: c.name,

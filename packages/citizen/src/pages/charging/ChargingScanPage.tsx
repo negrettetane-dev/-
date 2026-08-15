@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { generateChargingDemoQr, type ChargingDemoQrState } from '../../services/chargingScanService';
 import DemoQrCode from '../../components/DemoQrCode';
+import { formatPrice } from '../../utils/price';
+import type { PriceValue } from '../../types/price';
 import styles from './ChargingScan.module.css';
 
 interface ChargingScanLocationState {
@@ -9,7 +11,7 @@ interface ChargingScanLocationState {
   stationName?: string;
   operator?: string;
   power?: string;
-  price?: string;
+  price?: PriceValue;
   address?: string;
 }
 
@@ -116,7 +118,7 @@ const ChargingScanPage: React.FC = () => {
             <div className={styles.stationRow}><span>地址</span><span>{station.address || '-'}</span></div>
             <div className={styles.stationRow}><span>运营商</span><span>{station.operator || '-'}</span></div>
             <div className={styles.stationRow}><span>功率</span><span>{station.power || '-'}</span></div>
-            <div className={styles.stationRow}><span>价格</span><span>{station.price || '-'}</span></div>
+            <div className={styles.stationRow}><span>价格</span><span>{formatPrice(station.price)}</span></div>
             <div className={styles.stationRow}><span>站点编号</span><span>{station.stationId || '-'}</span></div>
           </>
         ) : (
