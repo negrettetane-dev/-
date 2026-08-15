@@ -20,10 +20,12 @@ export interface RealTimeMetrics {
 
 export const dashboardService = {
   getMetrics: async () => {
-    const [hourly, roads, alerts] = await Promise.all([
+    const [hourly, roads, alerts, metrics] = await Promise.all([
       apiGet<HourlyMetrics[]>('/dashboard/hourly'),
       apiGet<MockRoadSegment[]>('/dashboard/roads'),
       apiGet<AiAlert[]>('/dashboard/ai-alerts'),
+      // 尝试从 /dashboard/metrics 读取设备在线率；后端未提供该字段时不伪造，回退 0
+      apiGet<{ deviceOnlineRate?: number }>('/dashboard/metrics').catch(() => null),
     ]);
     const latest = hourly[hourly.length - 1];
     return {
@@ -33,7 +35,7 @@ export const dashboardService = {
       congestionIndex: latest?.congestionIndex ?? 0,
       incidentCount: latest?.incidentCount ?? alerts.length,
       congestedRoadCount: roads.filter(road => road.congestionLevel === 'congested' || road.congestionLevel === 'blocked').length,
-      deviceOnlineRate: 0,
+      deviceOnlineRate: metrics?.deviceOnlineRate ?? 0,
     };
   },
   getHourlyTraffic: () => apiGet<HourlyMetrics[]>('/dashboard/hourly'),

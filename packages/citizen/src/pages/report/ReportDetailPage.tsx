@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { apiGet } from '../../services/apiClient';
 import styles from './Report.module.css';
 
 interface WorkOrder { id:string; workOrderNo:string; category:string; description:string; images:string[]; position:[number,number]; address:string; status:string; createTime:number; updateTime:number; processLogs:{time:number;action:string;operator:string;detail:string}[]; rating?:number; afterImage?:string }
@@ -12,10 +13,20 @@ const ReportDetailPage: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const [report, setReport] = useState<WorkOrder | null>(null);
+  const [error, setError] = useState('');
   const [rating, setRating] = useState(0);
 
-  useEffect(() => { fetch(`/api/report/detail/${id}`).then(r=>r.json()).then(d=>setReport(d.data)); }, [id]);
+  // 走统一 apiClient（自动携带 Bearer Token），避免裸 fetch 无鉴权导致 401
+  useEffect(() => {
+    let alive = true;
+    if (!id) return;
+    apiGet<WorkOrder>(`/report/detail/${id}`)
+      .then(data => { if (alive) setReport(data); })
+      .catch(() => { if (alive) setError('工单不存在或您无权查看'); });
+    return () => { alive = false; };
+  }, [id]);
 
+  if (error) return <div className={styles.page}><div style={{textAlign:'center',padding:40}}>{error}</div></div>;
   if (!report) return <div className={styles.page}><div style={{textAlign:'center',padding:40}}>加载中...</div></div>;
 
   return (
@@ -43,11 +54,11 @@ const ReportDetailPage: React.FC = () => {
       <div className={styles.formSection}>
         <div className={styles.formTitle}>📋 处理进度</div>
         <div className={styles.timeline}>
-          {report.processLogs.map((log,i)=>(
+          {(report.processLogs || []).map((log,i)=>(
             <div key={i} className={styles.timelineItem}>
               <div>
                 <div className={styles.timelineDot}/>
-                {i<report.processLogs.length-1 && <div className={styles.timelineLine}/>}
+                {i<(report.processLogs?.length || 0)-1 && <div className={styles.timelineLine}/>}
               </div>
               <div className={styles.timelineContent}>
                 <div className={styles.timelineAction}>{log.action}</div>

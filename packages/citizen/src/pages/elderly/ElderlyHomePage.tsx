@@ -61,6 +61,7 @@ const ElderlyHomePage: React.FC = () => {
             <span style={{fontSize:32}}>🎤</span>
             <span>{voiceActive ? '正在聆听...' : '点击语音输入目的地'}</span>
           </div>
+          <div style={{fontSize:13,color:'#ad6800',marginTop:6}}>语音识别为演示功能，点击后示例填入目的地</div>
           <input className={styles.input} placeholder="或手写输入目的地" value={dest} onChange={e=>setDest(e.target.value)}/>
           {dest && <button className={styles.btn} onClick={()=>navigate('/travel')}>🔍 查询路线</button>}
         </div>
@@ -69,6 +70,7 @@ const ElderlyHomePage: React.FC = () => {
         <div className={styles.card}>
           <div className={styles.cardTitle}>2️⃣ 公交车到哪了</div>
           <button className={styles.btn} onClick={handleBusQuery}>🚌 查询常用线路</button>
+          {busResult.length > 0 && <div style={{fontSize:13,color:'#ad6800',marginTop:6}}>演示数据，非实时到站</div>}
           {busResult.map((b,i)=>(
             <div key={i} className={styles.busRow}>
               <span className={styles.busName}>{b.name}</span>

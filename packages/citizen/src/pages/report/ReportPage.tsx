@@ -7,6 +7,10 @@ import styles from './Report.module.css';
 interface WorkOrder { id:string; workOrderNo:string; category:string; description:string; status:string; createTime:number; userId?: string|number; }
 
 const CATEGORY_ICONS: Record<string,string> = {
+  // 英文 key：表单提交的分类值（ReportFormPage CATEGORIES.value）
+  pothole:'🕳️', streetlight:'💡', illegal_park:'🚗', manhole:'⭕',
+  signal_fault:'🚦', accident_clue:'🚨', barrier:'🚧', other:'📝',
+  // 中文 key：兼容旧数据/后端直接返回中文分类
   '路面坑洼':'🕳️','路灯损坏':'💡','违停占道':'🚗','井盖破损':'⭕',
   '信号灯故障':'🚦','事故线索':'🚨','道路障碍':'🚧','其他问题':'📝',
 };

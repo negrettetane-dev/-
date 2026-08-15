@@ -86,8 +86,16 @@ export function getCitizenUsers(): CitizenUser[] {
 }
 
 export function adjustUserPoints(userId: string, amount: number, reason: string, operator: string): void {
-  const current = get<number>('user_points', 1250);
-  set('user_points', current + amount);
+  // 按 userId 精准写入目标用户积分：注册账号更新其 carbonCredits；内置演示账号 u1 写全局 user_points
+  const accounts = get<any[]>('user_accounts', []);
+  const acc = accounts.find(a => a.id === userId);
+  if (acc) {
+    acc.carbonCredits = Math.max(0, (acc.carbonCredits || 0) + amount);
+    set('user_accounts', accounts);
+  } else {
+    const current = get<number>('user_points', 1250);
+    set('user_points', Math.max(0, current + amount));
+  }
   addPointTransaction({ id:'pt_'+Date.now().toString(36), userId, type:'adjust', amount, reason, operator, time:Date.now() });
 }
 

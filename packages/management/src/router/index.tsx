@@ -13,6 +13,14 @@ const ContentManagementPage = lazy(() => import('../pages/content/ContentManagem
 const AnalyticsPage = lazy(() => import('../pages/analytics/AnalyticsPage'));
 const SettingsPage = lazy(() => import('../pages/settings/SettingsPage'));
 const AdminLoginPage = lazy(() => import('../pages/login/AdminLoginPage'));
+// 信号控制 / 设备管理 / 仿真推演 / 工单处置（页面已实现，补挂路由）
+const SignalsPage = lazy(() => import('../pages/signals/SignalsPage'));
+const IntersectionDetailPage = lazy(() => import('../pages/signals/IntersectionDetailPage'));
+const DeviceListPage = lazy(() => import('../pages/devices/DeviceListPage'));
+const DeviceDetailPage = lazy(() => import('../pages/devices/DeviceDetailPage'));
+const SimulationPage = lazy(() => import('../pages/simulation/SimulationPage'));
+const WorkOrderListPage = lazy(() => import('../pages/workorders/WorkOrderListPage'));
+const WorkOrderDetailPage = lazy(() => import('../pages/workorders/WorkOrderDetailPage'));
 
 const PageLoader = () => (
   <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', minHeight: 300 }}>
@@ -33,6 +41,13 @@ export default function AppRouter() {
           <Route path="carbon" element={<CarbonManagementPage />} />
           <Route path="content" element={<ContentManagementPage />} />
           <Route path="analytics" element={<AnalyticsPage />} />
+          <Route path="signals" element={<SignalsPage />} />
+          <Route path="signals/:id" element={<IntersectionDetailPage />} />
+          <Route path="devices" element={<DeviceListPage />} />
+          <Route path="devices/:id" element={<DeviceDetailPage />} />
+          <Route path="simulation" element={<SimulationPage />} />
+          <Route path="workorders" element={<WorkOrderListPage />} />
+          <Route path="workorders/:id" element={<WorkOrderDetailPage />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/admin" replace />} />

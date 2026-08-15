@@ -1,6 +1,7 @@
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiPost } from '../../services/apiClient';
+import { getCurrentResolvedLocation } from '../../services/locationService';
 import styles from './Report.module.css';
 
 const MAX_PHOTOS = 6;
@@ -31,6 +32,18 @@ const ReportFormPage: React.FC = () => {
   const [phone, setPhone] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [validationError, setValidationError] = useState('');
+  // 真实定位：不伪造固定坐标。定位失败时明确标注，不提交错误位置。
+  const [location, setLocation] = useState<{ lng: number; lat: number; address: string } | null>(null);
+  const [locating, setLocating] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    getCurrentResolvedLocation()
+      .then(res => { if (alive) setLocation({ lng: res.lng, lat: res.lat, address: res.address }); })
+      .catch(() => { if (alive) setLocation(null); })
+      .finally(() => { if (alive) setLocating(false); });
+    return () => { alive = false; };
+  }, []);
 
   // 点击"添加照片"触发隐藏的 file input
   const handleAddPhoto = () => {
@@ -71,9 +84,9 @@ const ReportFormPage: React.FC = () => {
       await apiPost('/report/submit', {
         category,
         description: description.trim(),
-        lng: 116.40,
-        lat: 39.90,
-        address: '北京市西城区天安门附近',
+        phone: phone.trim() || undefined,
+        // 仅提交真实定位；未定位成功则不附带坐标，绝不写死天安门
+        ...(location ? { lng: location.lng, lat: location.lat, address: location.address } : {}),
       });
       revokeAllPreviews();
       setSubmitted(true);
@@ -161,9 +174,11 @@ const ReportFormPage: React.FC = () => {
 
       {/* Location */}
       <div className={styles.formSection}>
-        <div className={styles.formTitle}>📍 位置信息（自动定位）</div>
+        <div className={styles.formTitle}>📍 位置信息</div>
         <div style={{fontSize:13,color:'var(--text-secondary)',padding:'8px',background:'var(--bg-page)',borderRadius:8}}>
-          北京市西城区天安门附近 · 📍 已自动定位
+          {locating ? '正在获取当前位置…'
+            : location ? `📍 ${location.address} · 已自动定位`
+            : '⚠️ 未获取到定位，请在描述中补充位置信息'}
         </div>
       </div>
 

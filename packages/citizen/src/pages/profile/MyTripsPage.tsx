@@ -54,7 +54,7 @@ const MyTripsPage: React.FC = () => {
       {loading ? <div className={styles.state}>正在加载出行记录...</div>
         : error ? <div className={styles.state}><p>{error}</p><button className={styles.retryButton} onClick={() => void loadTrips()}><RefreshCw size={16} />重新加载</button></div>
         : visibleTrips.length === 0 ? (
-          <div className={styles.state}><MapPinned size={38} /><h2>{filter === 'all' ? '暂无出行记录' : '暂无此类出行'}</h2><p>开始一次导航后，记录会显示在这里。</p><button className={styles.primaryButton} onClick={() => navigate(filter === 'all' ? '/travel' : `/travel?mode=${filter}`)}>去规划路线</button></div>
+          <div className={styles.state}><MapPinned size={38} /><h2>{filter === 'all' ? '暂无出行记录' : '暂无此类出行'}</h2><p>开始一次导航后，记录会显示在这里。</p><button className={styles.primaryButton} onClick={() => navigate(filter === 'all' ? '/' : `/?mode=${filter}`)}>去规划路线</button></div>
         ) : (
           <div className={styles.list}>
             {visibleTrips.map(trip => {
