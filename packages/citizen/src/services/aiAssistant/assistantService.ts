@@ -7,6 +7,7 @@
 //   4. API 失败时返回明确错误类型，不编造结果。
 
 import { apiGet } from '../apiClient';
+import { aiChat } from '../aiChatService';
 import { recognizeIntent } from './intentRouter';
 import { searchTransit, getBusLines, getMetroLines } from '../transitService';
 import { getRouteForecast } from '../routeForecastService';
@@ -54,7 +55,7 @@ export async function respond(input: string, ctx: AssistantContext): Promise<Ass
     case 'report_help': return handleReport(input, ctx);
     case 'route_forecast': return handleForecast(parsed);
     case 'platform_help': return handlePlatformHelp();
-    default: return handleUnknown();
+    default: return handleUnknown(input);
   }
 }
 
@@ -405,18 +406,22 @@ function handlePlatformHelp(): AssistantMessage {
   }]);
 }
 
-function handleUnknown(): AssistantMessage {
-  return msg('我主要帮助你处理城市出行、路线、路况、停车、充电、公交地铁和平台账户相关问题。你可以问我：「去北京南站怎么走？」「附近哪里有停车场？」「我的积分还有多少？」', [{
-    id: nextId('c'),
-    kind: 'info',
-    title: '我可以帮你',
-    source: SRC.unknown,
-    sourceLabel: '平台功能',
-    actions: [
-      { label: '规划路线', path: '/travel', primary: true },
-      { label: '查看服务', path: '/services' },
-    ],
-  }]);
+function handleUnknown(input: string): Promise<AssistantMessage> {
+  // 工具类意图已在前面处理（走真实 Service，不编造数据）。
+  // 识别不到意图的开放问题，交给大模型自然回复；失败回退到能力说明。
+  return aiChat([{ role: 'user', content: input }])
+    .then(content => msg(content))
+    .catch(() => msg('我主要帮助你处理城市出行、路线、路况、停车、充电、公交地铁和平台账户相关问题。你可以问我：「去北京南站怎么走？」「附近哪里有停车场？」「我的积分还有多少？」', [{
+      id: nextId('c'),
+      kind: 'info',
+      title: '我可以帮你',
+      source: SRC.unknown,
+      sourceLabel: '平台功能',
+      actions: [
+        { label: '规划路线', path: '/travel', primary: true },
+        { label: '查看服务', path: '/services' },
+      ],
+    }]));
 }
 
 // ===== 工具 =====
