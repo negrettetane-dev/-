@@ -8,8 +8,9 @@ import styles from './TransitSearch.module.css';
 interface Props {
   /** 是否处于公交/地铁模式。false 时隐藏但保留输入，并取消未完成请求 */
   active: boolean;
-  onSetOrigin: (loc: UnifiedLocation) => void;
-  onSetDestination: (loc: UnifiedLocation) => void;
+  /** 可选：提供「设为起点/终点」按钮；不传则隐藏（如公交查询页无起终点） */
+  onSetOrigin?: (loc: UnifiedLocation) => void;
+  onSetDestination?: (loc: UnifiedLocation) => void;
 }
 
 const IDLE: TransitSearchState = { status: 'idle', query: '', results: [] };
@@ -109,13 +110,13 @@ const TransitSearchPanel: React.FC<Props> = ({ active, onSetOrigin, onSetDestina
     }
   };
 
-  // 设为起点/终点：坐标完整才允许，缺坐标置灰
+  // 设为起点/终点：坐标完整才允许，缺坐标置灰；回调未提供则不显示
   const setAsOrigin = (r: UnifiedTransitResult) => {
-    if (r.lng == null || r.lat == null) return;
+    if (!onSetOrigin || r.lng == null || r.lat == null) return;
     onSetOrigin({ name: r.name, address: r.address || r.name, lng: r.lng, lat: r.lat, source: 'poi-search', timestamp: Date.now() });
   };
   const setAsDest = (r: UnifiedTransitResult) => {
-    if (r.lng == null || r.lat == null) return;
+    if (!onSetDestination || r.lng == null || r.lat == null) return;
     onSetDestination({ name: r.name, address: r.address || r.name, lng: r.lng, lat: r.lat, source: 'poi-search' });
   };
 
@@ -196,25 +197,29 @@ const TransitSearchPanel: React.FC<Props> = ({ active, onSetOrigin, onSetDestina
                   </div>
                   {r.subtitle && <div className={styles.resultSub}>{r.subtitle}</div>}
                 </div>
-                {/* 站点：设为起点/终点；线路：详情跳转（detailLink） */}
-                {(r.type === 'bus_stop' || r.type === 'metro_stop') && (
+                {/* 站点：设为起点/终点（仅在提供回调时显示）；线路：详情跳转（detailLink） */}
+                {(r.type === 'bus_stop' || r.type === 'metro_stop') && (onSetOrigin || onSetDestination) && (
                   <div className={styles.resultActions}>
-                    <button
-                      className={`${styles.actionBtn} ${!canLocate ? styles.actionBtnDisabled : ''}`}
-                      disabled={!canLocate}
-                      title={canLocate ? '设为起点' : '该站点缺少定位信息'}
-                      onClick={() => setAsOrigin(r)}
-                    >
-                      起点
-                    </button>
-                    <button
-                      className={`${styles.actionBtn} ${!canLocate ? styles.actionBtnDisabled : ''}`}
-                      disabled={!canLocate}
-                      title={canLocate ? '设为终点' : '该站点缺少定位信息'}
-                      onClick={() => setAsDest(r)}
-                    >
-                      终点
-                    </button>
+                    {onSetOrigin && (
+                      <button
+                        className={`${styles.actionBtn} ${!canLocate ? styles.actionBtnDisabled : ''}`}
+                        disabled={!canLocate}
+                        title={canLocate ? '设为起点' : '该站点缺少定位信息'}
+                        onClick={() => setAsOrigin(r)}
+                      >
+                        起点
+                      </button>
+                    )}
+                    {onSetDestination && (
+                      <button
+                        className={`${styles.actionBtn} ${!canLocate ? styles.actionBtnDisabled : ''}`}
+                        disabled={!canLocate}
+                        title={canLocate ? '设为终点' : '该站点缺少定位信息'}
+                        onClick={() => setAsDest(r)}
+                      >
+                        终点
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
