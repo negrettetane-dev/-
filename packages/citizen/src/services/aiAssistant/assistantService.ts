@@ -94,7 +94,7 @@ function handleRoutePlan(parsed: IntentParseResult, ctx: AssistantContext): Assi
       subtitle: '进入规划页查看多模式方案（高德实时路线数据）',
       source: SRC.real,
       sourceLabel: '高德实时路线',
-      actions: [{ label: '去规划路线', path: '/travel', state: { dest }, primary: true }],
+      actions: [{ label: `规划前往${dest}`, path: buildPlannerPath(parsed), primary: true }],
     }],
   );
 }
@@ -112,7 +112,7 @@ function handleRouteCompare(parsed: IntentParseResult, ctx: AssistantContext): A
       subtitle: '规划页并发展示驾车 / 公交 / 骑行 / 步行方案',
       source: SRC.real,
       sourceLabel: '高德实时路线',
-      actions: [{ label: '开始比较', path: '/travel', state: dest ? { dest } : undefined, primary: true }],
+      actions: [{ label: '开始比较', path: buildPlannerPath(parsed), primary: true }],
     }],
   );
 }
@@ -383,7 +383,7 @@ async function handleForecast(parsed: IntentParseResult): Promise<AssistantMessa
       rows,
       source: SRC.simulated,
       sourceLabel: '模拟预测',
-      actions: [{ label: '进入规划页', path: '/travel', primary: true }],
+      actions: [{ label: '进入规划页', path: '/', primary: true }],
     }]);
   } catch {
     return msg('预测数据暂时无法获取，请稍后重试。');
@@ -399,7 +399,7 @@ function handlePlatformHelp(): AssistantMessage {
     source: SRC.unknown,
     sourceLabel: '平台功能',
     actions: [
-      { label: '规划路线', path: '/travel', primary: true },
+      { label: '规划路线', path: '/', primary: true },
       { label: '找停车', path: '/parking' },
       { label: '上报问题', path: '/report' },
     ],
@@ -418,13 +418,28 @@ function handleUnknown(input: string): Promise<AssistantMessage> {
       source: SRC.unknown,
       sourceLabel: '平台功能',
       actions: [
-        { label: '规划路线', path: '/travel', primary: true },
+        { label: '规划路线', path: '/', primary: true },
         { label: '查看服务', path: '/services' },
       ],
     }]));
 }
 
 // ===== 工具 =====
+function buildPlannerPath(parsed: IntentParseResult): string {
+  const params = new URLSearchParams();
+  if (parsed.destination) params.set('destination', parsed.destination);
+  if (parsed.origin) params.set('origin', parsed.origin);
+  const mode = parsed.mode === 'bus'
+    ? 'transit'
+    : parsed.mode === 'bike'
+      ? 'riding'
+      : parsed.mode === 'walk'
+        ? 'walking'
+        : 'driving';
+  params.set('mode', mode);
+  return `/?${params.toString()}`;
+}
+
 function relativeTime(ts: number): string {
   if (!ts) return '';
   const d = Date.now() - ts;

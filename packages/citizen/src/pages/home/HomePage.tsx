@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowUpDown, LocateFixed, Plus, X } from 'lucide-react';
 import { loadAMap } from '../../lib/amap';
 import AIAssistant from '../../components/AIAssistant';
@@ -11,7 +11,7 @@ import { useTravelLocationStore } from '../../stores/travelLocationStore';
 import { useTravelPlanStore } from '../../stores/travelPlanStore';
 import DepartureTimeSelect from '../../components/travel/DepartureTimeSelect';
 import { restoreDepartureState, type DepartureState } from '../../utils/departureTime';
-import { fromLegacyRouteMode } from '../../types/travelMode';
+import { fromLegacyRouteMode, parseTravelMode } from '../../types/travelMode';
 
 interface Alert { id:string; category:string; title:string; summary:string; severity:string; publishTime:number }
 interface News { id:string; title:string; summary:string; source:string; publishTime:number }
@@ -19,6 +19,7 @@ interface Snapshot { cityIndex:number; avgSpeed:number; congestedRoadCount:numbe
 
 const HomePage: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<any>(null);
   const homeRoutePolyline = useRef<any>(null);
@@ -85,14 +86,22 @@ const HomePage: React.FC = () => {
     setSelectedMode(mode);
   };
 
-  // 结束导航返回后恢复刚才的规划条件（destination/mode/departure）
-  // origin 由 travelLocationStore 保留；departure 由 restoreDepartureState 恢复。
+  const queryDestination = searchParams.get('destination')?.trim() || '';
+  const queryOrigin = searchParams.get('origin')?.trim() || '';
+  const queryMode = parseTravelMode(searchParams.get('mode'));
+
+  // AI/分享链接参数优先；没有 URL 参数时才恢复上一次规划草稿。
   useEffect(() => {
     const draft = useTravelPlanStore.getState();
-    if (draft.destination?.name && !destination) setDestination(draft.destination.name);
-    if (draft.mode) setSelectedMode(fromLegacyRouteMode(draft.mode, draft.profile));
+    if (queryDestination) setDestination(queryDestination);
+    else if (draft.destination?.name && !destination) setDestination(draft.destination.name);
+
+    if (queryOrigin) setManualOrigin(queryOrigin);
+
+    if (queryMode) setSelectedMode(queryMode);
+    else if (draft.mode) setSelectedMode(fromLegacyRouteMode(draft.mode, draft.profile));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [queryDestination, queryMode, queryOrigin]);
 
   // 加载高德地图（大图显示）
   useEffect(() => {
