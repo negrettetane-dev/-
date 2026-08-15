@@ -1,8 +1,4 @@
-// ===== 智途云枢 · 公交实时位置服务 =====
-// 演示模式：使用高德 Driving 规划真实道路路径（不直连站点）。
-// 未来接入真实北京公交数据时，替换为后端 API。
-
-import { MOCK_BUS_LINES, MOCK_BUS_STATION_COORDS } from '../mocks/data';
+// ===== 智途云枢 · 公交线路 geometry / 演示车辆工具 =====
 
 export type BusDirection = 'outbound' | 'inbound';
 
@@ -15,7 +11,7 @@ export interface BusRouteGeometry {
   lineId: string;
   lineName: string;
   stations: BusRouteStation[];
-  path: [number, number][];       // 真实道路路径（≠站点直线连接）
+  path: [number, number][];
 }
 
 export interface BusVehicle {
@@ -33,148 +29,214 @@ export interface BusVehicle {
   updatedAt: number;
 }
 
-const DEMO_VEHICLE_CONFIG = [
-  { id: 'DEMO001', progress: 0.18, speedBase: 28 },
-  { id: 'DEMO002', progress: 0.52, speedBase: 24 },
-  { id: 'DEMO003', progress: 0.78, speedBase: 31 },
-];
+export interface BusLineCandidate {
+  name?: string;
+  path?: unknown;
+  via_stops?: Array<{ name?: string; location?: unknown }>;
+  start_stop?: string | { name?: string };
+  end_stop?: string | { name?: string };
+}
 
-// 缓存高德规划的真实道路路径（避免重复请求 Driving API）
-const drivingCache = new Map<string, [number, number][]>();
+export interface LineSearchMatch {
+  path: [number, number][];
+  stations: BusRouteStation[];
+  candidate: BusLineCandidate;
+  candidateCount: number;
+  score: number;
+  query: string;
+}
 
-/** 用高德 Driving 规划沿公交站点的真实道路路径 */
-export async function fetchRealRoadPath(
-  AMap: any,
-  stations: BusRouteStation[],
-  lineId: string,
-  direction: BusDirection,
-): Promise<[number, number][] | null> {
-  const key = `${lineId}_${direction}`;
-  const cached = drivingCache.get(key);
-  if (cached) return cached;
+const MIN_MATCH_SCORE = 8;
 
-  if (stations.length < 2) return null;
+export function normalizePath(input: unknown): [number, number][] {
+  if (!Array.isArray(input)) return [];
+  return input.map((point: any): [number, number] | null => {
+    if (Array.isArray(point)) {
+      const lng = Number(point[0]);
+      const lat = Number(point[1]);
+      return Number.isFinite(lng) && Number.isFinite(lat) ? [lng, lat] : null;
+    }
+    if (!point || typeof point !== 'object') return null;
+    const lng = Number(point.lng ?? point.longitude ?? point.getLng?.() ?? point.location?.lng);
+    const lat = Number(point.lat ?? point.latitude ?? point.getLat?.() ?? point.location?.lat);
+    return Number.isFinite(lng) && Number.isFinite(lat) ? [lng, lat] : null;
+  }).filter((point): point is [number, number] => point !== null);
+}
 
-  return new Promise((resolve) => {
-    AMap.plugin(['AMap.Driving'], () => {
-      const driving = new AMap.Driving({ policy: (AMap as any).DrivingPolicy?.LEAST_TIME || 0 });
-      const start = new AMap.LngLat(stations[0].location[0], stations[0].location[1]);
-      const end = new AMap.LngLat(stations[stations.length - 1].location[0], stations[stations.length - 1].location[1]);
+function normalizeStopName(value: unknown): string {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[（）()\s·]/g, '')
+    .replace(/公交枢纽站?|公交场站|枢纽站|总站|车站|站$/g, '');
+}
 
-      // 带途经点规划（中间站作为 waypoints）
-      const waypoints: any[] = [];
-      for (let i = 1; i < stations.length - 1; i++) {
-        waypoints.push(new AMap.LngLat(stations[i].location[0], stations[i].location[1]));
-      }
+function namesMatch(a: unknown, b: unknown): boolean {
+  const left = normalizeStopName(a);
+  const right = normalizeStopName(b);
+  return !!left && !!right && (left === right || left.includes(right) || right.includes(left));
+}
 
-      driving.search(start, end, { waypoints, waypointPolicy: 0 }, (status: string, result: any) => {
-        if (status === 'complete' && result.routes?.length) {
-          const path: [number, number][] = result.routes[0].steps.flatMap((s: any) =>
-            (s.path || []).map((p: any) => [Number(p.lng || p[0]), Number(p.lat || p[1])] as [number, number])
-          );
-          if (path.length >= 2) {
-            drivingCache.set(key, path);
-            console.log(`[busPath] ${lineId} ${direction} 真实道路 ${path.length} 点`);
-            resolve(path);
-            return;
-          }
-        }
-        console.warn(`[busPath] ${lineId} ${direction} 高德Driving不可用`);
-        resolve(null);
-      });
+function stopName(value: BusLineCandidate['start_stop']): string {
+  return typeof value === 'string' ? value : value?.name || '';
+}
+
+function candidateStopNames(candidate: BusLineCandidate): string[] {
+  return (candidate.via_stops || []).map(stop => stop.name || '').filter(Boolean);
+}
+
+/** 按线路名、方向端点、站数和站点顺序评分；不会默认取第一条。 */
+export function scoreLineCandidate(
+  candidate: BusLineCandidate,
+  expectedLineName: string,
+  expectedStops: string[],
+): number {
+  const viaNames = candidateStopNames(candidate);
+  const expectedStart = expectedStops[0] || '';
+  const expectedEnd = expectedStops[expectedStops.length - 1] || '';
+  const candidateStart = stopName(candidate.start_stop) || viaNames[0] || '';
+  const candidateEnd = stopName(candidate.end_stop) || viaNames[viaNames.length - 1] || '';
+  let score = 0;
+
+  if (namesMatch(candidate.name, expectedLineName)) score += 3;
+  if (namesMatch(candidateStart, expectedStart)) score += 4;
+  if (namesMatch(candidateEnd, expectedEnd)) score += 4;
+  if (viaNames.length && Math.abs(viaNames.length - expectedStops.length) <= Math.max(2, expectedStops.length * 0.25)) score += 1;
+
+  for (const expected of expectedStops) {
+    if (viaNames.some(actual => namesMatch(actual, expected))) score += 1;
+  }
+
+  // 对环线/同端点线路尤其重要：相同站点必须按当前页面方向依次出现。
+  let cursor = -1;
+  let orderedMatches = 0;
+  for (const expected of expectedStops) {
+    const next = viaNames.findIndex((actual, index) => index > cursor && namesMatch(actual, expected));
+    if (next >= 0) {
+      cursor = next;
+      orderedMatches += 1;
+    }
+  }
+  if (orderedMatches >= Math.min(3, expectedStops.length)) score += Math.min(3, orderedMatches);
+  return score;
+}
+
+export function selectBestLineCandidate(
+  candidates: BusLineCandidate[],
+  expectedLineName: string,
+  expectedStops: string[],
+): { candidate: BusLineCandidate; score: number } | null {
+  const ranked = candidates
+    .map(candidate => ({ candidate, score: scoreLineCandidate(candidate, expectedLineName, expectedStops) }))
+    .filter(item => normalizePath(item.candidate.path).length >= 2)
+    .sort((a, b) => b.score - a.score);
+  return ranked[0] && ranked[0].score >= MIN_MATCH_SCORE ? ranked[0] : null;
+}
+
+function searchOnce(lineSearch: any, query: string): Promise<BusLineCandidate[]> {
+  return new Promise(resolve => {
+    lineSearch.search(query, (status: string, result: any) => {
+      resolve(status === 'complete' && Array.isArray(result?.lineInfo) ? result.lineInfo : []);
     });
   });
 }
 
-/** 站点直线插值（兜底：Driving 不可用时使用） */
-function interpolatePath(points: [number, number][], perSegment = 8): [number, number][] {
-  const out: [number, number][] = [];
-  for (let i = 0; i < points.length - 1; i++) {
-    const a = points[i], b = points[i + 1];
-    for (let k = 0; k < perSegment; k++) {
-      const t = k / perSegment;
-      out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
+function lineQueries(lineName: string): string[] {
+  const trimmed = lineName.trim();
+  const withoutSuffix = trimmed.replace(/路$/, '');
+  return [...new Set([trimmed, withoutSuffix, `${withoutSuffix}路`].filter(Boolean))];
+}
+
+export async function searchBusLineGeometry(
+  AMap: any,
+  options: { city: string; lineId: string; lineName: string; direction: BusDirection; stationNames: string[] },
+): Promise<LineSearchMatch | null> {
+  const cacheKey = `bus-path:${options.city}:${options.lineId}:${options.direction}`;
+  try {
+    const cached = sessionStorage.getItem(cacheKey);
+    if (cached) {
+      const parsed = JSON.parse(cached) as LineSearchMatch;
+      if (normalizePath(parsed.path).length >= 2) return parsed;
+    }
+  } catch { /* sessionStorage 不可用时继续查询 */ }
+
+  await new Promise<void>((resolve, reject) => {
+    AMap.plugin(['AMap.LineSearch'], () => AMap.LineSearch ? resolve() : reject(new Error('AMap.LineSearch 加载失败')));
+  });
+  const lineSearch = new AMap.LineSearch({
+    city: options.city,
+    pageIndex: 1,
+    pageSize: 20,
+    extensions: 'all',
+  });
+
+  const allCandidates: BusLineCandidate[] = [];
+  let selected: { candidate: BusLineCandidate; score: number } | null = null;
+  let selectedQuery = '';
+  for (const query of lineQueries(options.lineName)) {
+    const found = await searchOnce(lineSearch, query);
+    allCandidates.push(...found);
+    const best = selectBestLineCandidate(found, options.lineName, options.stationNames);
+    if (best && (!selected || best.score > selected.score)) {
+      selected = best;
+      selectedQuery = query;
     }
   }
-  out.push(points[points.length - 1]);
-  return out;
-}
+  if (!selected) {
+    console.warn(`[bus-line-search] ${options.lineName} ${options.direction}: ${allCandidates.length} candidates, no safe match`);
+    return null;
+  }
 
-/** 获取线路站点几何（不含 path——path 由 Driving 异步获取） */
-export function getBusRouteGeometry(lineId: string, direction: BusDirection = 'outbound'): BusRouteGeometry | null {
-  const line = MOCK_BUS_LINES.find(b => b.id === lineId);
-  if (!line) return null;
-
-  let orderedStops = [...line.stops];
-  if (direction === 'inbound') orderedStops = orderedStops.reverse();
-
-  const stations: BusRouteStation[] = orderedStops
-    .map(name => ({ name, location: MOCK_BUS_STATION_COORDS[name] }))
-    .filter((s): s is BusRouteStation => !!s.location);
-
-  if (stations.length < 2) return null;
-
-  // 兜底 path：站点间直线插值（真实道路由 BusDetailPage 异步获取后覆盖）
-  const rawPoints = stations.map(s => s.location);
-  return {
-    lineId: line.id,
-    lineName: line.name,
+  const path = normalizePath(selected.candidate.path);
+  const stations = (selected.candidate.via_stops || []).map(stop => ({
+    name: stop.name || '',
+    location: normalizePath([stop.location])[0],
+  })).filter((station): station is BusRouteStation => !!station.name && !!station.location);
+  const match: LineSearchMatch = {
+    path,
     stations,
-    path: interpolatePath(rawPoints),
+    candidate: selected.candidate,
+    candidateCount: allCandidates.length,
+    score: selected.score,
+    query: selectedQuery,
   };
+  try { sessionStorage.setItem(cacheKey, JSON.stringify(match)); } catch { /* ignore */ }
+  console.info(`[bus-line-search] ${options.lineName} ${options.direction}: selected score=${match.score}, candidates=${match.candidateCount}, query=${match.query}`);
+  return match;
 }
 
-/** 根据 path 和 progress 计算位置：仅在 path 上插值，不自己生成经纬度 */
+/** 按折线累计长度计算车辆位置，避免密集 path 点导致速度不均。 */
 export function pointAtPath(path: [number, number][], progress: number): [number, number] {
+  if (path.length < 2) return path[0] || [0, 0];
   const clamped = Math.max(0, Math.min(1, progress));
-  const total = path.length - 1;
-  const index = clamped * total;
-  const i = Math.floor(index);
-  const t = index - i;
-  const a = path[i], b = path[Math.min(i + 1, path.length - 1)];
-  return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+  const lengths = path.slice(1).map((point, index) => distanceMeters(path[index], point));
+  const target = lengths.reduce((sum, length) => sum + length, 0) * clamped;
+  let passed = 0;
+  for (let index = 0; index < lengths.length; index += 1) {
+    if (passed + lengths[index] >= target) {
+      const ratio = lengths[index] ? (target - passed) / lengths[index] : 0;
+      return [
+        path[index][0] + (path[index + 1][0] - path[index][0]) * ratio,
+        path[index][1] + (path[index + 1][1] - path[index][1]) * ratio,
+      ];
+    }
+    passed += lengths[index];
+  }
+  return path[path.length - 1];
 }
 
-/** 生成演示车辆：位置严格从 path 计算 */
-export function generateVehicles(path: [number, number][], stations: BusRouteStation[]): BusVehicle[] {
-  return DEMO_VEHICLE_CONFIG.map(cfg => {
-    const progress = (cfg.progress + (Math.random() - 0.5) * 0.03 + 1) % 1;
-    const pos = pointAtPath(path, progress);
-
-    const totalLen = stations.length;
-    const progressIdx = progress * (totalLen - 1);
-    const nextIdx = Math.min(totalLen - 1, Math.max(1, Math.ceil(progressIdx)));
-    const currentStation = stations[Math.max(0, nextIdx - 1)].name;
-    const nextStation = stations[nextIdx].name;
-    const nextLoc = stations[nextIdx].location;
-    const dist = Math.round(distanceMeters(pos, nextLoc));
-    const speed = cfg.speedBase + Math.sin(Date.now() / 3000 + cfg.progress * 10) * 4;
-    const speedMs = speed / 3.6;
-    const eta = Math.max(15, Math.round(dist / speedMs));
-
-    return {
-      vehicleId: cfg.id,
-      progress,
-      lng: pos[0], lat: pos[1],
-      speed: Math.round(speed * 10) / 10,
-      currentStation, nextStation,
-      distanceToNextStation: dist, eta,
-      isDemo: true, updatedAt: Date.now(),
-    };
+/** 将后端演示坐标吸附到最近的公交 path 点，并返回该点的进度。 */
+export function snapToPath(path: [number, number][], position: [number, number]): { point: [number, number]; progress: number } {
+  let bestIndex = 0;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  path.forEach((point, index) => {
+    const distance = distanceMeters(point, position);
+    if (distance < bestDistance) { bestDistance = distance; bestIndex = index; }
   });
+  return { point: path[bestIndex], progress: path.length > 1 ? bestIndex / (path.length - 1) : 0 };
 }
 
-/** 平面距离 */
-function distanceMeters(a: [number, number], b: [number, number]): number {
+export function distanceMeters(a: [number, number], b: [number, number]): number {
   const dLat = (b[1] - a[1]) * 111000;
   const dLng = (b[0] - a[0]) * 111000 * Math.cos((a[1] * Math.PI) / 180);
   return Math.sqrt(dLat * dLat + dLng * dLng);
-}
-
-// 导出旧接口兼容：getBusVehicles 仍然可用（使用直线兜底 path）
-export { MOCK_BUS_LINES, MOCK_BUS_STATION_COORDS };
-export function getBusVehicles(lineId: string, direction: BusDirection = 'outbound'): BusVehicle[] {
-  const geometry = getBusRouteGeometry(lineId, direction);
-  if (!geometry) return [];
-  return generateVehicles(geometry.path, geometry.stations);
 }

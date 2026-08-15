@@ -35,6 +35,19 @@ interface ApiTransitLine {
   color?: string;
   fare?: number;
   stations: ApiStation[];
+  city?: string;
+  path?: unknown;
+  outboundPath?: unknown;
+  inboundPath?: unknown;
+}
+
+function normalizeApiPath(input: unknown): [number, number][] {
+  if (!Array.isArray(input)) return [];
+  return input.map((point: any): [number, number] | null => {
+    const lng = Number(Array.isArray(point) ? point[0] : point?.lng ?? point?.longitude);
+    const lat = Number(Array.isArray(point) ? point[1] : point?.lat ?? point?.latitude);
+    return Number.isFinite(lng) && Number.isFinite(lat) ? [lng, lat] : null;
+  }).filter((point): point is [number, number] => point !== null);
 }
 
 function normalizeLine(line: ApiTransitLine, mode: TransitMode): TransitLine {
@@ -55,6 +68,10 @@ function normalizeLine(line: ApiTransitLine, mode: TransitMode): TransitLine {
     fare: line.fare,
     status: 'normal',
     source: line.source || 'api',
+    city: line.city || '北京',
+    path: normalizeApiPath(line.path),
+    outboundPath: normalizeApiPath(line.outboundPath),
+    inboundPath: normalizeApiPath(line.inboundPath),
     stations: (line.stations || []).map((station, sequence) => ({
       id: station.id || `${line.id}_${sequence}`,
       name: station.name,

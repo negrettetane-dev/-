@@ -22,6 +22,7 @@ const DEFAULT_PLUGINS = [
   'AMap.TileLayer.Traffic',
   'AMap.HeatMap',
   'AMap.MarkerClusterer',
+  'AMap.LineSearch',
   'AMap.Driving',
   'AMap.Transfer',
   'AMap.Walking',

@@ -26,6 +26,10 @@ export interface TransitLine {
   status?: 'normal' | 'delayed' | 'maintenance';
   stations: TransitStation[];
   source: DataSource;
+  city?: string;
+  path?: [number, number][];
+  outboundPath?: [number, number][];
+  inboundPath?: [number, number][];
 }
 
 export interface ArrivalInfo {

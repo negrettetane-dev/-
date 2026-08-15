@@ -6,10 +6,17 @@ import { getRouteForecast } from '../../services/routeForecastService';
 import { hasSegmentContent, resolveRouteLocations, type PlannedRoute, type SegmentData } from '../../services/routePlanningService';
 import type { RouteForecastPoint, TravelMode as ForecastMode } from '../../types/routeForecast';
 import { calculateRouteScore, recommendBestRoute, generateRecommendationReason, generateDepartureAdvice } from '../../utils/routeRecommendation';
-import { isValidDepartureAt, labelForDepartureAt } from '../../utils/departureTime';
+import { isValidDepartureAt, labelForDepartureAt, computeDepartureState, saveDepartureState } from '../../utils/departureTime';
 import RouteForecastPanel from '../../components/travel/RouteForecastPanel';
 import TravelModeSelector, { normalizeTravelMode, type RouteTravelMode, type TravelModeOption } from '../../components/travel/TravelModeSelector';
+import { useAuthStore } from '../../stores/authStore';
+import { useTripStore } from '../../stores/tripStore';
+import { useTravelPlanStore } from '../../stores/travelPlanStore';
+import type { Trip } from '../../types/trip';
 import styles from './Travel.module.css';
+
+/** 到达判定阈值：当前车辆与终点剩余距离 ≤ 50m 即视为到达（避免 GPS 误差导致永不触发） */
+const ARRIVAL_THRESHOLD_METERS = 50;
 
 // ===== 统一路线类型 =====
 type TravelMode = RouteTravelMode;
@@ -148,6 +155,14 @@ const RouteResultPage: React.FC = () => {
   const [navMode, setNavMode] = useState<TravelMode | null>(null);
   const [navDistance, setNavDistance] = useState(0);
   const [navRouteError, setNavRouteError] = useState('');
+  const isLoggedIn = useAuthStore(state => state.isLoggedIn);
+
+  // ===== 导航状态机：idle → navigating → arrived → ended =====
+  const [navStatus, setNavStatus] = useState<'idle' | 'navigating' | 'arrived' | 'ended'>('idle');
+  const navStatusRef = useRef<'idle' | 'navigating' | 'arrived' | 'ended'>('idle');
+  const [arrivedTrip, setArrivedTrip] = useState<Trip | null>(null);
+  const hasCompletedTripRef = useRef(false);
+  const navDistanceRef = useRef(0);
 
   // 起终点：没有解析成功前保持 null，禁止用天安门等固定位置冒充用户起点。
   const startCoord = useRef<[number, number] | null>(null);
@@ -619,7 +634,8 @@ const RouteResultPage: React.FC = () => {
 
     movePathRef.current = navRoute.path;
     pathIdxRef.current = 0;
-    setNavDistance(Math.round(navRoute.distance));
+    navDistanceRef.current = Math.round(navRoute.distance);
+    setNavDistance(navDistanceRef.current);
 
     // 导航视角（不重建地图）
     map.setZoom(16);
@@ -633,17 +649,21 @@ const RouteResultPage: React.FC = () => {
       const p = movePathRef.current;
       const idx = pathIdxRef.current;
       if (!p.length || !carMarkerRef.current) return;
-      if (idx >= p.length - 1) {
+      // 到达判定：走完路径 或 剩余距离 ≤ ARRIVAL_THRESHOLD_METERS=50m
+      if (idx >= p.length - 1 || navDistanceRef.current <= ARRIVAL_THRESHOLD_METERS) {
         clearInterval(moveTimer);
         if (moveTimerRef.current === moveTimer) moveTimerRef.current = null;
+        navDistanceRef.current = 0;
         setNavDistance(0);
+        handleArrived();
         return;
       }
       pathIdxRef.current += 1;
       const next = p[pathIdxRef.current];
       carMarkerRef.current.setPosition(next);
       map.setCenter(next);
-      setNavDistance(d => Math.max(0, d - (navRoute.distance / p.length)));
+      navDistanceRef.current = Math.max(0, navDistanceRef.current - (navRoute.distance / p.length));
+      setNavDistance(navDistanceRef.current);
     }, 150);
     moveTimerRef.current = moveTimer;
 
@@ -658,8 +678,64 @@ const RouteResultPage: React.FC = () => {
     };
   }, [navActive, navMode, mapReady]);
 
-  // ===== 退出导航：恢复普通视角，保留地图 =====
-  const stopNavigation = () => {
+  // ===== 到达处理：停止一切导航逻辑，只保留地图/终点Marker/路线 =====
+  // 到达判定：车辆走完路径（剩余距离 ≤ ARRIVAL_THRESHOLD_METERS=50m）。幂等。
+  const handleArrived = () => {
+    if (navStatusRef.current === 'arrived') return;
+    navStatusRef.current = 'arrived';
+    setNavStatus('arrived');
+    setNavDistance(0);
+    // 停止车辆移动模拟/定位更新/距离/ETA/下一步骤切换
+    if (moveTimerRef.current) { clearInterval(moveTimerRef.current); moveTimerRef.current = null; }
+    // 地图聚焦终点（不重建地图）
+    const map = mapRef.current;
+    const end = endCoord.current;
+    if (map && end) { map.setCenter(end); map.setZoom(16); }
+    // 完成 Trip：只执行一次（hasCompletedTripRef 幂等，防重复 completeTrip / 重复加积分）
+    if (isLoggedIn && !hasCompletedTripRef.current) {
+      hasCompletedTripRef.current = true;
+      void useTripStore.getState().completeActiveTrip()
+        .then(trip => { if (trip) setArrivedTrip(trip); })
+        .catch(() => undefined);
+    }
+  };
+
+  // ===== 开始导航：置状态机 + 登录用户创建 Trip（不阻塞导航） =====
+  const startNavigation = (mode: TravelMode) => {
+    setSelectedMode(mode);
+    setNavMode(mode);
+    navStatusRef.current = 'navigating';
+    setNavStatus('navigating');
+    setNavActive(true);
+    hasCompletedTripRef.current = false;
+    setArrivedTrip(null);
+    if (isLoggedIn) {
+      const s = startCoord.current, e = endCoord.current;
+      const route = routeResults[mode];
+      if (s && e && route) {
+        const clientSessionId = typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : `nav_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+        void useTripStore.getState().startTrip({
+          clientSessionId,
+          mode,
+          profile: 'standard',
+          origin: { name: displayOrigin, address: displayOrigin, lng: s[0], lat: s[1] },
+          destination: { name: displayDest, address: displayDest, lng: e[0], lat: e[1] },
+          routeSnapshot: {
+            estimatedDistance: route.distance,
+            estimatedDuration: route.duration,
+            routeProvider: 'amap',
+            path: route.path,
+          },
+          dataSource: 'demo',
+        }).catch(() => undefined);
+      }
+    }
+  };
+
+  // ===== 清理导航临时资源（不清地图、不清用户规划条件） =====
+  const clearNavigationResources = () => {
     if (moveTimerRef.current) { clearInterval(moveTimerRef.current); moveTimerRef.current = null; }
     const map = mapRef.current;
     if (map && carMarkerRef.current) { map.remove(carMarkerRef.current); }
@@ -667,15 +743,48 @@ const RouteResultPage: React.FC = () => {
     movePathRef.current = [];
     pathIdxRef.current = 0;
     Object.values(routePolylineRefs.current).forEach(pl => { if (pl) pl.setOptions({ visible: true }); });
+  };
+
+  // ===== 结束导航：清理 + 保留规划条件 + 返回首页规划页 =====
+  const endNavigation = () => {
+    clearNavigationResources();
+    // 中途结束（未完成）→ Trip 标记取消，不标已完成
+    if (navStatusRef.current === 'navigating') {
+      void useTripStore.getState().cancelActiveTrip().catch(() => undefined);
+    }
+    navStatusRef.current = 'ended';
+    setNavStatus('ended');
     setNavActive(false);
     setNavMode(null);
+    // 保留规划条件：出发时间写 storage + 起终点/方式写 travelPlanStore，供首页恢复
+    try {
+      saveDepartureState({
+        departureMode: stateDepartureMode ?? (departureLabel ? 'custom' : 'now'),
+        departureAt,
+        departureTimeLabel: departureLabel || '现在出发',
+      });
+      const end = endCoord.current;
+      useTravelPlanStore.getState().setDestination({
+        name: displayDest, address: displayDest,
+        lng: end?.[0] ?? null, lat: end?.[1] ?? null, source: 'manual',
+      });
+      if (navMode) useTravelPlanStore.getState().setMode(navMode);
+    } catch { /* ignore */ }
     requestAnimationFrame(() => {
-      map?.setPitch(0);
-      map?.setRotation(0);
-      map?.resize?.();
+      mapRef.current?.setPitch(0);
+      mapRef.current?.setRotation(0);
+      mapRef.current?.resize?.();
       const selectedPl = routePolylineRefs.current[selectedMode];
-      if (selectedPl) map?.setFitView([selectedPl], false, [80, 60, 80, 60]);
+      if (selectedPl) mapRef.current?.setFitView([selectedPl], false, [80, 60, 80, 60]);
     });
+    // 返回首页规划页（PR#7 架构下规划入口在首页）
+    navigate('/', { replace: true });
+  };
+
+  // ===== 退出导航（×）：到达后直接结束；未到达需确认 =====
+  const handleCloseNav = () => {
+    if (navStatusRef.current === 'arrived') { endNavigation(); return; }
+    if (window.confirm('确定结束本次导航吗？')) endNavigation();
   };
 
   const congestionColor = (l: string) =>
@@ -756,45 +865,64 @@ const RouteResultPage: React.FC = () => {
       {navActive && (
         <>
           <div className={styles.navTopBar}>
-            <span className={styles.navCloseBtn} onClick={stopNavigation}>✕ 退出导航</span>
+            <span className={styles.navCloseBtn} onClick={handleCloseNav}>✕ 退出导航</span>
             <span className={styles.navModeTag}>
               {navMode ? `${MODE_META[navMode].icon} ${MODE_META[navMode].label}` : ''}
             </span>
           </div>
-          <div className={styles.navBottomCard}>
-            <div className={styles.navNextAction}>
-              <span className={styles.navTurnIcon}>↗️</span>
-              <div>
-                <div className={styles.navTurnText}>沿当前路线行驶</div>
-                <div className={styles.navTurnSub}>{Math.round(navDistance)}m 后继续前行</div>
+          {navStatus === 'arrived' ? (
+            /* ===== 已到达：不再显示 剩余距离/ETA/速度/导航步骤 ===== */
+            <div className={styles.navArrivedCard}>
+              <div className={styles.navArrivedIcon}>✅</div>
+              <div className={styles.navArrivedTitle}>已到达</div>
+              <div className={styles.navArrivedDest}>您已到达：{displayDest}</div>
+              <div className={styles.navArrivedMeta}>
+                <span>📏 距离 {formatDistance(navRoute?.distance || 0)}</span>
+                <span>⏱ 耗时 {navRoute ? formatDuration(navRoute.duration) : '--'}</span>
+              </div>
+              <div className={styles.navArrivedActions}>
+                {isLoggedIn && arrivedTrip && (
+                  <button className={styles.navArrivedBtn} onClick={() => navigate(`/profile/trips/${arrivedTrip.id}`)}>查看本次出行</button>
+                )}
+                <button className={styles.navArrivedBtnPrimary} onClick={endNavigation}>结束导航</button>
               </div>
             </div>
-            <div className={styles.navStats}>
-              <div className={styles.navStatItem}>
-                <span className={styles.navStatVal}>{(navDistance / 1000).toFixed(1)}</span>
-                <span className={styles.navStatLabel}>剩余 km</span>
+          ) : (
+            <div className={styles.navBottomCard}>
+              <div className={styles.navNextAction}>
+                <span className={styles.navTurnIcon}>↗️</span>
+                <div>
+                  <div className={styles.navTurnText}>沿当前路线行驶</div>
+                  <div className={styles.navTurnSub}>{Math.round(navDistance)}m 后继续前行</div>
+                </div>
               </div>
-              <div className={styles.navStatDivider} />
-              <div className={styles.navStatItem}>
-                <span className={styles.navStatVal}>{navRoute ? formatDuration(navRoute.duration) : '--'}</span>
-                <span className={styles.navStatLabel}>预计到达</span>
+              <div className={styles.navStats}>
+                <div className={styles.navStatItem}>
+                  <span className={styles.navStatVal}>{(navDistance / 1000).toFixed(1)}</span>
+                  <span className={styles.navStatLabel}>剩余 km</span>
+                </div>
+                <div className={styles.navStatDivider} />
+                <div className={styles.navStatItem}>
+                  <span className={styles.navStatVal}>{navRoute ? formatDuration(navRoute.duration) : '--'}</span>
+                  <span className={styles.navStatLabel}>预计到达</span>
+                </div>
+                <div className={styles.navStatDivider} />
+                <div className={styles.navStatItem}>
+                  <span className={styles.navStatVal}>
+                    {navMode === 'bike' ? '15' : navMode === 'walk' ? '5' : '32'}
+                  </span>
+                  <span className={styles.navStatLabel}>km/h</span>
+                </div>
               </div>
-              <div className={styles.navStatDivider} />
-              <div className={styles.navStatItem}>
-                <span className={styles.navStatVal}>
-                  {navMode === 'bike' ? '15' : navMode === 'walk' ? '5' : '32'}
-                </span>
-                <span className={styles.navStatLabel}>km/h</span>
-              </div>
+              {navRouteError ? (
+                <div style={{ fontSize: 12, color: '#faad14', textAlign: 'center', padding: '6px 8px', background: 'rgba(250,173,20,0.1)', borderRadius: 6 }}>
+                  ⚠️ {navRouteError}
+                </div>
+              ) : (
+                <div className={styles.navSimTip}>📍 {navMode ? MODE_META[navMode].label : ''}模式 · 高德路线 + 3D 导航</div>
+              )}
             </div>
-            {navRouteError ? (
-              <div style={{ fontSize: 12, color: '#faad14', textAlign: 'center', padding: '6px 8px', background: 'rgba(250,173,20,0.1)', borderRadius: 6 }}>
-                ⚠️ {navRouteError}
-              </div>
-            ) : (
-              <div className={styles.navSimTip}>📍 {navMode ? MODE_META[navMode].label : ''}模式 · 高德路线 + 3D 导航</div>
-            )}
-          </div>
+          )}
         </>
       )}
 
@@ -897,9 +1025,7 @@ const RouteResultPage: React.FC = () => {
 
                 <button className={styles.navBtn} onClick={(e) => {
                   e.stopPropagation();
-                  setSelectedMode(mode);
-                  setNavMode(mode);
-                  setNavActive(true);
+                  startNavigation(mode);
                 }}>
                   {MODE_META[mode].icon} 开始导航 · {MODE_META[mode].label}
                 </button>

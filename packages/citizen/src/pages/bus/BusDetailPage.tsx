@@ -3,8 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { loadAMap } from '../../lib/amap';
 import { getLineDetail, getArrivalInfo } from '../../services/transitService';
 import {
-  fetchRealRoadPath,
-  type BusDirection, type BusRouteGeometry, type BusVehicle,
+  distanceMeters, normalizePath, pointAtPath, searchBusLineGeometry, snapToPath,
+  type BusDirection, type BusRouteGeometry, type BusRouteStation, type BusVehicle,
 } from '../../services/busRealtimeService';
 import type { TransitLine, ArrivalInfo } from '../../types/transit';
 import { apiGet } from '../../services/apiClient';
@@ -31,41 +31,30 @@ function withTimeout<T>(promise: Promise<T>, ms: number, msg: string): Promise<T
   });
 }
 
-function pointAtProgress(path: [number, number][], progress: number): [number, number] {
-  const clamped = Math.max(0, Math.min(1, progress));
-  const total = path.length - 1;
-  const index = clamped * total;
-  const i = Math.floor(index), t = index - i;
-  const a = path[i], b = path[Math.min(i + 1, path.length - 1)];
-  return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
-}
-
-function distanceMeters(a: [number, number], b: [number, number]): number {
-  const dLat = (b[1] - a[1]) * 111000;
-  const dLng = (b[0] - a[0]) * 111000 * Math.cos((a[1] * Math.PI) / 180);
-  return Math.sqrt(dLat * dLat + dLng * dLng);
-}
-
 function stationAtProgress(geometry: BusRouteGeometry, progress: number) {
   const { stations, path } = geometry;
+  if (stations.length < 2) return { currentStation: stations[0]?.name || '', nextStation: '', distanceToNext: 0 };
   const total = stations.length - 1;
   const idx = progress * total;
   const nextIdx = Math.min(total, Math.max(1, Math.ceil(idx)));
-  return { currentStation: stations[nextIdx - 1].name, nextStation: stations[nextIdx].name, distanceToNext: Math.round(distanceMeters(pointAtProgress(path, progress), stations[nextIdx].location)) };
+  return { currentStation: stations[nextIdx - 1].name, nextStation: stations[nextIdx].name, distanceToNext: Math.round(distanceMeters(pointAtPath(path, progress), stations[nextIdx].location)) };
 }
 
-/** 标准化路径坐标，过滤非法点 */
-function normalizePath(input: unknown): [number, number][] {
-  if (!Array.isArray(input)) return [];
-  return input.map((p: any): [number, number] | null => {
-    if (Array.isArray(p)) { const lng = Number(p[0]), lat = Number(p[1]); return Number.isFinite(lng) && Number.isFinite(lat) ? [lng, lat] : null; }
-    if (p && typeof p === 'object') {
-      const lng = Number(p.lng ?? p.longitude ?? p.location?.lng);
-      const lat = Number(p.lat ?? p.latitude ?? p.location?.lat);
-      return Number.isFinite(lng) && Number.isFinite(lat) ? [lng, lat] : null;
-    }
-    return null;
-  }).filter((p): p is [number, number] => p !== null);
+function comparableName(value: string): string {
+  return value.replace(/[（）()\s·]/g, '').replace(/公交枢纽站?|公交场站|枢纽站|总站|车站|站$/g, '');
+}
+
+function mergeStations(lineStations: TransitLine['stations'], amapStations: BusRouteStation[]): BusRouteStation[] {
+  return lineStations.map((station, index) => {
+    const hasBackendLocation = Number.isFinite(station.longitude) && Number.isFinite(station.latitude);
+    if (hasBackendLocation) return { name: station.name, location: [station.longitude!, station.latitude!] };
+    const expected = comparableName(station.name);
+    const matched = amapStations.find(item => {
+      const actual = comparableName(item.name);
+      return actual === expected || actual.includes(expected) || expected.includes(actual);
+    }) || (amapStations.length === lineStations.length ? amapStations[index] : undefined);
+    return matched ? { name: station.name, location: matched.location } : null;
+  }).filter((station): station is BusRouteStation => station !== null);
 }
 
 const BusDetailPage: React.FC = () => {
@@ -86,6 +75,10 @@ const BusDetailPage: React.FC = () => {
   const [mapReady, setMapReady] = useState(false);
   const [mapError, setMapError] = useState('');
   const [mapRetryKey, setMapRetryKey] = useState(0);
+  const [geometryLoading, setGeometryLoading] = useState(false);
+  const [geometryError, setGeometryError] = useState('');
+  const [geometrySource, setGeometrySource] = useState<'backend' | 'amap' | ''>('');
+  const [geometryRetryKey, setGeometryRetryKey] = useState(0);
 
   const mapRef = useRef<HTMLDivElement>(null);
   const amapRef = useRef<any>(null);
@@ -95,6 +88,8 @@ const BusDetailPage: React.FC = () => {
   const geometryRef = useRef<BusRouteGeometry | null>(null);
   const vehicleMarkersRef = useRef<{ vehicleId: string; marker: any }[]>([]);
   const vehiclesRef = useRef<BusVehicle[]>([]);
+  const overlaysRef = useRef<any[]>([]);
+  const drawRequestRef = useRef(0);
 
   // ===== 加载线路详情 =====
   useEffect(() => {
@@ -184,10 +179,17 @@ const BusDetailPage: React.FC = () => {
     const AMap = (window as any).AMap;
     if (!AMap) return;
 
-    // 异步获取真实道路路径，然后用它绘制 polyline + 生成车辆
-    fetchRealRoadPath(AMap, geometry.stations, lineId, direction).then(drivingPath => {
+    // 异步获取真实道路路径（高德 LineSearch），然后用它绘制 polyline + 生成车辆
+    searchBusLineGeometry(AMap, {
+      city: '北京',
+      lineId,
+      lineName: line.name,
+      direction,
+      stationNames: geometry.stations.map(s => s.name),
+    }).then(match => {
       if (cancelledRef.current) return;
       if (!amapRef.current) return;
+      const drivingPath: [number, number][] | null = match?.path ?? null;
 
       // ❶ 优先真实道路路径，兜底站点直线插值
       const routePath: [number, number][] = (drivingPath && drivingPath.length >= 2)

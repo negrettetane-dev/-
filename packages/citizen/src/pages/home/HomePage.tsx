@@ -8,6 +8,7 @@ import styles from './HomePage.module.css';
 import { apiGet } from '../../services/apiClient';
 import { planAmapRoute, resolveRouteLocations } from '../../services/routePlanningService';
 import { useTravelLocationStore } from '../../stores/travelLocationStore';
+import { useTravelPlanStore } from '../../stores/travelPlanStore';
 import DepartureTimeSelect from '../../components/travel/DepartureTimeSelect';
 import { restoreDepartureState, type DepartureState } from '../../utils/departureTime';
 
@@ -82,6 +83,15 @@ const HomePage: React.FC = () => {
     }
     setSelectedMode(mode);
   };
+
+  // 结束导航返回后恢复刚才的规划条件（destination/mode/departure）
+  // origin 由 travelLocationStore 保留；departure 由 restoreDepartureState 恢复。
+  useEffect(() => {
+    const draft = useTravelPlanStore.getState();
+    if (draft.destination?.name && !destination) setDestination(draft.destination.name);
+    if (draft.mode) setSelectedMode(draft.mode as TravelModeOption);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // 加载高德地图（大图显示）
   useEffect(() => {
