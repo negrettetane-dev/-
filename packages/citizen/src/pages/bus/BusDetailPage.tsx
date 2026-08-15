@@ -375,15 +375,15 @@ const BusDetailPage: React.FC = () => {
               <span className={styles.liveLabel}>下一站</span>
               <span className={styles.liveValue}>{lead ? lead.nextStation : (stations[currentStopIdx + 1]?.name || '终点站')}</span>
             </div>
-            <div className={styles.liveItem}>
+            <div className={`${styles.liveItem} ${styles.liveEtaBox}`}>
               <span className={styles.liveLabel}>下一班到站</span>
-              <span className={styles.liveValue} style={{ color: '#1677ff', fontWeight: 700 }}>{formatCountdown(lead ? lead.eta : nextSec)}</span>
+              <span className={styles.liveEta}>{formatCountdown(lead ? lead.eta : nextSec)}</span>
             </div>
           </div>
           <div className={styles.liveRow}>
-            <div className={styles.liveItem}>
+            <div className={`${styles.liveItem} ${styles.liveEtaBox}`}>
               <span className={styles.liveLabel}>再下一班</span>
-              <span className={styles.liveValue}>{formatCountdown(followSec)}</span>
+              <span className={styles.liveEta}>{formatCountdown(followSec)}</span>
             </div>
             <div className={styles.liveItem}>
               <span className={styles.liveLabel}>拥挤度</span>

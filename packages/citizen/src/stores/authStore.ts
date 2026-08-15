@@ -2,6 +2,9 @@ import { create } from 'zustand';
 import { apiGet, apiPost } from '../services/apiClient';
 import { clearPersonalData } from './persistence';
 import { clearTravelOriginCache } from './travelLocationStore';
+import { useTripStore } from './tripStore';
+import { useReservationStore } from './reservationStore';
+import { useTravelPlanStore } from './travelPlanStore';
 
 export interface User {
   id: string;
@@ -26,6 +29,7 @@ export type AuthStatus = 'loading' | 'authenticated' | 'guest' | 'expired';
 
 interface AuthState {
   isLoggedIn: boolean;
+  isAuthenticated: boolean;
   authStatus: AuthStatus;
   user: User | null;
   token: string | null;
@@ -33,6 +37,7 @@ interface AuthState {
   loginWithSms: (phone: string, code: string) => Promise<LoginResult>;
   register: (data: { username: string; phone: string; email: string; password: string; nickname: string }) => Promise<LoginResult>;
   logout: () => void;
+  markSessionExpired: () => void;
   updateUser: (user: Partial<User>) => void;
   refreshProfile: () => Promise<void>;
 }
@@ -74,6 +79,7 @@ function normalizeUser(raw: Partial<User> & Record<string, unknown>): User {
 
 export const useAuthStore = create<AuthState>((set, get) => ({
   isLoggedIn: Boolean(stored.token),
+  isAuthenticated: Boolean(stored.token),
   authStatus: stored.token ? 'authenticated' : 'guest',
   user: stored.user,
   token: stored.token,
@@ -87,7 +93,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       );
       const user = normalizeUser(data);
       persistLogin(user, data.token);
-      set({ isLoggedIn: true, authStatus: 'authenticated', user, token: data.token });
+      set({ isLoggedIn: true, isAuthenticated: true, authStatus: 'authenticated', user, token: data.token });
       return { ok: true };
     } catch (error) {
       return { ok: false, error: errorMessage(error, '登录失败，请重试') };
@@ -108,7 +114,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       );
       const user = { ...normalizeUser(data), nickname: data.nickname || nickname || username };
       persistLogin(user, data.token);
-      set({ isLoggedIn: true, authStatus: 'authenticated', user, token: data.token });
+      set({ isLoggedIn: true, isAuthenticated: true, authStatus: 'authenticated', user, token: data.token });
       return { ok: true };
     } catch (error) {
       return { ok: false, error: errorMessage(error, '注册失败，请重试') };
@@ -121,7 +127,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     localStorage.removeItem('zhitu_user');
     clearPersonalData();
     clearTravelOriginCache();
-    set({ isLoggedIn: false, authStatus: 'guest', user: null, token: null });
+    useTripStore.getState().reset();
+    useReservationStore.getState().clearUserReservationData();
+    useTravelPlanStore.getState().clear();
+    set({ isLoggedIn: false, isAuthenticated: false, authStatus: 'guest', user: null, token: null });
+  },
+
+  markSessionExpired: () => {
+    localStorage.removeItem('zhitu_token');
+    localStorage.removeItem('zhitu_user');
+    useTripStore.getState().reset();
+    // Token 失效时保留 pendingReservation，供重新登录后继续确认。
+    useReservationStore.getState().setReservationsCache([]);
+    set({ isLoggedIn: false, isAuthenticated: false, authStatus: 'expired', user: null, token: null });
   },
 
   updateUser: (patch) => {
@@ -144,7 +162,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       // Token 失效 → 标记 expired，页面据此清除并跳转登录
       localStorage.removeItem('zhitu_token');
       localStorage.removeItem('zhitu_user');
-      set({ isLoggedIn: false, authStatus: 'expired', user: null, token: null });
+      useTripStore.getState().reset();
+      set({ isLoggedIn: false, isAuthenticated: false, authStatus: 'expired', user: null, token: null });
     }
   },
 }));

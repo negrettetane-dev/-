@@ -1,0 +1,148 @@
+/* 出发时间选择：下拉 + 自定义时间 Modal */
+
+.select {
+  appearance: auto;
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #e8e8e8;
+  border-radius: 8px;
+  background: #fff;
+  color: #1a1a2e;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.select:focus {
+  border-color: #1677ff;
+}
+
+/* ===== 自定义时间 Modal ===== */
+.modalMask {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: grid;
+  place-items: center;
+  z-index: 1200;
+  padding: 24px;
+}
+
+.modal {
+  width: 100%;
+  max-width: 340px;
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+  animation: dtSlideUp 0.2s ease-out;
+}
+
+@keyframes dtSlideUp {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.modalHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.modalTitle {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1a1a2e;
+}
+
+.modalClose {
+  border: 0;
+  background: transparent;
+  font-size: 15px;
+  color: #8c8c8c;
+  cursor: pointer;
+  padding: 2px 6px;
+}
+
+.modalBody {
+  padding: 16px 18px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.fieldLabel {
+  flex: 0 0 40px;
+  font-size: 13px;
+  color: #595959;
+}
+
+.field input {
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid #e8e8e8;
+  border-radius: 8px;
+  font-size: 14px;
+  color: #1a1a2e;
+  outline: none;
+}
+
+.field input:focus {
+  border-color: #1677ff;
+}
+
+.modalError {
+  font-size: 12px;
+  color: #d4380d;
+  background: #fff1f0;
+  border-radius: 6px;
+  padding: 6px 10px;
+}
+
+.modalHint {
+  font-size: 11px;
+  color: #8c8c8c;
+}
+
+.modalActions {
+  display: flex;
+  gap: 10px;
+  padding: 12px 18px 18px;
+}
+
+.modalCancel,
+.modalConfirm {
+  flex: 1;
+  padding: 10px 0;
+  border-radius: 10px;
+  font-size: 14px;
+  cursor: pointer;
+  border: 1px solid #d9d9d9;
+  background: #fff;
+  color: #1a1a2e;
+  transition: all 0.2s;
+}
+
+.modalCancel:hover {
+  border-color: #8c8c8c;
+}
+
+.modalConfirm {
+  background: #1677ff;
+  border-color: #1677ff;
+  color: #fff;
+  font-weight: 600;
+}
+
+.modalConfirm:hover {
+  background: #4096ff;
+  border-color: #4096ff;
+}

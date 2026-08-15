@@ -19,6 +19,9 @@ import ProfilePage from './pages/profile/ProfilePage';
 import MyReportsPage from './pages/profile/MyReportsPage';
 import SettingsPage from './pages/profile/SettingsPage';
 import AccountManagementPage from './pages/profile/AccountManagementPage';
+import MyTripsPage from './pages/profile/MyTripsPage';
+import TripDetailPage from './pages/profile/TripDetailPage';
+import MyReservationsPage from './pages/profile/MyReservationsPage';
 import ElderlyHomePage from './pages/elderly/ElderlyHomePage';
 import LoginPage from './pages/auth/LoginPage';
 import RegisterPage from './pages/auth/RegisterPage';
@@ -103,7 +106,7 @@ const App: React.FC = () => {
             <Route path="/news/:id" element={<NewsDetailPage />} />
             <Route path="/services" element={<ServicesPage />} />
             <Route path="/carbon" element={<CarbonPage />} />
-            <Route path="/qrcode" element={<QRCodePage />} />
+            <Route path="/qrcode" element={<RequireAuth><QRCodePage /></RequireAuth>} />
             <Route path="/charging/scan" element={<ChargingScanPage />} />
             <Route path="/move-car" element={<MoveCarPage />} />
             <Route path="/travel/bus/:lineId" element={<BusDetailPage />} />
@@ -112,8 +115,17 @@ const App: React.FC = () => {
             <Route path="/profile" element={
               <RequireAuth><ProfilePage /></RequireAuth>
             } />
+            <Route path="/profile/trips" element={
+              <RequireAuth><MyTripsPage /></RequireAuth>
+            } />
+            <Route path="/profile/trips/:tripId" element={
+              <RequireAuth><TripDetailPage /></RequireAuth>
+            } />
             <Route path="/profile/reports" element={
               <RequireAuth><MyReportsPage /></RequireAuth>
+            } />
+            <Route path="/profile/reservations" element={
+              <RequireAuth><MyReservationsPage /></RequireAuth>
             } />
             <Route path="/profile/settings" element={
               <RequireAuth><SettingsPage /></RequireAuth>

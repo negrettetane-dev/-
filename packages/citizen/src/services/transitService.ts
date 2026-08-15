@@ -10,6 +10,7 @@ import type {
   TransitSearchResult,
   NearbyStation,
 } from '../types/transit';
+import { normalizeSearchResult, type UnifiedTransitResult } from '../types/transitSearch';
 import { apiGet } from './apiClient';
 
 interface ApiStation {
@@ -91,6 +92,27 @@ export async function getLineDetail(mode: TransitMode, lineId: string): Promise<
 export async function searchTransit(query: string): Promise<TransitSearchResult[]> {
   if (!query.trim()) return [];
   return apiGet<TransitSearchResult[]>('/transit/search', { q: query });
+}
+
+/** 最近查询的内存缓存：同一 query 短时间内不重复请求 */
+const searchCache = new Map<string, UnifiedTransitResult[]>();
+
+/**
+ * 统一搜索：转成 UnifiedTransitResult[]。
+ * - 空字符串/纯空格不请求
+ * - 命中缓存直接返回，避免重复请求
+ * - 接口异常向上抛（由调用方区分 error 与 empty，不把异常转成空结果）
+ * 注：当前后端不返回坐标/地址，统一模型内 lng/lat/address 为 null/空，不伪造。
+ */
+export async function searchTransitUnified(query: string): Promise<UnifiedTransitResult[]> {
+  const q = query.trim();
+  if (!q) return [];
+  const cached = searchCache.get(q);
+  if (cached) return cached;
+  const raw = await searchTransit(q);
+  const unified = raw.map(item => normalizeSearchResult(item));
+  searchCache.set(q, unified);
+  return unified;
 }
 
 /** 附近公交/地铁站（定位失败时返回演示数据） */

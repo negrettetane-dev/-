@@ -1,6 +1,7 @@
 import React from 'react';
 import type { RouteForecastPoint } from '../../types/routeForecast';
 import { FORECAST_LEVEL_COLOR, FORECAST_LEVEL_LABEL } from '../../types/routeForecast';
+import { labelForDepartureAt } from '../../utils/departureTime';
 import RouteForecastChart from './RouteForecastChart';
 import styles from './RouteForecast.module.css';
 
@@ -9,19 +10,23 @@ interface Props {
   loading: boolean;
   error: string;
   isFallback?: boolean;
+  /** 预测基准出发时间（ISO），非 now 时展示「以 X 出发为基准」 */
+  baseAt?: string;
   onRetry: () => void;
 }
 
-const RouteForecastPanel: React.FC<Props> = ({ forecast, loading, error, isFallback, onRetry }) => {
+const RouteForecastPanel: React.FC<Props> = ({ forecast, loading, error, isFallback, baseAt, onRetry }) => {
   const hasForecast = !loading && !error && forecast.length > 0;
   const peak = hasForecast ? forecast.reduce((best, point) => point.index > best.index ? point : best, forecast[0]) : null;
   const latest = hasForecast ? forecast[forecast.length - 1] : null;
+  const baseLabel = baseAt && !Number.isNaN(new Date(baseAt).getTime()) ? labelForDepartureAt(baseAt) : '';
   return (
     <div className={styles.panel}>
       <div className={styles.titleRow}>
         <div className={styles.title}>🔮 未来拥堵预测</div>
         <span className={styles.sourceBadge}>模拟预测 · 非官方</span>
       </div>
+      {baseLabel && <div className={styles.baseAt}>以「{baseLabel}」出发为基准</div>}
 
       {hasForecast && (
         <div className={styles.summary}>

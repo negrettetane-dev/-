@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { AlertCircle, ArrowRight, Eye, EyeOff, KeyRound, LockKeyhole, Smartphone, UserRound } from 'lucide-react';
+import { AlertCircle, ArrowRight, Eye, EyeOff, Info, KeyRound, LockKeyhole, Smartphone, UserRound } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { useAuthStore } from '../../stores/authStore';
@@ -26,6 +26,8 @@ const LoginPage: React.FC = () => {
   const [error, setError] = useState('');
 
   const from = (location.state as any)?.from || '/';
+  const fromState = (location.state as any)?.fromState;
+  const notice = (location.state as any)?.notice as string | undefined;
 
   const sendCode = async () => {
     if (!/^1[3-9]\d{9}$/.test(phone)) { setError('请输入正确的手机号'); return; }
@@ -55,7 +57,7 @@ const LoginPage: React.FC = () => {
       setLoading(true);
       const res = await loginWithSms(phone, code);
       setLoading(false);
-      if (res.ok) navigate(from, { replace: true });
+      if (res.ok) navigate(from, { replace: true, state: fromState });
       else setError(res.error || '登录失败，请重试');
       return;
     }
@@ -66,7 +68,7 @@ const LoginPage: React.FC = () => {
     setLoading(true);
     const res = await loginWithPassword(account.trim(), password);
     setLoading(false);
-    if (res.ok) navigate(from, { replace: true });
+    if (res.ok) navigate(from, { replace: true, state: fromState });
     else setError(res.error || '账号或密码错误');
   };
 
@@ -77,6 +79,13 @@ const LoginPage: React.FC = () => {
         <h2 className="m-0 text-[30px] font-semibold tracking-tight text-slate-950">欢迎登录</h2>
         <p className="mb-0 mt-2 text-sm leading-6 text-slate-500">登录后体验完整的智慧出行与城市服务</p>
       </div>
+
+      {notice && (
+        <div className="mb-4 flex items-center gap-2 rounded-xl border border-blue-100 bg-blue-50 px-3.5 py-3 text-sm text-blue-700" role="status">
+          <Info className="h-4 w-4 shrink-0" />
+          <span>{notice}</span>
+        </div>
+      )}
 
       <div className="mb-6 grid grid-cols-2 rounded-xl bg-slate-100 p-1" role="tablist" aria-label="登录方式">
         <button

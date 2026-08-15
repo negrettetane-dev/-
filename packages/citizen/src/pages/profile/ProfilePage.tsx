@@ -22,7 +22,8 @@ const ProfilePage: React.FC = () => {
   }, [isLoggedIn, refreshProfile, updateUser]);
 
   const menus = [
-    { icon:'🚗', label:'我的出行', desc:'历史路线、乘车记录', path:'/profile' },
+    { icon:'🚗', label:'我的出行', desc:'导航记录 · 公交地铁 · 骑行步行', path:'/profile/trips' },
+    { icon:'🚌', label:'我的预约', desc:'定制公交预约记录', path:'/profile/reservations' },
     { icon:'📋', label:'我的上报', desc:'全部工单记录', path:'/profile/reports' },
     { icon:'⚙️', label:'消息设置', desc:'预警、工单、管制提醒', path:'/profile/settings' },
   ];

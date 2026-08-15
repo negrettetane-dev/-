@@ -192,11 +192,12 @@ const HomePage: React.FC = () => {
         {/* 底部：快捷出行入口 */}
         <div className={styles.heroQuick}>
           {[
-            { icon:'🚗', label:'驾车出行', path:'/travel' },
-            { icon:'🚌', label:'公交地铁', path:'/travel' },
-            { icon:'🚲', label:'骑行导航', path:'/travel' },
-            { icon:'🚶', label:'步行导航', path:'/travel' },
-            { icon:'🅿️', label:'停车充电', path:'/parking' },
+            { icon:'⚡', label:'新能源', path:'/travel?mode=drive&profile=ev' },
+            { icon:'🚗', label:'驾车', path:'/travel?mode=drive' },
+            { icon:'🚌', label:'公交地铁', path:'/travel?mode=bus' },
+            { icon:'🚲', label:'骑行', path:'/travel?mode=bike' },
+            { icon:'🚶', label:'步行', path:'/travel?mode=walk' },
+            { icon:'♿', label:'无障碍', path:'/travel?mode=bus&profile=accessible' },
           ].map(item => (
             <div key={item.label} className={styles.heroQuickItem} onClick={()=>navigate(item.path)}>
               <span className={styles.heroQuickIcon}>{item.icon}</span>

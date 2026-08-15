@@ -59,21 +59,21 @@ export interface NotificationSettings {
 
 const REPORTS_KEY = 'reports';
 
-export function getReports(): PersistedReport[] {
-  return get<PersistedReport[]>(REPORTS_KEY, []);
+export function getReports(userId = 'legacy'): PersistedReport[] {
+  return get<PersistedReport[]>(userScopedKey(REPORTS_KEY, userId), []);
 }
 
-export function addReport(report: PersistedReport): void {
-  const reports = getReports();
+export function addReport(report: PersistedReport, userId = 'legacy'): void {
+  const reports = getReports(userId);
   reports.unshift(report);
-  set(REPORTS_KEY, reports);
+  set(userScopedKey(REPORTS_KEY, userId), reports);
 }
 
-export function updateReportStatus(id: string, status: PersistedReport['status']): void {
-  const reports = getReports();
+export function updateReportStatus(id: string, status: PersistedReport['status'], userId = 'legacy'): void {
+  const reports = getReports(userId);
   const r = reports.find(r => r.id === id);
   if (r) r.status = status;
-  set(REPORTS_KEY, reports);
+  set(userScopedKey(REPORTS_KEY, userId), reports);
 }
 
 // ====== 碳积分 ======
@@ -137,27 +137,8 @@ export function hashPassword(password: string): string {
   return `zhitu$${h1.toString(16)}${h2.toString(16)}`;
 }
 
-/** 演示内置账号：用户名 / 手机号 / 邮箱 均可登录同一账号 */
-function builtInAccount(): StoredAccount {
-  return {
-    id: 'u1',
-    username: 'zhangsan',
-    phone: '13812345678',
-    email: 'zhangsan@example.com',
-    passwordHash: hashPassword('123456'),
-    nickname: '演示用户zhangsan',
-    role: 'user',
-    carbonCredits: 1250,
-    createdAt: 1723000000000,
-  };
-}
-
 export function getAccounts(): StoredAccount[] {
-  const list = get<StoredAccount[]>(ACCOUNTS_KEY, []);
-  // 合并内置演示账号（始终存在，方便演示三种方式登录）
-  const builtin = builtInAccount();
-  if (!list.some(a => a.id === builtin.id)) return [builtin, ...list];
-  return list;
+  return get<StoredAccount[]>(ACCOUNTS_KEY, []);
 }
 
 function saveAccounts(list: StoredAccount[]): void {
@@ -173,6 +154,10 @@ export function findAccount(account: string): StoredAccount | null {
     a.phone === account.trim() ||
     a.email.toLowerCase() === acc
   ) || null;
+}
+
+export function findAccountById(userId: string): StoredAccount | null {
+  return getAccounts().find(account => account.id === userId) || null;
 }
 
 /** 注册新账号；返回错误码：username_exists / phone_exists / email_exists / null(成功) */
@@ -236,26 +221,30 @@ export function toggleStarredBus(lineId: string): boolean {
 // ====== 积分余额 ======
 
 const POINTS_KEY = 'user_points';
-const INITIAL_POINTS = 1250;
 
-export function getUserPoints(): number {
-  return get<number>(POINTS_KEY, INITIAL_POINTS);
+function userScopedKey(key: string, userId: string): string {
+  return `${key}:${userId}`;
+}
+
+export function getUserPoints(userId = 'legacy'): number {
+  const accountPoints = getAccounts().find(account => account.id === userId)?.carbonCredits ?? 0;
+  return get<number>(userScopedKey(POINTS_KEY, userId), accountPoints);
 }
 
 /** 仅在"后端"调用 — 扣除积分（保证不出现负数） */
-export function deductPoints(amount: number): { success: boolean; remaining: number } {
-  const current = getUserPoints();
+export function deductPoints(amount: number, userId = 'legacy'): { success: boolean; remaining: number } {
+  const current = getUserPoints(userId);
   if (current < amount) return { success: false, remaining: current };
   const remaining = current - amount;
-  set(POINTS_KEY, remaining);
+  set(userScopedKey(POINTS_KEY, userId), remaining);
   return { success: true, remaining };
 }
 
 /** 增加积分（事件上报奖励、绿色出行等） */
-export function addPoints(amount: number): number {
-  const current = getUserPoints();
+export function addPoints(amount: number, userId = 'legacy'): number {
+  const current = getUserPoints(userId);
   const updated = current + amount;
-  set(POINTS_KEY, updated);
+  set(userScopedKey(POINTS_KEY, userId), updated);
   return updated;
 }
 
@@ -275,14 +264,14 @@ export interface RedemptionRecord {
 
 const REDEMPTIONS_KEY = 'redemptions';
 
-export function getRedemptions(): RedemptionRecord[] {
-  return get<RedemptionRecord[]>(REDEMPTIONS_KEY, []);
+export function getRedemptions(userId = 'legacy'): RedemptionRecord[] {
+  return get<RedemptionRecord[]>(userScopedKey(REDEMPTIONS_KEY, userId), []);
 }
 
-export function addRedemption(r: RedemptionRecord): void {
-  const records = getRedemptions();
+export function addRedemption(r: RedemptionRecord, userId = 'legacy'): void {
+  const records = getRedemptions(userId);
   records.unshift(r);
-  set(REDEMPTIONS_KEY, records);
+  set(userScopedKey(REDEMPTIONS_KEY, userId), records);
 }
 
 // ====== 最近目的地 ======
@@ -312,9 +301,6 @@ export function clearAllData(): void {
 // 保留公共缓存（公交线路、新闻、停车场、地图等不走 localStorage 的公共数据）。
 // 不删除 user_accounts 注册库。
 const PERSONAL_KEYS = [
-  'user_points',
-  'redemptions',
-  'reports',
   'carbon',
   'notification_settings',
   'starred_buses',

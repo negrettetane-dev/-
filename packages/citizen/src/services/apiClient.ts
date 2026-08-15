@@ -5,6 +5,7 @@ const apiClient = axios.create({
   baseURL: '/api',
   timeout: 15000,
   headers: { 'Content-Type': 'application/json' },
+  adapter: import.meta.env.VITE_ENABLE_MOCK === 'true' ? 'fetch' : undefined,
 });
 
 apiClient.interceptors.request.use((config) => {
@@ -19,7 +20,18 @@ apiClient.interceptors.response.use(
     if (body.code !== 0) return Promise.reject(new Error(body.message || '请求失败'));
     return response;
   },
-  (error) => Promise.reject(error),
+  (error) => {
+    const config = error?.config;
+    console.error('API request failed', {
+      url: config ? `${config.baseURL || ''}${config.url || ''}` : undefined,
+      method: config?.method?.toUpperCase(),
+      payload: config?.data,
+      status: error?.response?.status,
+      response: error?.response?.data,
+      error,
+    });
+    return Promise.reject(error);
+  },
 );
 
 export async function apiGet<T>(url: string, params?: Record<string, unknown>): Promise<T> {

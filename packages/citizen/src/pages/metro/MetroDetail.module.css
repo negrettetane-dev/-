@@ -13,11 +13,11 @@
 .statusDot { width: 8px; height: 8px; border-radius: 50%; }
 
 .arrivalCard { background: linear-gradient(135deg, #1677ff, #4096ff); color: #fff; border-radius: 14px; padding: 18px 20px; margin-bottom: 14px; }
-.arrivalTitle { font-size: 15px; font-weight: 600; margin-bottom: 12px; }
-.arrivalRow { display: flex; gap: 12px; }
-.arrivalItem { flex: 1; }
-.arrivalLabel { display: block; font-size: 11px; opacity: 0.85; margin-bottom: 4px; }
-.arrivalVal { font-size: 22px; font-weight: 700; display: block; }
+.arrivalTitle { font-size: 15px; font-weight: 600; color: #fff; margin-bottom: 12px; }
+.arrivalRow { display: flex; gap: 10px; }
+.arrivalItem { flex: 1; background: rgba(255,255,255,0.14); border-radius: 10px; padding: 10px 12px; }
+.arrivalLabel { display: block; font-size: 11px; color: rgba(255,255,255,0.9); margin-bottom: 4px; }
+.arrivalVal { font-size: 24px; font-weight: 700; display: block; color: #fff; }
 .arrivalCrowd { font-size: 12px; display: inline-block; margin-top: 4px; }
 
 .stationsCard { background: #fff; border-radius: 12px; padding: 16px 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }

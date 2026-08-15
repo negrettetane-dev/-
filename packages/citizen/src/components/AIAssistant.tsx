@@ -1,118 +1,137 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { respond, thinkingLabel } from '../services/aiAssistant/assistantService';
+import { useAuthStore } from '../stores/authStore';
+import { useTravelLocationStore } from '../stores/travelLocationStore';
+import type {
+  AssistantCard,
+  AssistantCardAction,
+  AssistantDataSource,
+  AssistantMessage,
+} from '../types/aiAssistant';
 import styles from './AIAssistant.module.css';
 
-interface Message { role: 'user' | 'ai'; text: string; }
-
-const QUICK_QUESTIONS = [
-  '现在去天安门堵不堵？',
-  '早高峰走二环还是三环？',
-  '明天8点去北京南站怎么走？',
-  '附近哪里有便宜停车场？',
-  '这段路为什么收费？',
-];
-
-const MOCK_ANSWERS: Record<string, { text: string; delay: number }> = {
-  '现在去天安门堵不堵？': {
-    text: '当前长安街东段（东单→天安门方向）轻微拥堵，预计通行时间约25分钟。建议绕行前门大街，虽然多1.2公里但可节省约8分钟。',
-    delay: 1200,
-  },
-  '早高峰走二环还是三环？': {
-    text: '根据近30天数据，工作日早高峰（7:30-8:30），二环内环平均车速仅18km/h，三环外环约28km/h。强烈建议走三环——多绕2公里但快15分钟以上。',
-    delay: 1500,
-  },
-  '明天8点去北京南站怎么走？': {
-    text: '明天周三早高峰8:00-8:30二环高架拥堵概率78%。建议7:30前出发（全程畅通约18分钟），或走三环辅路（约22分钟）。明早有小雨概率，请预留5分钟冗余。🚄',
-    delay: 1800,
-  },
-  '附近哪里有便宜停车场？': {
-    text: '您当前位置1km内有3个停车场：①西单大悦城地下（¥8/h，空闲82位）；②宣武门路侧（¥5/h，空闲12位）；③金融街地库（¥15/h，空闲156位）。推荐②，性价比最高。',
-    delay: 1000,
-  },
-  '这段路为什么收费？': {
-    text: '您查询的路段属于京通快速路（五环至四环段），为北京市经营性收费公路，小车¥5/次。ETC享95折。该路段收费标准经市发改委批准（京发改[2020]128号）。',
-    delay: 900,
-  },
+const SOURCE_META: Record<AssistantDataSource, { label: string; color: string; bg: string }> = {
+  real: { label: '实时数据', color: '#389e0d', bg: '#f6ffed' },
+  demo: { label: '演示数据', color: '#d46b08', bg: '#fff7e6' },
+  simulated: { label: '模拟预测', color: '#c41d7f', bg: '#fff0f6' },
+  fallback: { label: '备用数据', color: '#08979c', bg: '#e6fffb' },
+  unknown: { label: '来源待确认', color: '#8c8c8c', bg: '#fafafa' },
 };
 
+function greeting(): AssistantMessage {
+  return {
+    id: 'greeting',
+    role: 'ai',
+    text: '👋 你好，我是小枢。你可以直接说出出行需求，比如「去北京南站怎么走」「附近哪里有停车场」「我的积分还有多少」。',
+    createdAt: Date.now(),
+  };
+}
+
 const AIAssistant: React.FC = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { isLoggedIn } = useAuthStore();
+  const { origin } = useTravelLocationStore();
   const [open, setOpen] = useState(false);
-  const [messages, setMessages] = useState<Message[]>([
-    { role: 'ai', text: '👋 你好！我是智途出行助手小枢。我可以帮你规划路线、推荐最佳出发时间、分析路况，试试问我吧～' },
-  ]);
+  const [messages, setMessages] = useState<AssistantMessage[]>([greeting()]);
   const [input, setInput] = useState('');
-  const [thinking, setThinking] = useState(false);
+  const [thinking, setThinking] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, thinking]);
 
-  const sendMessage = (text: string) => {
-    if (!text.trim() || thinking) return;
-    setMessages(prev => [...prev, { role: 'user', text }]);
+  const send = async (text: string) => {
+    const t = text.trim();
+    if (!t || thinking) return;
+    setMessages(prev => [...prev, { id: `u_${Date.now()}`, role: 'user', text: t, createdAt: Date.now() }]);
     setInput('');
-    setThinking(true);
-
-    // Find matching answer or generate generic response
-    const match = MOCK_ANSWERS[text];
-    const delay = match?.delay || 1000 + Math.random() * 1500;
-    const answer = match?.text || generateGenericAnswer(text);
-
-    setTimeout(() => {
-      setMessages(prev => [...prev, { role: 'ai', text: answer }]);
-      setThinking(false);
-    }, delay);
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage(input);
+    setThinking(thinkingLabel(t));
+    try {
+      const ctx = {
+        isLoggedIn,
+        originName: origin.lng != null ? origin.address || origin.name : undefined,
+        currentPage: location.pathname,
+      };
+      const reply = await respond(t, ctx);
+      setMessages(prev => [...prev, reply]);
+    } catch {
+      setMessages(prev => [...prev, {
+        id: `e_${Date.now()}`,
+        role: 'ai',
+        text: '抱歉，处理你的请求时出了点问题，请稍后重试。',
+        createdAt: Date.now(),
+      }]);
+    } finally {
+      setThinking('');
     }
   };
 
+  const runAction = (action: AssistantCardAction) => {
+    if (action.path) navigate(action.path, { state: action.state });
+  };
+
+  const quickQuestions = isLoggedIn
+    ? ['我的积分还有多少？', '去北京南站怎么走？', '附近哪里有停车场？', '我的上报处理了吗？']
+    : ['去北京南站怎么走？', '附近哪里有停车场？', '现在路况怎么样？', '有哪些公交线路？'];
+
   return (
     <>
-      {/* Floating button */}
+      {/* 悬浮按钮 */}
       <button
         className={`${styles.fab} ${open ? styles.fabOpen : ''}`}
         onClick={() => setOpen(!open)}
-        title="AI出行助手"
+        title="小枢出行助手"
+        aria-label="小枢出行助手"
       >
         {open ? '✕' : '🤖'}
       </button>
 
-      {/* Chat panel */}
+      {/* 聊天面板 */}
       {open && (
         <div className={styles.panel}>
           <div className={styles.header}>
-            <span>🤖 AI出行助手 · 小枢</span>
-            <span className={styles.subtitle}>可解释AI · 数据驱动决策</span>
+            <span>🤖 小枢出行助手</span>
+            <span className={styles.subtitle}>可信数据 · 结果可执行</span>
           </div>
 
           <div className={styles.body}>
-            {messages.map((m, i) => (
-              <div key={i} className={`${styles.msg} ${m.role === 'user' ? styles.userMsg : styles.aiMsg}`}>
-                <div className={styles.bubble}>{m.text}</div>
+            {messages.map((m) => (
+              <div key={m.id} className={`${styles.msg} ${m.role === 'user' ? styles.userMsg : styles.aiMsg}`}>
+                <div className={styles.msgContent}>
+                  {m.role === 'user' ? (
+                    <div className={styles.bubble}>{m.text}</div>
+                  ) : (
+                    <>
+                      <div className={styles.bubble}>{m.text}</div>
+                      {m.cards?.map(card => <AssistantCardView key={card.id} card={card} onAction={runAction} />)}
+                    </>
+                  )}
+                </div>
               </div>
             ))}
             {thinking && (
               <div className={`${styles.msg} ${styles.aiMsg}`}>
-                <div className={styles.bubble}>
-                  <span className={styles.typing}>●</span>
-                  <span className={styles.typing} style={{ animationDelay: '0.2s' }}>●</span>
-                  <span className={styles.typing} style={{ animationDelay: '0.4s' }}>●</span>
+                <div className={styles.msgContent}>
+                  <div className={styles.bubble}>
+                    <span className={styles.thinkingText}>{thinking}</span>
+                    <span className={styles.typing}>●</span>
+                    <span className={styles.typing} style={{ animationDelay: '0.2s' }}>●</span>
+                    <span className={styles.typing} style={{ animationDelay: '0.4s' }}>●</span>
+                  </div>
                 </div>
               </div>
             )}
             <div ref={bottomRef} />
           </div>
 
-          {/* Quick questions */}
-          {messages.length <= 1 && (
+          {/* 动态快捷问题 */}
+          {messages.length <= 1 && !thinking && (
             <div className={styles.quickQuestions}>
-              {QUICK_QUESTIONS.map(q => (
-                <div key={q} className={styles.quickQ} onClick={() => sendMessage(q)}>
+              {quickQuestions.map(q => (
+                <div key={q} className={styles.quickQ} onClick={() => send(q)}>
                   {q}
                 </div>
               ))}
@@ -122,15 +141,15 @@ const AIAssistant: React.FC = () => {
           <div className={styles.inputRow}>
             <input
               className={styles.input}
-              placeholder="输入出行问题，如「去高铁站哪条路靠谱」"
+              placeholder="说出你的出行需求，如「去高铁站哪条路靠谱」"
               value={input}
               onChange={e => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
+              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(input); } }}
             />
             <button
               className={styles.sendBtn}
-              onClick={() => sendMessage(input)}
-              disabled={!input.trim() || thinking}
+              onClick={() => send(input)}
+              disabled={!input.trim() || !!thinking}
             >
               发送
             </button>
@@ -141,15 +160,42 @@ const AIAssistant: React.FC = () => {
   );
 };
 
-/** Generate a generic AI answer when no canned response matches */
-function generateGenericAnswer(question: string): string {
-  const responses = [
-    `根据实时数据分析，「${question.slice(0, 12)}...」这个问题建议您选择绿色出行方式。当前公交1路和52路均有空位，到站时间约3-5分钟。`,
-    `我分析了最近7天的交通数据，针对您的问题，建议避开早高峰7:30-8:30出行，该时段拥堵指数高达7.8（严重拥堵）。建议推迟至9:00后出发。`,
-    `综合路况、天气和历史数据，目前您查询的路线整体通畅。但从安全性考虑，今天有小雨预警，请减速慢行，保持安全车距。`,
-    `根据高德交通大数据，您关心的路段今天下午16:00-18:00将进入晚高峰。建议提前规划或改用公共交通。需要我帮您查公交路线吗？`,
-  ];
-  return responses[Math.floor(Math.random() * responses.length)];
-}
+const AssistantCardView: React.FC<{ card: AssistantCard; onAction: (a: AssistantCardAction) => void }> = ({ card, onAction }) => {
+  const meta = SOURCE_META[card.source] || SOURCE_META.unknown;
+  return (
+    <div className={styles.card}>
+      <div className={styles.cardHead}>
+        <span className={styles.cardTitle}>{card.title}</span>
+        <span className={styles.sourceTag} style={{ color: meta.color, background: meta.bg }}>
+          {card.sourceLabel || meta.label}
+        </span>
+      </div>
+      {card.subtitle && <div className={styles.cardSub}>{card.subtitle}</div>}
+      {card.rows && card.rows.length > 0 && (
+        <div className={styles.cardRows}>
+          {card.rows.map((r, i) => (
+            <div key={i} className={styles.cardRow}>
+              <span className={styles.cardRowLabel}>{r.label}</span>
+              <span className={styles.cardRowValue} style={r.valueColor ? { color: r.valueColor } : undefined}>{r.value}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {card.actions && card.actions.length > 0 && (
+        <div className={styles.cardActions}>
+          {card.actions.map((a, i) => (
+            <button
+              key={i}
+              className={a.primary ? styles.cardActionPrimary : styles.cardAction}
+              onClick={() => onAction(a)}
+            >
+              {a.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 export default AIAssistant;

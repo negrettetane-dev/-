@@ -9,13 +9,14 @@ const QR_VALIDITY = 60; // 秒
 
 const QRCodePage: React.FC = () => {
   const navigate = useNavigate();
-  const { isLoggedIn } = useAuthStore();
+  const { user } = useAuthStore();
+  const userId = user?.id || '';
   const [mode, setMode] = useState<'bus' | 'metro'>('bus');
   const [faqOpen, setFaqOpen] = useState(false);
 
   // 公交码 / 地铁码完全独立
-  const [busQr, setBusQr] = useState<QrState>(() => generateTransitQr('bus'));
-  const [metroQr, setMetroQr] = useState<QrState>(() => generateTransitQr('metro'));
+  const [busQr, setBusQr] = useState<QrState>(() => generateTransitQr('bus', userId));
+  const [metroQr, setMetroQr] = useState<QrState>(() => generateTransitQr('metro', userId));
   const [busCountdown, setBusCountdown] = useState(QR_VALIDITY);
   const [metroCountdown, setMetroCountdown] = useState(QR_VALIDITY);
 
@@ -27,38 +28,38 @@ const QRCodePage: React.FC = () => {
     const t = setInterval(() => {
       setBusCountdown(prev => {
         if (prev <= 1) {
-          setBusQr(generateTransitQr('bus'));
+          setBusQr(generateTransitQr('bus', userId));
           return QR_VALIDITY;
         }
         return prev - 1;
       });
     }, 1000);
     return () => clearInterval(t);
-  }, []);
+  }, [userId]);
 
   // 地铁码独立倒计时
   useEffect(() => {
     const t = setInterval(() => {
       setMetroCountdown(prev => {
         if (prev <= 1) {
-          setMetroQr(generateTransitQr('metro'));
+          setMetroQr(generateTransitQr('metro', userId));
           return QR_VALIDITY;
         }
         return prev - 1;
       });
     }, 1000);
     return () => clearInterval(t);
-  }, []);
+  }, [userId]);
 
   const refreshActive = useCallback(() => {
     if (mode === 'bus') {
-      setBusQr(generateTransitQr('bus'));
+      setBusQr(generateTransitQr('bus', userId));
       setBusCountdown(QR_VALIDITY);
     } else {
-      setMetroQr(generateTransitQr('metro'));
+      setMetroQr(generateTransitQr('metro', userId));
       setMetroCountdown(QR_VALIDITY);
     }
-  }, [mode]);
+  }, [mode, userId]);
 
   return (
     <div className={styles.page}>
@@ -119,55 +120,10 @@ const QRCodePage: React.FC = () => {
         </div>
       </div>
 
-      {/* 个人账户信息：未登录不展示余额/乘车记录 */}
-      {isLoggedIn ? (
-        <>
-          <div className={styles.balanceCard}>
-            <div className={styles.balanceItem}>
-              <span className={styles.balanceLabel}>公交余额</span>
-              <span className={styles.balanceValue}>¥ 38.50</span>
-            </div>
-            <div className={styles.balanceDivider} />
-            <div className={styles.balanceItem}>
-              <span className={styles.balanceLabel}>地铁余额</span>
-              <span className={styles.balanceValue}>¥ 52.00</span>
-            </div>
-            <div className={styles.balanceDivider} />
-            <div className={styles.balanceItem}>
-              <span className={styles.balanceLabel}>碳积分</span>
-              <span className={styles.balanceValue}>🌳 1250</span>
-            </div>
-          </div>
-
-          <div className={styles.ridesCard}>
-            <div className={styles.sectionTitle}>📋 最近乘车记录</div>
-            {[
-              { icon: '🚌', route: '1路', from: '西单', to: '王府井', time: '今天 08:30', cost: '-¥2.00' },
-              { icon: '🚇', route: '1号线', from: '国贸', to: '西单', time: '昨天 18:15', cost: '-¥4.00' },
-              { icon: '🚌', route: '52路', from: '王府井', to: '北京站', time: '07/31 09:00', cost: '-¥2.00' },
-            ].map((r, i) => (
-              <div key={i} className={styles.rideRow}>
-                <span className={styles.rideIcon}>{r.icon}</span>
-                <div className={styles.rideInfo}>
-                  <span className={styles.rideRoute}>{r.route}</span>
-                  <span className={styles.rideStops}>{r.from} → {r.to}</span>
-                </div>
-                <div className={styles.rideMeta}>
-                  <span className={styles.rideTime}>{r.time}</span>
-                  <span className={styles.rideCost}>{r.cost}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </>
-      ) : (
-        <div className={styles.balanceCard} style={{ flexDirection: 'column', gap: 8, padding: '18px 20px', textAlign: 'center' }}>
-          <div style={{ fontSize: 14, color: 'var(--text-secondary)' }}>登录后查看公交余额、地铁余额与乘车记录</div>
-          <button onClick={() => navigate('/login')} style={{ padding: '8px 28px', background: '#1677ff', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, cursor: 'pointer' }}>
-            立即登录
-          </button>
-        </div>
-      )}
+      <div className={styles.balanceCard} style={{ flexDirection: 'column', gap: 8, padding: '18px 20px', textAlign: 'center' }}>
+        <div style={{ fontSize: 14, color: 'var(--text-secondary)' }}>账户余额与乘车记录服务暂未接入</div>
+        <div style={{ fontSize: 12, color: 'var(--text-hint)' }}>当前页面仅提供明确标记的演示乘车码，不展示固定用户数据。</div>
+      </div>
 
       {/* FAQ 居中弹窗 */}
       {faqOpen && (

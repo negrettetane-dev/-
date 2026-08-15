@@ -1,6 +1,7 @@
 // ===== 智途云枢 · 路线拥堵预测 Mock =====
 // 未来 15/30/45/60 分钟拥堵预测（模拟数据）。
 // 规则稳定可重复，不使用 Math.random，不伪造路线 path。
+// 预测以 departureAt（实际出发时间）为基准时段：早/晚高峰上调指数，深夜下调。
 
 import type { TravelMode, RouteForecastPoint } from '../types/routeForecast';
 
@@ -32,15 +33,31 @@ const BASE_TRENDS: Record<TravelMode, Omit<RouteForecastPoint, 'offsetMinutes'>[
   ],
 };
 
-/** 为指定方式生成 15/30/45/60 分钟预测点 */
-export function getMockRouteForecast(mode: TravelMode): RouteForecastPoint[] {
+/** 出发时段拥堵因子：早高峰 7-9、晚高峰 17-19 上调；深夜 22-6 下调；确定性（同 departureAt 同结果） */
+function peakFactor(hour: number): number {
+  if (hour >= 7 && hour <= 9) return 0.8;
+  if (hour >= 17 && hour <= 19) return 0.6;
+  if (hour >= 22 || hour <= 5) return -0.8;
+  if (hour >= 12 && hour <= 14) return 0.2;
+  return 0;
+}
+
+function clampIndex(value: number): number {
+  return Math.round(Math.max(1, Math.min(9.9, value)) * 10) / 10;
+}
+
+/** 为指定方式生成 15/30/45/60 分钟预测点；departureAt 作为预测基准时间（模拟数据） */
+export function getMockRouteForecast(mode: TravelMode, departureAt?: string): RouteForecastPoint[] {
   const base = BASE_TRENDS[mode];
   const offsets: RouteForecastPoint['offsetMinutes'][] = [15, 30, 45, 60];
+  const factor = departureAt && !Number.isNaN(new Date(departureAt).getTime())
+    ? peakFactor(new Date(departureAt).getHours())
+    : 0;
   return offsets.map((offsetMinutes, i) => ({
     offsetMinutes,
     level: base[i].level,
-    index: base[i].index,
-    avgSpeed: base[i].avgSpeed,
+    index: clampIndex(base[i].index + factor),
+    avgSpeed: Math.round(base[i].avgSpeed),
     estimatedDuration: base[i].estimatedDuration,
   }));
 }

@@ -1,4 +1,4 @@
-/* AI出行助手浮动组件 */
+/* 小枢出行助手浮动组件 */
 
 .fab {
   position: fixed;
@@ -36,7 +36,7 @@
   right: 32px;
   width: 400px;
   max-width: calc(100vw - 48px);
-  height: 560px;
+  height: 600px;
   max-height: calc(100vh - 140px);
   background: #fff;
   border-radius: 16px;
@@ -85,15 +85,24 @@
 
 .msg {
   display: flex;
-  max-width: 85%;
+  max-width: 88%;
 }
 
 .userMsg {
   align-self: flex-end;
+  max-width: 78%;
 }
 
 .aiMsg {
   align-self: flex-start;
+  max-width: 100%;
+}
+
+.msgContent {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
 }
 
 .bubble {
@@ -101,6 +110,7 @@
   border-radius: 14px;
   font-size: 13px;
   line-height: 1.6;
+  white-space: pre-wrap;
 }
 
 .userMsg .bubble {
@@ -126,6 +136,12 @@
 @keyframes typing {
   0%, 60%, 100% { opacity: 0.2; transform: translateY(0); }
   30% { opacity: 1; transform: translateY(-4px); }
+}
+
+.thinkingText {
+  font-size: 12px;
+  color: #1677ff;
+  margin-right: 6px;
 }
 
 /* 快捷问题 */
@@ -193,6 +209,102 @@
 
 .sendBtn:hover { opacity: 0.85; }
 .sendBtn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ===== 结果卡片 ===== */
+.card {
+  background: #fff;
+  border: 1px solid #eef0f3;
+  border-radius: 12px;
+  padding: 12px 14px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cardHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cardTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1a1a2e;
+}
+
+.sourceTag {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.cardSub {
+  font-size: 12px;
+  color: #8c8c8c;
+}
+
+.cardRows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cardRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+}
+
+.cardRowLabel {
+  color: #8c8c8c;
+}
+
+.cardRowValue {
+  color: #1a1a2e;
+  font-weight: 500;
+}
+
+.cardActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.cardAction,
+.cardActionPrimary {
+  font-size: 12px;
+  padding: 6px 14px;
+  border-radius: 16px;
+  cursor: pointer;
+  border: 1px solid #d9d9d9;
+  background: #fff;
+  color: #1a1a2e;
+  transition: all 0.2s;
+}
+
+.cardAction:hover {
+  border-color: #1677ff;
+  color: #1677ff;
+}
+
+.cardActionPrimary {
+  background: #1677ff;
+  border-color: #1677ff;
+  color: #fff;
+  font-weight: 600;
+}
+
+.cardActionPrimary:hover {
+  background: #4096ff;
+  border-color: #4096ff;
+}
 
 @media (max-width: 480px) {
   .panel {
