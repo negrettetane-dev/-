@@ -1,6 +1,14 @@
 import axios from 'axios';
 import type { ApiResponse } from '@zhitu/shared';
 
+/** 业务错误：保留后端返回的 code（字符串业务码或数字）与 HTTP status，供上层做友好映射 */
+export class ApiError extends Error {
+  constructor(message: string, public readonly code?: string | number, public readonly status?: number) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
 const apiClient = axios.create({
   baseURL: '/api',
   timeout: 15000,
@@ -17,7 +25,10 @@ apiClient.interceptors.request.use((config) => {
 apiClient.interceptors.response.use(
   (response) => {
     const body = response.data as ApiResponse;
-    if (body.code !== 0) return Promise.reject(new Error(body.message || '请求失败'));
+    // 后端成功响应用 code=0；非 0（含字符串业务码）为业务错误，保留 code 供上层映射
+    if (body.code !== 0) {
+      return Promise.reject(new ApiError(body.message || '请求失败', body.code, response.status));
+    }
     return response;
   },
   (error) => {

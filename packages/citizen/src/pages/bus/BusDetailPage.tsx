@@ -75,7 +75,7 @@ const BusDetailPage: React.FC = () => {
   const [mapReady, setMapReady] = useState(false);
   const [mapError, setMapError] = useState('');
   const [mapRetryKey, setMapRetryKey] = useState(0);
-  const [geometryLoading, setGeometryLoading] = useState(false);
+  const [geometryLoading, setGeometryLoading] = useState(true);
   const [geometryError, setGeometryError] = useState('');
   const [geometrySource, setGeometrySource] = useState<'backend' | 'amap' | ''>('');
   const [geometryRetryKey, setGeometryRetryKey] = useState(0);
@@ -159,60 +159,58 @@ const BusDetailPage: React.FC = () => {
   useEffect(() => {
     const map = amapRef.current;
     if (!map || !line || !mapReady) return;
+    const requestId = ++drawRequestRef.current;
     const direction: BusDirection = dirIdx === 0 ? 'outbound' : 'inbound';
     const lineStations = direction === 'outbound' ? line.stations : [...line.stations].reverse();
-    const stations = lineStations
-      .filter(station => station.longitude !== undefined && station.latitude !== undefined)
-      .map(station => ({ name: station.name, location: [station.longitude!, station.latitude!] as [number, number] }));
-    const geometry: BusRouteGeometry | null = stations.length >= 2 ? {
-      lineId,
-      lineName: line.name,
-      stations,
-      path: stations.map(station => station.location),
-    } : null;
-    if (!geometry) { setMapError('该线路暂无可用路线坐标'); return; }
-
-    setMapError('');
-    map.clearMap();
+    if (overlaysRef.current.length) map.remove(overlaysRef.current);
+    overlaysRef.current = [];
     vehicleMarkersRef.current = [];
-    geometryRef.current = geometry;
+    geometryRef.current = null;
+    setVehicles([]);
+    setGeometryError('');
+    setGeometrySource('');
+    setGeometryLoading(true);
     const AMap = (window as any).AMap;
     if (!AMap) return;
 
-    // 异步获取真实道路路径（高德 LineSearch），然后用它绘制 polyline + 生成车辆
-    searchBusLineGeometry(AMap, {
-      city: '北京',
-      lineId,
-      lineName: line.name,
-      direction,
-      stationNames: geometry.stations.map(s => s.name),
-    }).then(match => {
-      if (cancelledRef.current) return;
-      if (!amapRef.current) return;
-      const drivingPath: [number, number][] | null = match?.path ?? null;
+    const backendPath = direction === 'outbound'
+      ? normalizePath(line.outboundPath?.length ? line.outboundPath : line.path)
+      : normalizePath(line.inboundPath);
+    const pathPromise = backendPath.length >= 2
+      ? Promise.resolve({ path: backendPath, stations: [] as BusRouteStation[], source: 'backend' as const })
+      : searchBusLineGeometry(AMap, {
+          city: line.city || '北京', lineId, lineName: line.name, direction,
+          stationNames: lineStations.map(station => station.name),
+        }).then(match => match ? { path: match.path, stations: match.stations, source: 'amap' as const } : null);
 
-      // ❶ 优先真实道路路径，兜底站点直线插值
-      const routePath: [number, number][] = (drivingPath && drivingPath.length >= 2)
-        ? drivingPath
-        : geometry.path;
-
-      if (routePath.length < 2) { setMapError('路线坐标格式无效'); return; }
-      const isRealRoad = drivingPath && drivingPath.length >= 2;
-      console.log(`[公交地图] ${lineId} ${direction} ${isRealRoad ? '真实道路' : '直线兜底'} ${routePath.length}点`);
+    pathPromise.then(resolved => {
+      if (cancelledRef.current || requestId !== drawRequestRef.current || !amapRef.current) return;
+      if (!resolved || resolved.path.length < 2) {
+        setGeometryLoading(false);
+        setGeometryError('暂未匹配到该方向的线路轨迹');
+        return;
+      }
+      const routePath = resolved.path;
+      const geometry: BusRouteGeometry = {
+        lineId, lineName: line.name,
+        stations: mergeStations(lineStations, resolved.stations),
+        path: routePath,
+      };
+      setGeometryLoading(false);
+      setGeometrySource(resolved.source);
+      console.log(`[公交地图] ${lineId} ${direction} ${resolved.source === 'backend' ? '后端path' : '高德LineSearch'} ${routePath.length}点`);
 
       // 更新 geometry.path 为最终使用的路径（车辆动画依赖此 path）
       geometryRef.current = { ...geometry, path: routePath };
 
-      // 重新清理并开始绘制
-      amapRef.current!.clearMap();
-
       // ❷ 绘制线路（蓝色 Polyline）
       const polyline = new AMap.Polyline({
+        map: amapRef.current,
         path: routePath,
-        strokeColor: '#1677ff', strokeWeight: 6, strokeOpacity: 0.85,
+        strokeColor: '#1677ff', strokeWeight: 6, strokeOpacity: 0.9,
         lineJoin: 'round', lineCap: 'round',
       });
-      amapRef.current!.add(polyline);
+      overlaysRef.current.push(polyline);
 
       // ❸ 站点标记
       geometry.stations.forEach((st, i) => {
@@ -220,12 +218,14 @@ const BusDetailPage: React.FC = () => {
         const isFirst = i === 0, isLast = i === geometry.stations.length - 1;
         const color = isFirst ? '#52c41a' : isLast ? '#f5222d' : '#1677ff';
         const size = isFirst || isLast ? 16 : 10;
-        amapRef.current!.add(new AMap.Marker({
+        const marker = new AMap.Marker({
+          map: amapRef.current,
           position: st.location,
           content: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;font-size:9px;color:#fff;font-weight:700;">${isFirst ? '起' : isLast ? '终' : ''}</div>`,
           offset: new AMap.Pixel(-size / 2, -size / 2),
           title: st.name,
-        }));
+        });
+        overlaysRef.current.push(marker);
       });
 
       apiGet<{
@@ -239,22 +239,31 @@ const BusDetailPage: React.FC = () => {
             plate: result.plate || '', lng: result.lng, lat: result.lat,
             speed: result.speed || 0, direction: result.direction || '',
           }] : []);
-          const vehiclesData: BusVehicle[] = rawVehicles.map(vehicle => ({
-            vehicleId: vehicle.vehicleId,
-            progress: 0,
-            lng: vehicle.lng,
-            lat: vehicle.lat,
-            speed: vehicle.speed,
-            currentStation: '',
-            nextStation: result.nextStop || '',
-            distanceToNextStation: 0,
-            eta: result.nextStopArrivalSeconds || 0,
-            isDemo: true,
-            updatedAt: result.timestamp || Date.now(),
+          const demoProgress = [0.18, 0.52, 0.78];
+          const inputs: any[] = rawVehicles.length ? rawVehicles : demoProgress.map((progress, index) => ({
+            vehicleId: `DEMO00${index + 1}`, progress, speed: [28, 24, 31][index],
           }));
+          const vehiclesData: BusVehicle[] = inputs.map((vehicle, index) => {
+            const snapped = Number.isFinite(vehicle.lng) && Number.isFinite(vehicle.lat)
+              ? snapToPath(routePath, [vehicle.lng, vehicle.lat])
+              : { point: pointAtPath(routePath, vehicle.progress ?? demoProgress[index % demoProgress.length]), progress: vehicle.progress ?? demoProgress[index % demoProgress.length] };
+            const stopInfo = stationAtProgress(geometry, snapped.progress);
+            return {
+              vehicleId: vehicle.vehicleId,
+              progress: snapped.progress,
+              lng: snapped.point[0], lat: snapped.point[1], speed: Number(vehicle.speed) || 0,
+              currentStation: stopInfo.currentStation,
+              nextStation: result.nextStop || stopInfo.nextStation,
+              distanceToNextStation: stopInfo.distanceToNext,
+              eta: result.nextStopArrivalSeconds || Math.max(15, Math.round(stopInfo.distanceToNext / Math.max(1, (Number(vehicle.speed) || 20) / 3.6))),
+              isDemo: true,
+              updatedAt: result.timestamp || Date.now(),
+            };
+          });
           vehiclesRef.current = vehiclesData;
           vehicleMarkersRef.current = vehiclesData.map(v => {
         const m = new AMap.Marker({
+          map: amapRef.current,
           position: [v.lng, v.lat],
           content: '<div style="width:34px;height:34px;border-radius:50%;background:#1677ff;border:2px solid #fff;box-shadow:0 2px 10px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;font-size:17px;">🚌</div>',
           offset: new AMap.Pixel(-17, -17),
@@ -265,7 +274,7 @@ const BusDetailPage: React.FC = () => {
             offset: new AMap.Pixel(0, -34),
           }).open(amapRef.current!, [v.lng, v.lat]);
         });
-        amapRef.current!.add(m);
+        overlaysRef.current.push(m);
         return { vehicleId: v.vehicleId, marker: m };
           });
           setVehicles(vehiclesData);
@@ -273,16 +282,30 @@ const BusDetailPage: React.FC = () => {
         .catch(() => setVehicles([]));
 
       amapRef.current!.setFitView([polyline], false, [50, 50, 50, 50]);
+    }).catch(error => {
+      if (requestId !== drawRequestRef.current) return;
+      console.error(`[公交地图] ${line.name} ${direction}`, error);
+      setGeometryLoading(false);
+      setGeometryError('暂未获取到该线路轨迹');
     });
 
-    return () => { if (animTimerRef.current) { clearInterval(animTimerRef.current); animTimerRef.current = null; } };
-  }, [mapReady, line, lineId, dirIdx]);
+    return () => {
+      drawRequestRef.current += 1;
+      if (animTimerRef.current) { clearInterval(animTimerRef.current); animTimerRef.current = null; }
+    };
+  }, [mapReady, line, lineId, dirIdx, geometryRetryKey]);
 
   // 重试地图加载
   const retryMap = () => {
     if (amapRef.current) { amapRef.current.destroy?.(); amapRef.current = null; }
     setMapReady(false); setMapError(''); setMapLoading(true);
     setMapRetryKey(v => v + 1);
+  };
+
+  const retryGeometry = () => {
+    setGeometryError('');
+    setGeometryLoading(true);
+    setGeometryRetryKey(value => value + 1);
   };
 
   // ===== 渲染 =====
@@ -314,7 +337,9 @@ const BusDetailPage: React.FC = () => {
       {line && (
         <div className={styles.lineInfo}>
           <span>首班 {line.first} · 末班 {line.last}</span>
-          <span style={{ fontSize: 11, color: 'var(--text-hint)' }}>线路数据来源待确认 · 车辆为演示</span>
+          <span style={{ fontSize: 11, color: 'var(--text-hint)' }}>
+            线路轨迹：{geometrySource === 'amap' ? '高德数据' : geometrySource === 'backend' ? '后端数据' : '加载中'} · 车辆位置：演示数据
+          </span>
         </div>
       )}
 
@@ -330,6 +355,13 @@ const BusDetailPage: React.FC = () => {
           </div>
         )}
 
+        {mapReady && geometryLoading && !geometryError && (
+          <div className={styles.mapStatus}>
+            <span style={{ fontSize: 32 }}>🚌</span>
+            <span>正在加载公交线路轨迹…</span>
+          </div>
+        )}
+
         {/* 加载失败 */}
         {mapError && (
           <div className={styles.mapStatus}>
@@ -339,9 +371,18 @@ const BusDetailPage: React.FC = () => {
           </div>
         )}
 
+
+        {mapReady && geometryError && (
+          <div className={styles.mapStatus}>
+            <span style={{ fontSize: 32 }}>⚠️</span>
+            <span>{geometryError || '暂未获取到该线路轨迹'}</span>
+            <button type="button" className={styles.retryBtn} onClick={retryGeometry}>重新加载</button>
+          </div>
+        )}
+
         {/* 地图就绪 */}
-        {mapReady && (
-          <div className={styles.mapHint}>🚌 演示车辆位置 · 非官方实时，沿线路模拟移动</div>
+        {mapReady && !geometryLoading && !geometryError && (
+          <div className={styles.mapHint}>线路轨迹：{geometrySource === 'amap' ? '高德数据' : '后端数据'} · 车辆演示 · 非官方实时</div>
         )}
       </div>
 

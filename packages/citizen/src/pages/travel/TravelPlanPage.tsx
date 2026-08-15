@@ -1,21 +1,28 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import AIAssistant from '../../components/AIAssistant';
 import DataSourceBadge from '../../components/DataSourceBadge';
 import TravelModeSelector, { type TravelModeOption } from '../../components/travel/TravelModeSelector';
 import TransitSearchPanel from '../../components/travel/TransitSearchPanel';
+import ModeAssistPanel from '../../components/travel/ModeAssistPanel';
+import { parseTravelMode } from '../../types/travelMode';
 import { getNearbyStations, getBusLines, getMetroLines } from '../../services/transitService';
 import type { TransitLine, NearbyStation } from '../../types/transit';
 import styles from './Travel.module.css';
 
 const TravelPlanPage: React.FC = () => {
   const navigate = useNavigate();
-  const [mode, setMode] = useState<TravelModeOption>('drive');
+  const location = useLocation();
+  const [mode, setMode] = useState<TravelModeOption>(() => parseTravelMode(new URLSearchParams(window.location.search).get('mode')) || 'driving');
   const [busLines, setBusLines] = useState<TransitLine[]>([]);
   const [metroLines, setMetroLines] = useState<TransitLine[]>([]);
 
-  // 公交/地铁模式：搜索模块的显示/请求条件（PR#7 架构下此页为公交查询页）
-  const isTransitMode = mode === 'bus' || mode === 'accessible';
+  const isTransitMode = mode === 'transit';
+
+  useEffect(() => {
+    const requestedMode = parseTravelMode(new URLSearchParams(location.search).get('mode'));
+    if (requestedMode) setMode(requestedMode);
+  }, [location.search]);
 
   // 附近站点
   const [nearby, setNearby] = useState<NearbyStation[]>([]);
@@ -26,6 +33,7 @@ const TravelPlanPage: React.FC = () => {
   const METRO_FEATURED = ['m1', 'm2', 'm3', 'm4'];
 
   useEffect(() => {
+    if (!isTransitMode) return;
     getBusLines().then(setBusLines).catch(() => setBusLines([]));
     getMetroLines().then(setMetroLines).catch(() => setMetroLines([]));
 
@@ -47,16 +55,17 @@ const TravelPlanPage: React.FC = () => {
       getNearbyStations().then(setNearby);
       setNearbyError('无法获取当前位置，显示演示站点');
     }
-  }, []);
+  }, [isTransitMode]);
 
   return (
     <div className={styles.page}>
       <TravelModeSelector value={mode} onChange={setMode} className={styles.travelPageModeSelector} />
 
-      {/* 公交地铁搜索（TransitSearchPanel：联想/正式搜索分离 + 竞态 + 缓存 + 无障碍；设为起点/终点在查询页隐藏） */}
+      {isTransitMode && <>
+      {/* 公交地铁辅助模块只在 transit 模式显示 */}
       <div className={styles.transitSection}>
         <div className={styles.sectionTitle}>🔍 搜索公交 / 地铁</div>
-        <TransitSearchPanel active={isTransitMode} />
+        <TransitSearchPanel active />
       </div>
 
       {/* 附近站点（距离为演示/来源待确认） */}
@@ -140,6 +149,9 @@ const TravelPlanPage: React.FC = () => {
         <span>🚌💡 通勤距离超过15km？试试定制公交预约，一人一座直达</span>
         <button className={styles.customBusBtn} onClick={() => navigate('/travel/custom-bus')}>去预约 →</button>
       </div>
+      </>}
+
+      <ModeAssistPanel mode={mode} />
 
       <div style={{height:24}}/>
       <AIAssistant />

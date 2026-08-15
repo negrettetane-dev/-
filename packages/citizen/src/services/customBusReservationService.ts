@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { apiGet, apiPost } from './apiClient';
+import { ApiError, apiGet, apiPost } from './apiClient';
 
 export interface CreateCustomBusReservationRequest {
   routeId: string;
@@ -39,22 +39,32 @@ export class ReservationServiceError extends Error {
 }
 
 function normalizeError(error: unknown): never {
-  if (axios.isAxiosError(error)) {
-    const status = error.response?.status;
+  // 统一从 ApiError（HTTP 200 + 业务码）或 axios error（HTTP 4xx/5xx）提取 code/status/message
+  let status: number | undefined;
+  let code = '';
+  let message = '';
+  if (error instanceof ApiError) {
+    status = error.status;
+    code = String(error.code ?? '').toUpperCase();
+    message = error.message;
+  } else if (axios.isAxiosError(error)) {
+    status = error.response?.status;
     const body = error.response?.data as { code?: string; message?: string; msg?: string } | undefined;
-    const code = String(body?.code ?? '').toUpperCase();
-    const message = String(body?.message ?? body?.msg ?? error.message ?? '');
-    // 统一后端错误码映射（错误码优先，其次 HTTP 状态）
-    if (status === 401 || code === 'TOKEN_EXPIRED') throw new ReservationServiceError('UNAUTHORIZED', '登录状态已过期，请重新登录');
-    if (code === 'SCHEDULE_SOLD_OUT' || /满|sold.?out|seat/i.test(message)) throw new ReservationServiceError('SOLD_OUT', '该班次刚刚已满，请选择其他班次。');
-    if (code === 'DUPLICATE_RESERVATION' || code === 'DUPLICATE') throw new ReservationServiceError('DUPLICATE', '你已预约该班次，请勿重复预约。');
-    if (status === 409) throw new ReservationServiceError('DUPLICATE', '你已预约该班次，请勿重复预约。');
-    if (code === 'SCHEDULE_NOT_FOUND') throw new ReservationServiceError('SCHEDULE_NOT_FOUND', '该班次已不存在');
-    if (status === 404) throw new ReservationServiceError('SERVICE_UNAVAILABLE', '预约服务暂未接入');
-    if (code === 'SCHEDULE_EXPIRED' || status === 410) throw new ReservationServiceError('SCHEDULE_EXPIRED', '该班次已停止预约');
-    if (code === 'RESERVATION_UNAVAILABLE' || status === 503) throw new ReservationServiceError('RESERVATION_UNAVAILABLE', '预约服务暂不可用');
-    if (status === 501) throw new ReservationServiceError('SERVICE_UNAVAILABLE', '预约服务暂未接入');
+    code = String(body?.code ?? '').toUpperCase();
+    message = String(body?.message ?? body?.msg ?? error.message ?? '');
   }
+
+  // 统一后端错误码映射（错误码优先，其次 HTTP 状态）
+  if (status === 401 || code === 'TOKEN_EXPIRED') throw new ReservationServiceError('UNAUTHORIZED', '登录状态已过期，请重新登录');
+  if (code === 'SCHEDULE_SOLD_OUT' || /满|sold.?out|seat/i.test(message)) throw new ReservationServiceError('SOLD_OUT', '该班次刚刚已满，请选择其他班次。');
+  if (code === 'DUPLICATE_RESERVATION' || code === 'DUPLICATE') throw new ReservationServiceError('DUPLICATE', '你已预约该班次，请勿重复预约。');
+  if (status === 409) throw new ReservationServiceError('DUPLICATE', '你已预约该班次，请勿重复预约。');
+  if (code === 'SCHEDULE_NOT_FOUND') throw new ReservationServiceError('SCHEDULE_NOT_FOUND', '该班次已不存在');
+  if (status === 404) throw new ReservationServiceError('SERVICE_UNAVAILABLE', '预约服务暂未接入');
+  if (code === 'SCHEDULE_EXPIRED' || status === 410) throw new ReservationServiceError('SCHEDULE_EXPIRED', '该班次已停止预约');
+  if (code === 'RESERVATION_UNAVAILABLE' || status === 503) throw new ReservationServiceError('RESERVATION_UNAVAILABLE', '预约服务暂不可用');
+  if (status === 501) throw new ReservationServiceError('SERVICE_UNAVAILABLE', '预约服务暂未接入');
+
   throw new ReservationServiceError('UNKNOWN', error instanceof Error ? error.message : '预约提交失败，请稍后重试');
 }
 

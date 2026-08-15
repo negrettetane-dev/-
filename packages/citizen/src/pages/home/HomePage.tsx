@@ -11,6 +11,7 @@ import { useTravelLocationStore } from '../../stores/travelLocationStore';
 import { useTravelPlanStore } from '../../stores/travelPlanStore';
 import DepartureTimeSelect from '../../components/travel/DepartureTimeSelect';
 import { restoreDepartureState, type DepartureState } from '../../utils/departureTime';
+import { fromLegacyRouteMode } from '../../types/travelMode';
 
 interface Alert { id:string; category:string; title:string; summary:string; severity:string; publishTime:number }
 interface News { id:string; title:string; summary:string; source:string; publishTime:number }
@@ -31,7 +32,7 @@ const HomePage: React.FC = () => {
   const [destination, setDestination] = useState('');
   const [waypoints, setWaypoints] = useState<string[]>([]);
   const [departure, setDeparture] = useState<DepartureState>(restoreDepartureState);
-  const [selectedMode, setSelectedMode] = useState<TravelModeOption>('drive');
+  const [selectedMode, setSelectedMode] = useState<TravelModeOption>('driving');
   const quickDestinations = ['天安门', '王府井', '北京南站', '国贸CBD', '三里屯', '北京西站'];
 
   const setManualOrigin = (value: string) => setOrigin({
@@ -89,7 +90,7 @@ const HomePage: React.FC = () => {
   useEffect(() => {
     const draft = useTravelPlanStore.getState();
     if (draft.destination?.name && !destination) setDestination(draft.destination.name);
-    if (draft.mode) setSelectedMode(draft.mode as TravelModeOption);
+    if (draft.mode) setSelectedMode(fromLegacyRouteMode(draft.mode, draft.profile));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

@@ -46,7 +46,8 @@ export interface LineSearchMatch {
   query: string;
 }
 
-const MIN_MATCH_SCORE = 8;
+// 10 分意味着至少需要“线路身份 + 两端点”或足够多的同向站序证据。
+const MIN_MATCH_SCORE = 10;
 
 export function normalizePath(input: unknown): [number, number][] {
   if (!Array.isArray(input)) return [];
@@ -76,6 +77,20 @@ function namesMatch(a: unknown, b: unknown): boolean {
   return !!left && !!right && (left === right || left.includes(right) || right.includes(left));
 }
 
+function lineNumbersMatch(a: unknown, b: unknown): boolean {
+  const left = String(a || '').match(/\d+/)?.[0];
+  const right = String(b || '').match(/\d+/)?.[0];
+  return !!left && left === right;
+}
+
+function routeLabel(value: unknown): string {
+  return String(value || '').split(/[（(]/, 1)[0].replace(/\s/g, '');
+}
+
+function routeFamily(value: unknown): string {
+  return routeLabel(value).replace(/^(\d+)路快(?:车)?[内外]?$/, '$1快');
+}
+
 function stopName(value: BusLineCandidate['start_stop']): string {
   return typeof value === 'string' ? value : value?.name || '';
 }
@@ -97,7 +112,8 @@ export function scoreLineCandidate(
   const candidateEnd = stopName(candidate.end_stop) || viaNames[viaNames.length - 1] || '';
   let score = 0;
 
-  if (namesMatch(candidate.name, expectedLineName)) score += 3;
+  if (routeFamily(candidate.name) === routeFamily(expectedLineName)) score += 3;
+  else if (lineNumbersMatch(candidate.name, expectedLineName)) score += 1;
   if (namesMatch(candidateStart, expectedStart)) score += 4;
   if (namesMatch(candidateEnd, expectedEnd)) score += 4;
   if (viaNames.length && Math.abs(viaNames.length - expectedStops.length) <= Math.max(2, expectedStops.length * 0.25)) score += 1;
@@ -143,14 +159,29 @@ function searchOnce(lineSearch: any, query: string): Promise<BusLineCandidate[]>
 function lineQueries(lineName: string): string[] {
   const trimmed = lineName.trim();
   const withoutSuffix = trimmed.replace(/路$/, '');
-  return [...new Set([trimmed, withoutSuffix, `${withoutSuffix}路`].filter(Boolean))];
+  const fastNumber = trimmed.match(/^(\d+)(?:路)?快(?:车)?$/)?.[1];
+  return [...new Set([
+    trimmed,
+    withoutSuffix,
+    `${withoutSuffix}路`,
+    fastNumber ? `${fastNumber}路快车` : '',
+    fastNumber ? `${fastNumber}路` : '',
+  ].filter(Boolean))];
+}
+
+function candidateIdentity(candidate: BusLineCandidate): string {
+  const path = normalizePath(candidate.path);
+  return [
+    candidate.name || '', stopName(candidate.start_stop), stopName(candidate.end_stop), path.length,
+    path[0]?.join(',') || '', path[path.length - 1]?.join(',') || '',
+  ].join('|');
 }
 
 export async function searchBusLineGeometry(
   AMap: any,
   options: { city: string; lineId: string; lineName: string; direction: BusDirection; stationNames: string[] },
 ): Promise<LineSearchMatch | null> {
-  const cacheKey = `bus-path:${options.city}:${options.lineId}:${options.direction}`;
+  const cacheKey = `bus-path:v4:${options.city}:${options.lineId}:${options.direction}`;
   try {
     const cached = sessionStorage.getItem(cacheKey);
     if (cached) {
@@ -169,20 +200,26 @@ export async function searchBusLineGeometry(
     extensions: 'all',
   });
 
-  const allCandidates: BusLineCandidate[] = [];
-  let selected: { candidate: BusLineCandidate; score: number } | null = null;
+  const candidateMap = new Map<string, BusLineCandidate>();
   let selectedQuery = '';
   for (const query of lineQueries(options.lineName)) {
     const found = await searchOnce(lineSearch, query);
-    allCandidates.push(...found);
-    const best = selectBestLineCandidate(found, options.lineName, options.stationNames);
-    if (best && (!selected || best.score > selected.score)) {
-      selected = best;
-      selectedQuery = query;
-    }
+    found.forEach(candidate => candidateMap.set(candidateIdentity(candidate), candidate));
+    if (!selectedQuery && selectBestLineCandidate(found, options.lineName, options.stationNames)) selectedQuery = query;
   }
+  const allCandidates = [...candidateMap.values()];
+  const selected = selectBestLineCandidate(allCandidates, options.lineName, options.stationNames);
   if (!selected) {
-    console.warn(`[bus-line-search] ${options.lineName} ${options.direction}: ${allCandidates.length} candidates, no safe match`);
+    const topScores = allCandidates
+      .map(candidate => ({
+        name: candidate.name,
+        start: stopName(candidate.start_stop) || candidateStopNames(candidate)[0],
+        end: stopName(candidate.end_stop) || candidateStopNames(candidate).slice(-1)[0],
+        score: scoreLineCandidate(candidate, options.lineName, options.stationNames),
+      }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 5);
+    console.warn(`[bus-line-search] ${options.lineName} ${options.direction}: ${allCandidates.length} candidates, no safe match; top=${JSON.stringify(topScores)}`);
     return null;
   }
 
@@ -197,10 +234,10 @@ export async function searchBusLineGeometry(
     candidate: selected.candidate,
     candidateCount: allCandidates.length,
     score: selected.score,
-    query: selectedQuery,
+    query: selectedQuery || lineQueries(options.lineName)[0],
   };
   try { sessionStorage.setItem(cacheKey, JSON.stringify(match)); } catch { /* ignore */ }
-  console.info(`[bus-line-search] ${options.lineName} ${options.direction}: selected score=${match.score}, candidates=${match.candidateCount}, query=${match.query}`);
+  console.info(`[bus-line-search] ${options.lineName} ${options.direction}: selected score=${match.score}, candidates=${match.candidateCount}, query=${match.query}, line=${selected.candidate.name || ''}, start=${stopName(selected.candidate.start_stop)}, end=${stopName(selected.candidate.end_stop)}`);
   return match;
 }
 

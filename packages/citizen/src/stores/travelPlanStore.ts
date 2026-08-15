@@ -13,6 +13,7 @@ import {
   type DepartureState,
 } from '../utils/departureTime';
 import type { TravelMode, TravelProfile } from '../types/travelPlan';
+import { fromLegacyRouteMode } from '../types/travelMode';
 
 const PLAN_KEY = 'zhitu_travel_plan';
 const SNAPSHOT_KEY = 'zhitu_route_request';
@@ -74,7 +75,7 @@ const INITIAL_DRAFT: TravelPlanDraft = (() => {
     return {
       destination: draft.destination ?? null,
       waypoints: Array.isArray(draft.waypoints) ? draft.waypoints : [],
-      mode: draft.mode,
+      mode: fromLegacyRouteMode(draft.mode, draft.profile),
       profile: draft.profile,
       strategy: draft.strategy || '推荐',
       departure: (draft.departure?.departureMode && isValidDepartureAt(draft.departure.departureAt))
@@ -85,7 +86,7 @@ const INITIAL_DRAFT: TravelPlanDraft = (() => {
   return {
     destination: null,
     waypoints: [] as string[],
-    mode: 'drive',
+    mode: 'driving',
     profile: 'standard',
     strategy: '推荐',
     departure: restoreDepartureState(),
@@ -148,7 +149,7 @@ export const useTravelPlanStore = create<TravelPlanState>((set, get) => ({
     set({
       destination: null,
       waypoints: [],
-      mode: 'drive',
+      mode: 'driving',
       profile: 'standard',
       strategy: '推荐',
       departure: computeDepartureState('now'),

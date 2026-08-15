@@ -4,13 +4,14 @@ import { useNavigate } from 'react-router-dom';
 import { useTripStore } from '../../stores/tripStore';
 import { getTripDisplayMeta, type Trip } from '../../types/trip';
 import styles from './MyTrips.module.css';
+import type { TravelMode } from '../../types/travelMode';
 
-type Filter = 'all' | 'drive' | 'bus' | 'bike' | 'walk' | 'ev' | 'accessible';
+type Filter = 'all' | TravelMode;
 
 const FILTERS: { key: Filter; label: string }[] = [
-  { key: 'all', label: '全部' }, { key: 'drive', label: '驾车' },
-  { key: 'bus', label: '公交地铁' }, { key: 'bike', label: '骑行' },
-  { key: 'walk', label: '步行' }, { key: 'ev', label: '新能源' },
+  { key: 'all', label: '全部' }, { key: 'driving', label: '驾车' },
+  { key: 'transit', label: '公交地铁' }, { key: 'riding', label: '骑行' },
+  { key: 'walking', label: '步行' }, { key: 'ev', label: '新能源' },
   { key: 'accessible', label: '无障碍' },
 ];
 
@@ -23,7 +24,8 @@ const STATUS_META = {
 function matchesFilter(trip: Trip, filter: Filter) {
   if (filter === 'all') return true;
   if (filter === 'ev' || filter === 'accessible') return trip.profile === filter;
-  return trip.mode === filter && trip.profile === 'standard';
+  const legacyMode = { driving: 'drive', transit: 'bus', riding: 'bike', walking: 'walk' }[filter] as Trip['mode'] | undefined;
+  return legacyMode ? trip.mode === legacyMode && trip.profile === 'standard' : false;
 }
 
 const formatDuration = (seconds: number | null) => seconds ? `${Math.max(1, Math.round(seconds / 60))}分钟` : '--';
@@ -52,7 +54,7 @@ const MyTripsPage: React.FC = () => {
       {loading ? <div className={styles.state}>正在加载出行记录...</div>
         : error ? <div className={styles.state}><p>{error}</p><button className={styles.retryButton} onClick={() => void loadTrips()}><RefreshCw size={16} />重新加载</button></div>
         : visibleTrips.length === 0 ? (
-          <div className={styles.state}><MapPinned size={38} /><h2>{filter === 'all' ? '暂无出行记录' : '暂无此类出行'}</h2><p>开始一次导航后，记录会显示在这里。</p><button className={styles.primaryButton} onClick={() => navigate('/travel')}>去规划路线</button></div>
+          <div className={styles.state}><MapPinned size={38} /><h2>{filter === 'all' ? '暂无出行记录' : '暂无此类出行'}</h2><p>开始一次导航后，记录会显示在这里。</p><button className={styles.primaryButton} onClick={() => navigate(filter === 'all' ? '/travel' : `/travel?mode=${filter}`)}>去规划路线</button></div>
         ) : (
           <div className={styles.list}>
             {visibleTrips.map(trip => {

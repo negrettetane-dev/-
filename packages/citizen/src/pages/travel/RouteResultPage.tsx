@@ -12,6 +12,7 @@ import TravelModeSelector, { normalizeTravelMode, type RouteTravelMode, type Tra
 import { useAuthStore } from '../../stores/authStore';
 import { useTripStore } from '../../stores/tripStore';
 import { useTravelPlanStore } from '../../stores/travelPlanStore';
+import { fromLegacyRouteMode } from '../../types/travelMode';
 import type { Trip } from '../../types/trip';
 import styles from './Travel.module.css';
 
@@ -103,9 +104,9 @@ const RouteResultPage: React.FC = () => {
     departureTime?: string;
   };
   const requestedMode = (location.state as { mode?: string } | null)?.mode;
-  const initialDisplayMode: TravelModeOption = ['new-energy', 'drive', 'bus', 'bike', 'walk', 'accessible'].includes(requestedMode || '')
+  const initialDisplayMode: TravelModeOption = ['ev', 'driving', 'transit', 'riding', 'walking', 'accessible'].includes(requestedMode || '')
     ? requestedMode as TravelModeOption
-    : 'drive';
+    : 'driving';
   const initMode = normalizeTravelMode(initialDisplayMode);
 
   // ===== 出发时间：真实业务时间一律用 departureAt（ISO） =====
@@ -768,7 +769,7 @@ const RouteResultPage: React.FC = () => {
         name: displayDest, address: displayDest,
         lng: end?.[0] ?? null, lat: end?.[1] ?? null, source: 'manual',
       });
-      if (navMode) useTravelPlanStore.getState().setMode(navMode);
+      if (navMode) useTravelPlanStore.getState().setMode(fromLegacyRouteMode(navMode));
     } catch { /* ignore */ }
     requestAnimationFrame(() => {
       mapRef.current?.setPitch(0);

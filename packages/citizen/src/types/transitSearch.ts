@@ -1,10 +1,10 @@
 // ===== 智途云枢 · 公交/地铁搜索统一模型 =====
 // 统一线路/公交站/地铁线路/地铁站四类结果的渲染与点击处理。
 //
-// 真实 API 契约（当前后端不可达，按已知结构设计）：
+// 真实 API 契约：
 //   GET /api/transit/search?q=<keyword>
-//   返回 TransitSearchResult[]: { type:'line'|'station', mode:'bus'|'metro', id, name, subtitle?, transferLines? }
-//   接口当前不返回坐标/地址。坐标缺失时「设为起点/终点」按钮置灰，绝不伪造坐标。
+//   返回 TransitSearchResult[]: { type:'line'|'station', mode:'bus'|'metro', id, name, subtitle?, transferLines?, lng?, lat?, address? }
+//   station 结果已返回 lng/lat/address（内置站点坐标表）；未收录的站点返回 null，不伪造坐标。
 
 import type { DataSource } from './transit';
 

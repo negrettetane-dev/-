@@ -1,27 +1,29 @@
 import React, { useRef, useState } from 'react';
 import { AnimatePresence, motion, useMotionValue, useSpring, useTransform, type MotionValue } from 'motion/react';
 import styles from './TravelModeSelector.module.css';
+import type { LegacyRouteMode } from '../../types/travelMode';
 
-export type TravelModeOption = 'new-energy' | 'drive' | 'bus' | 'bike' | 'walk' | 'accessible';
-export type RouteTravelMode = 'drive' | 'bus' | 'bike' | 'walk';
+export type TravelModeOption = 'ev' | 'driving' | 'transit' | 'riding' | 'walking' | 'accessible';
+export type RouteTravelMode = LegacyRouteMode;
 
 export const TRAVEL_MODE_OPTIONS: Array<{
   key: TravelModeOption;
   label: string;
   icon: string;
 }> = [
-  { key: 'new-energy', label: '新能源', icon: '⚡' },
-  { key: 'drive', label: '驾车', icon: '🚗' },
-  { key: 'bus', label: '公交地铁', icon: '🚌' },
-  { key: 'bike', label: '骑行', icon: '🚲' },
-  { key: 'walk', label: '步行', icon: '🚶' },
+  { key: 'ev', label: '新能源', icon: '⚡' },
+  { key: 'driving', label: '驾车', icon: '🚗' },
+  { key: 'transit', label: '公交地铁', icon: '🚌' },
+  { key: 'riding', label: '骑行', icon: '🚲' },
+  { key: 'walking', label: '步行', icon: '🚶' },
   { key: 'accessible', label: '无障碍', icon: '♿' },
 ];
 
 export function normalizeTravelMode(mode: TravelModeOption): RouteTravelMode {
-  if (mode === 'new-energy') return 'drive';
-  if (mode === 'accessible') return 'bus';
-  return mode;
+  if (mode === 'transit' || mode === 'accessible') return 'bus';
+  if (mode === 'riding') return 'bike';
+  if (mode === 'walking') return 'walk';
+  return 'drive';
 }
 
 interface TravelModeSelectorProps {
