@@ -203,8 +203,19 @@ const HomePage: React.FC = () => {
       .catch(error => {
         if (requestId !== homeRouteRequestId.current) return;
         console.warn('Home route planning failed:', error);
+        const rawMsg = error instanceof Error ? error.message : '';
+        // 空路径/超长距离/不支持 → 用户友好中文（不显示英文错误码）
+        const friendly = rawMsg.includes('EMPTY_ROUTE')
+          ? '暂未找到可用该路线，请稍后重试'
+          : rawMsg.includes('LONG_DISTANCE')
+            ? '起终点距离过远，建议换乘公交或驾车'
+            : rawMsg.includes('CROSS_CITY_TRANSIT_UNSUPPORTED')
+              ? '当前起终点不在同一城市，暂不支持跨城市公交/地铁规划'
+              : rawMsg.includes('transit-no-valid-segment')
+                ? '暂无可用公交/地铁方案'
+                : '路线服务暂时不可用，请稍后重试';
         setRoutePreviewStatus('error');
-        setRoutePreviewMessage(error instanceof Error ? error.message : '暂未获取到该路线');
+        setRoutePreviewMessage(friendly);
       });
 
     return () => {

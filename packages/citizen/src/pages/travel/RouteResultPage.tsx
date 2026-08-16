@@ -294,6 +294,8 @@ const RouteResultPage: React.FC = () => {
           setUnavailableNote('🚌 当前起终点不在同一城市，暂不支持跨城市公交/地铁规划。');
         } else if (selectedMode === 'bus' && msg.includes('transit-no-valid-segment')) {
           setUnavailableNote('🚌 暂无可用公交/地铁方案。');
+        } else if (msg.includes('LONG_DISTANCE')) {
+          setUnavailableNote(`起终点距离过远，${MODE_META[selectedMode].label}耗时过长，建议换乘公交或驾车。`);
         } else if (msg.includes('EMPTY_ROUTE')) {
           setUnavailableNote(`暂未找到可用${MODE_META[selectedMode].label}路线，请稍后重试。`);
         } else {
@@ -998,12 +1000,23 @@ const RouteResultPage: React.FC = () => {
                   </div>
                 )}
 
-                {/* 新能源（EV）：底层复用驾车路线，叠加充电/能耗业务信息（演示数据标注） */}
+                {/* 新能源（EV）：底层复用驾车路线，叠加充电/能耗业务信息（演示数据标注，不生成精确假数字） */}
                 {mode === 'drive' && selectedDisplayMode === 'ev' && (
-                  <div className={styles.bikeInfo}>
-                    <span>⚡ 底层引擎：驾车</span>
-                    <span>🔋 能耗/充电信息为演示数据</span>
-                  </div>
+                  <>
+                    <div className={styles.bikeInfo}>
+                      <span>⚡ 底层引擎：驾车</span>
+                      <span>🔋 预计能耗按车型估算，数据为演示</span>
+                    </div>
+                    <div className={styles.aiAdvice} style={{ background: '#f0f5ff' }}>
+                      <span>🔌 附近充电站：</span>
+                      <span
+                        style={{ color: '#1677ff', cursor: 'pointer', fontWeight: 600 }}
+                        onClick={(e) => { e.stopPropagation(); navigate('/parking'); }}
+                      >
+                        查看充电站 →
+                      </span>
+                    </div>
+                  </>
                 )}
 
                 {/* 公交：换乘段 */}

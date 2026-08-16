@@ -100,6 +100,9 @@ function isRailwayLike(value: unknown, name = ''): boolean {
 /** 跨城公交距离硬门槛（km）：城市公交只支持同城短途 */
 const CROSS_CITY_TRANSIT_KM = 100;
 
+/** 骑行/步行超长距离保护（km）：仅用于 bike/walk，可配置；不能替代公交同城判断 */
+export const LONG_DISTANCE_LIMITS: { bike: number; walk: number } = { bike: 50, walk: 20 };
+
 /** 两坐标直线距离（km），Haversine 公式 */
 function haversineKm(a: [number, number], b: [number, number]): number {
   const R = 6371;
@@ -416,6 +419,11 @@ export async function planAmapRoute(
   }
 
   const isBike = mode === 'bike';
+  // 骑行/步行超长距离保护：直线距离超过阈值直接拒绝（不调高德），避免超长路线无意义
+  const limitKm = isBike ? LONG_DISTANCE_LIMITS.bike : LONG_DISTANCE_LIMITS.walk;
+  if (haversineKm(start, end) > limitKm) {
+    return Promise.reject(new Error('LONG_DISTANCE'));
+  }
   return withTimeout(new Promise((resolve, reject) => {
     const plugin = isBike ? 'AMap.Riding' : 'AMap.Walking';
     AMap.plugin([plugin], () => {
