@@ -14,11 +14,21 @@ export interface LocatedPosition {
 export interface ResolvedLocation extends LocatedPosition {
   address: string;
   source: 'geolocation' | 'map';
+  city?: string;
+  adcode?: string;
 }
 
 export interface GeocodedLocation extends LocatedPosition {
   name: string;
   address: string;
+  city?: string;
+  adcode?: string;
+}
+
+export interface ReverseGeocodeResult {
+  address: string;
+  city?: string;
+  adcode?: string;
 }
 
 /** 高德定位：优先（GCJ-02，与高德地图一致） */
@@ -118,6 +128,8 @@ export function searchLocationCandidates(
               address: String(p.address || p.pname + p.cityname + p.adname || ''),
               lng,
               lat,
+              city: p.cityname ? String(p.cityname) : undefined,
+              adcode: p.adcode ? String(p.adcode) : undefined,
               source: 'poi-search',
             };
           })
@@ -146,9 +158,32 @@ export function geocodeLocation(keyword: string, city = '北京'): Promise<Geoco
           address: String(item.formattedAddress || query),
           lng,
           lat,
+          city: item.city ? String(item.city) : undefined,
+          adcode: item.adcode ? String(item.adcode) : undefined,
         });
       } else {
         reject(new Error('location-not-found'));
+      }
+    });
+  }));
+}
+
+/** 逆地理编码详情：坐标 → 地址 + 城市 + adcode（用于同城判断） */
+export function reverseGeocodeDetail(lng: number, lat: number): Promise<ReverseGeocodeResult> {
+  return loadAMap().then((AMap: any) => new Promise<ReverseGeocodeResult>((resolve, reject) => {
+    const geocoder = new AMap.Geocoder();
+    geocoder.getAddress([lng, lat], (status: string, result: any) => {
+      const re = result?.regeocode;
+      const comp = re?.addressComponent;
+      if (status === 'complete' && re?.formattedAddress) {
+        const city = Array.isArray(comp?.city) && comp.city[0] ? String(comp.city[0]) : comp?.province ? String(comp.province) : undefined;
+        resolve({
+          address: String(re.formattedAddress),
+          city,
+          adcode: comp?.adcode ? String(comp.adcode) : undefined,
+        });
+      } else {
+        reject(new Error('geocode-failed'));
       }
     });
   }));
@@ -158,12 +193,17 @@ export function geocodeLocation(keyword: string, city = '北京'): Promise<Geoco
 export async function getCurrentResolvedLocation(timeout?: number): Promise<ResolvedLocation> {
   const pos = await getCurrentLocation(timeout);
   let address = '';
+  let city: string | undefined;
+  let adcode: string | undefined;
   try {
-    address = await reverseGeocode(pos.lng, pos.lat);
+    const detail = await reverseGeocodeDetail(pos.lng, pos.lat);
+    address = detail.address;
+    city = detail.city;
+    adcode = detail.adcode;
   } catch {
     address = '地址解析失败，可通过地图重新选点';
   }
-  return { lng: pos.lng, lat: pos.lat, accuracy: pos.accuracy, address, source: 'geolocation' as const };
+  return { lng: pos.lng, lat: pos.lat, accuracy: pos.accuracy, address, city, adcode, source: 'geolocation' as const };
 }
 
 /** 定位错误 → 中文提示 */

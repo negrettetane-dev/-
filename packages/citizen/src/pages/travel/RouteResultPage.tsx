@@ -12,6 +12,8 @@ import TravelModeSelector, { normalizeTravelMode, type RouteTravelMode, type Tra
 import { useAuthStore } from '../../stores/authStore';
 import { useTripStore } from '../../stores/tripStore';
 import { useTravelPlanStore } from '../../stores/travelPlanStore';
+import { useTravelLocationStore } from '../../stores/travelLocationStore';
+import { isTransitSupported } from '../../services/transitEligibility';
 import { fromLegacyRouteMode } from '../../types/travelMode';
 import type { Trip } from '../../types/trip';
 import styles from './Travel.module.css';
@@ -420,6 +422,20 @@ const RouteResultPage: React.FC = () => {
         walk: planWalking,
       };
 
+      // 公交/地铁：调用前先判断同城（city/adcode 可用时提前拦截，不调高德公交接口）
+      if (selectedMode === 'bus') {
+        const transitCheck = isTransitSupported(
+          useTravelLocationStore.getState().origin,
+          useTravelPlanStore.getState().destination,
+        );
+        if (!transitCheck.supported) {
+          setRouteResults({});
+          setUnavailableNote(transitCheck.message || '🚌 暂不支持跨城市公交/地铁规划。');
+          setIsPlanning(false);
+          return;
+        }
+      }
+
       plannerByMode[selectedMode]()
         .then((route) => {
           if (requestId !== routeRequestIdRef.current) return;
@@ -431,7 +447,14 @@ const RouteResultPage: React.FC = () => {
           if (requestId !== routeRequestIdRef.current) return;
           console.error(`${selectedMode} 规划失败（不展示该方案）:`, error);
           setRouteResults({});
-          setUnavailableNote(`该起终点暂无可用${MODE_META[selectedMode].label}路线`);
+          const msg = error instanceof Error ? error.message : '';
+          if (selectedMode === 'bus' && msg.includes('CROSS_CITY_TRANSIT_UNSUPPORTED')) {
+            setUnavailableNote('🚌 当前起终点不在同一城市，暂不支持跨城市公交/地铁联程规划。');
+          } else if (selectedMode === 'bus' && msg.includes('transit-no-valid-segment')) {
+            setUnavailableNote('🚌 暂无可用公交/地铁方案。');
+          } else {
+            setUnavailableNote(`该起终点暂无可用${MODE_META[selectedMode].label}路线`);
+          }
           setIsPlanning(false);
         });
     }).catch((e) => {
@@ -702,8 +725,25 @@ const RouteResultPage: React.FC = () => {
     }
   };
 
-  // ===== 开始导航：置状态机 + 登录用户创建 Trip（不阻塞导航） =====
+  // ===== 开始导航：先校验路线有效性（最终一道防线），再置状态机 + 登录用户创建 Trip =====
   const startNavigation = (mode: TravelMode) => {
+    // 路线数据必须与请求模式匹配：transit 绝不能用 driving path 冒充
+    const route = routeResults[mode];
+    if (!route) {
+      setNavRouteError('路线数据无效，请返回重新规划');
+      return;
+    }
+    if (route.mode !== mode) {
+      setNavRouteError('路线数据无效，请返回重新规划');
+      return;
+    }
+    if (mode === 'bus') {
+      const hasValidSegment = (route.segments || []).some(s => s.type === 'bus' || s.type === 'metro' || s.type === 'walk');
+      if (!hasValidSegment) {
+        setNavRouteError('当前公交路线数据无效，请重新规划。');
+        return;
+      }
+    }
     setSelectedMode(mode);
     setNavMode(mode);
     navStatusRef.current = 'navigating';
@@ -930,8 +970,13 @@ const RouteResultPage: React.FC = () => {
 
       {/* 仅渲染高德规划成功的方案；失败的方式不显示卡片 */}
       {unavailableNote && (
-        <div style={{ padding: 10, background: '#fff7e6', color: '#ad6800', borderRadius: 8, fontSize: 13, marginBottom: 12 }}>
-          ⚠️ {unavailableNote}，已为您切换至 {MODE_META[selectedMode].label}
+        <div style={{ padding: 10, background: '#fff7e6', color: '#ad6800', borderRadius: 8, fontSize: 13, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span>⚠️ {unavailableNote}</span>
+          {selectedMode === 'bus' && (
+            <button onClick={() => selectTravelMode('driving')} style={{ marginLeft: 'auto', padding: '6px 14px', border: 'none', borderRadius: 6, background: '#1677ff', color: '#fff', fontSize: 13, cursor: 'pointer' }}>
+              切换驾车
+            </button>
+          )}
         </div>
       )}
 

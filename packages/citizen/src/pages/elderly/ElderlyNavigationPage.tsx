@@ -22,7 +22,8 @@ const ElderlyNavigationPage: React.FC = () => {
   const tripCompletedRef = useRef(false);
 
   useEffect(() => {
-    if (!context) return;
+    // 最终一道防线：route.mode 必须与请求模式匹配（transit 绝不能用 driving path 冒充）
+    if (!context || context.route.mode !== context.routeMode) return;
     const { route } = context;
     const path = route.path || [];
     setNavDistance(route.distance || 0);
@@ -122,6 +123,15 @@ const ElderlyNavigationPage: React.FC = () => {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 18, minHeight: '100vh', padding: 24, background: '#f7f8fa' }}>
         <div style={{ fontSize: 22, fontWeight: 700 }}>未找到导航信息</div>
+        <button onClick={() => navigate('/elderly')} style={{ padding: '14px 28px', background: '#1677ff', color: '#fff', border: 'none', borderRadius: 12, fontSize: 18 }}>返回长辈首页</button>
+      </div>
+    );
+  }
+  // 最终一道防线：路线类型与请求模式不匹配时拒绝进入导航
+  if (context.route.mode !== context.routeMode) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 18, minHeight: '100vh', padding: 24, background: '#f7f8fa' }}>
+        <div style={{ fontSize: 22, fontWeight: 700 }}>当前公交路线数据无效，请重新规划。</div>
         <button onClick={() => navigate('/elderly')} style={{ padding: '14px 28px', background: '#1677ff', color: '#fff', border: 'none', borderRadius: 12, fontSize: 18 }}>返回长辈首页</button>
       </div>
     );

@@ -204,8 +204,23 @@ export async function planAmapRoute(
               if (Array.isArray(transit.path)) paths.push(...transit.path);
             }
           });
-          if (!paths.length) reject(new Error('公交路线无路径数据'));
-          else resolve({ mode, distance: plan.distance || 9200, duration: plan.time, path: paths, polyline: paths, segments, cost: plan.cost || 5 });
+          if (!paths.length) { reject(new Error('公交路线无路径数据')); return; }
+          // ===== 公交段类型校验：只接受真实城市公共交通 =====
+          // 1) 含铁路/高铁/城际/动车段 → 判定为跨城或长途，当前不支持
+          const crossCitySeg = segments.find(s =>
+            /高铁|城际|动车|火车|铁路|railway|intercity|train|高速铁路/i.test(`${s.lineName ?? ''} ${s.instruction ?? ''}`),
+          );
+          if (crossCitySeg) {
+            reject(new Error('CROSS_CITY_TRANSIT_UNSUPPORTED'));
+            return;
+          }
+          // 2) 必须至少包含一个公交/地铁/步行段；纯驾车/直线/通用 path 不算公交方案
+          const hasValidSegment = segments.some(s => s.type === 'bus' || s.type === 'metro' || s.type === 'walk');
+          if (!hasValidSegment) {
+            reject(new Error('transit-no-valid-segment'));
+            return;
+          }
+          resolve({ mode, distance: plan.distance || 9200, duration: plan.time, path: paths, polyline: paths, segments, cost: plan.cost || 5 });
         });
       });
     }), 'Transit route');
