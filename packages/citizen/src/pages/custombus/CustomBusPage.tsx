@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
 import { useReservationStore, type PendingReservation } from '../../stores/reservationStore';
@@ -6,19 +6,7 @@ import {
   customBusReservationService,
   ReservationServiceError,
 } from '../../services/customBusReservationService';
-import {
-  addDays,
-  computeBusStatus,
-  instancesForDate,
-  sortInstances,
-  toDateStr,
-  BUS_STATUS_META,
-  cutoffTimeLabel,
-  minutesToCutoff,
-  hasBookable,
-  OPEN_WINDOW_DAYS,
-  type CustomBusInstance,
-} from '../../utils/customBusSchedule';
+import type { CustomBusSchedule, CustomBusScheduleStatus } from '@zhitu/shared';
 import styles from './CustomBus.module.css';
 
 /** 日期快捷选项 */
@@ -27,6 +15,40 @@ const DATE_SHORTCUTS = [
   { key: 1, label: '明天' },
   { key: 2, label: '后天' },
 ] as const;
+
+const STATUS_META: Record<CustomBusScheduleStatus, { label: string; className: string }> = {
+  NOT_OPEN: { label: '尚未开放', className: 'stNotOpen' },
+  AVAILABLE: { label: '可预约', className: 'stAvailable' },
+  CLOSING: { label: '即将截止', className: 'stClosing' },
+  FULL: { label: '已满', className: 'stFull' },
+  CLOSED: { label: '已停止预约', className: 'stClosed' },
+  DEPARTED: { label: '已发车', className: 'stDeparted' },
+};
+
+const STATUS_RANK: Record<CustomBusScheduleStatus, number> = {
+  AVAILABLE: 0,
+  CLOSING: 1,
+  FULL: 2,
+  CLOSED: 3,
+  DEPARTED: 4,
+  NOT_OPEN: 5,
+};
+
+const sortSchedules = (a: CustomBusSchedule, b: CustomBusSchedule) =>
+  (STATUS_RANK[a.status] - STATUS_RANK[b.status]) || a.departTime.localeCompare(b.departTime);
+
+function fmtDate(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function addDays(base: Date, days: number): Date {
+  const d = new Date(base);
+  d.setDate(d.getDate() + days);
+  return d;
+}
 
 const CustomBusPage: React.FC = () => {
   const navigate = useNavigate();
@@ -43,26 +65,15 @@ const CustomBusPage: React.FC = () => {
     clearLastReservation,
   } = useReservationStore();
 
-  // ===== 当前时间（进入页面时取一次，随页面活动走） =====
   const now = useMemo(() => new Date(), []);
 
-  // ===== 日期选择：默认今天；今日无可用班次自动切到最近的可用日 =====
-  const [date, setDate] = useState<string>(() => {
-    const today = instancesForDate(now, now);
-    if (hasBookable(today, now)) return toDateStr(now);
-    // 今日全结束 → 自动展示第一个有可预约班次的日期（明天优先）
-    for (let offset = 1; offset < OPEN_WINDOW_DAYS; offset += 1) {
-      const d = addDays(now, offset);
-      if (hasBookable(instancesForDate(now, d), now)) return toDateStr(d);
-    }
-    return toDateStr(now);
-  });
-  /** 是否发生了自动切换（今天无班次 → 展示明日） */
-  const autoSwitched = useMemo(() => {
-    const todayStr = toDateStr(now);
-    return date !== todayStr && !hasBookable(instancesForDate(now, now), now);
-  }, [date, now]);
+  const [date, setDate] = useState<string>(() => fmtDate(now));
+  const [autoSwitched, setAutoSwitched] = useState(false);
 
+  // ===== 班次实例：从后端拉取（真实数据，前端不伪造） =====
+  const [schedules, setSchedules] = useState<CustomBusSchedule[]>([]);
+  const [schedulesLoading, setSchedulesLoading] = useState(false);
+  const [schedulesError, setSchedulesError] = useState('');
   const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(null);
   const [passengers, setPassengers] = useState(1);
   const [loginPromptOpen, setLoginPromptOpen] = useState(false);
@@ -72,35 +83,61 @@ const CustomBusPage: React.FC = () => {
   const resumedRef = React.useRef(false);
   const verifiedRef = React.useRef(false);
 
-  // 当前选中日期的班次实例（按可预约优先级排序）
-  const dateInstances = useMemo(() => {
-    const d = new Date(`${date}T00:00:00`);
-    return sortInstances(instancesForDate(now, d), now);
-  }, [date, now]);
+  // 拉取某日期真实班次；空则自动尝试下一个可预约日
+  const loadSchedules = useCallback(async (targetDate: string, autoAdvance = true) => {
+    setSchedulesLoading(true);
+    setSchedulesError('');
+    try {
+      const list = await customBusReservationService.getSchedulesByDate(targetDate);
+      const valid = (Array.isArray(list) ? list : []).filter(s => s && s.id);
+      if (valid.length === 0 && autoAdvance) {
+        for (let offset = 1; offset <= 2; offset += 1) {
+          const nextDate = fmtDate(addDays(now, offset));
+          if (nextDate === targetDate) continue;
+          try {
+            const nextList = await customBusReservationService.getSchedulesByDate(nextDate);
+            const nextValid = (Array.isArray(nextList) ? nextList : []).filter(s => s && s.id);
+            if (nextValid.length > 0) {
+              setDate(nextDate);
+              setSchedules(nextValid.sort(sortSchedules));
+              setAutoSwitched(true);
+              setSchedulesLoading(false);
+              return;
+            }
+          } catch { /* 尝试下一个 */ }
+        }
+        setSchedules([]);
+        setSchedulesLoading(false);
+        return;
+      }
+      setSchedules(valid.sort(sortSchedules));
+      setSchedulesLoading(false);
+    } catch (error) {
+      const serviceError = error instanceof ReservationServiceError ? error : null;
+      setSchedulesError(serviceError?.message || '班次服务暂不可用');
+      setSchedules([]);
+      setSchedulesLoading(false);
+    }
+  }, [now]);
+
+  useEffect(() => { void loadSchedules(date); }, [date, loadSchedules]);
 
   const selectedInstance = useMemo(
-    () => dateInstances.find(item => item.id === selectedInstanceId) ?? null,
-    [dateInstances, selectedInstanceId],
+    () => schedules.find(item => item.id === selectedInstanceId) ?? null,
+    [schedules, selectedInstanceId],
   );
 
-  // 选中班次的预约状态（独立判断）
-  const selectedStatus = selectedInstance ? computeBusStatus(selectedInstance, now) : null;
-
-  // 登录后恢复未完成预约
+  // ===== 登录后恢复未完成预约 =====
   useEffect(() => {
     if (!isAuthenticated || !pendingReservation || resumedRef.current) return;
-    const restoredDate = pendingReservation.redirect?.match(/date=([\d-]+)/)?.[1];
-    const restoredId = pendingReservation.routeId;
-    if (restoredId) {
-      const restoredDateStr = restoredDate || toDateStr(now);
-      setDate(restoredDateStr);
-      setSelectedInstanceId(restoredId.includes('-') && restoredId.split('-').length === 3 ? restoredId : `${restoredId}-${restoredDateStr.replace(/-/g, '')}`);
-    }
     resumedRef.current = true;
+    if (pendingReservation.scheduleInstanceId) {
+      setSelectedInstanceId(pendingReservation.scheduleInstanceId);
+    }
     setPassengers(pendingReservation.passengerCount || 1);
     setMessage('登录成功，请确认刚才选择的预约班次。');
     setConfirmOpen(true);
-  }, [clearPendingReservation, isAuthenticated, now, pendingReservation, setSearchParams]);
+  }, [isAuthenticated, pendingReservation]);
 
   // 成功页刷新后：根据预约编号重新校验
   useEffect(() => {
@@ -120,19 +157,24 @@ const CustomBusPage: React.FC = () => {
     setSelectedInstanceId(null);
     setPassengers(1);
     setMessage('');
+    setAutoSwitched(false);
   };
 
-  const selectInstance = (instance: CustomBusInstance) => {
+  const selectInstance = (instance: CustomBusSchedule) => {
     setSelectedInstanceId(instance.id);
     setPassengers(1);
     setMessage('');
     setSearchParams({ date: instance.date, route: instance.templateId }, { replace: true });
   };
 
+  const isBookableStatus = (status: CustomBusScheduleStatus) =>
+    status === 'AVAILABLE' || status === 'CLOSING';
+
   const buildPending = (): PendingReservation | null => {
     if (!selectedInstance) return null;
     return {
-      routeId: selectedInstance.id,
+      scheduleInstanceId: selectedInstance.id,
+      routeId: selectedInstance.templateId,
       scheduleId: selectedInstance.scheduleId,
       routeName: `${selectedInstance.from} → ${selectedInstance.to}`,
       departureTime: `${selectedInstance.date} ${selectedInstance.departTime}`,
@@ -146,7 +188,7 @@ const CustomBusPage: React.FC = () => {
   };
 
   const handleBook = () => {
-    if (!selectedInstance || selectedStatus === 'full' || selectedStatus === 'closed' || selectedStatus === 'departed' || selectedStatus === 'not-open') return;
+    if (!selectedInstance || !isBookableStatus(selectedInstance.status)) return;
     const pending = buildPending();
     if (!pending) return;
     setPendingReservation(pending);
@@ -162,10 +204,7 @@ const CustomBusPage: React.FC = () => {
     const pending = useReservationStore.getState().pendingReservation;
     setLoginPromptOpen(false);
     navigate('/login', {
-      state: {
-        from: pending?.redirect || location.pathname,
-        notice: '预约定制公交需要登录',
-      },
+      state: { from: pending?.redirect || location.pathname, notice: '预约定制公交需要登录' },
     });
   };
 
@@ -176,9 +215,7 @@ const CustomBusPage: React.FC = () => {
     setMessage('');
     try {
       const created = await customBusReservationService.createReservation({
-        routeId: pending.routeId,
-        scheduleId: pending.scheduleId,
-        boardingPointId: pending.boardingPointId,
+        scheduleInstanceId: pending.scheduleInstanceId,
         passengerCount: pending.passengerCount,
       });
       setLastReservation(created);
@@ -190,11 +227,15 @@ const CustomBusPage: React.FC = () => {
         markSessionExpired();
         setConfirmOpen(false);
         navigate('/login', {
-          state: {
-            from: pending.redirect,
-            notice: '登录状态已过期，请重新登录',
-          },
+          state: { from: pending.redirect, notice: '登录状态已过期，请重新登录' },
         });
+        return;
+      }
+      if (serviceError?.code === 'SCHEDULE_NOT_FOUND') {
+        clearPendingReservation();
+        setSelectedInstanceId(null);
+        setMessage('班次信息已更新，请重新选择其他班次。');
+        setConfirmOpen(false);
         return;
       }
       setMessage(serviceError?.message || '预约提交失败，请稍后重试');
@@ -204,30 +245,21 @@ const CustomBusPage: React.FC = () => {
     }
   };
 
-  // ===== 选中班次的提示区文案（随状态动态变化） =====
   const selectedHint = (() => {
     if (!selectedInstance) return '请选择一个班次查看详情';
-    switch (selectedStatus) {
-      case 'available':
-        return `当前班次可预约，余 ${selectedInstance.seats} 座。`;
-      case 'closing-soon':
-        return `该班次将在 ${minutesToCutoff(selectedInstance, now)} 分钟后停止预约，请尽快提交。`;
-      case 'full':
-        return '该班次座位已满，可选择其他班次。';
-      case 'closed':
-        return `该班次预约已截止（${cutoffTimeLabel(selectedInstance)} 停止预约），建议选择下一班。`;
-      case 'departed':
-        return '该班次已经发车，请选择其他可预约班次。';
-      case 'not-open':
-        return '该班次尚未开放预约，请选择开放周期内的班次。';
-      default:
-        return '请选择一个班次查看详情';
+    switch (selectedInstance.status) {
+      case 'AVAILABLE': return `当前班次可预约，余 ${selectedInstance.remainingSeats} 座。`;
+      case 'CLOSING': return `该班次即将截止预约，余 ${selectedInstance.remainingSeats} 座，请尽快提交。`;
+      case 'FULL': return '该班次座位已满，可选择其他班次。';
+      case 'CLOSED': return '该班次预约已截止，建议选择下一班。';
+      case 'DEPARTED': return '该班次已经发车，请选择其他可预约班次。';
+      case 'NOT_OPEN': return '该班次尚未开放预约，请选择开放周期内的班次。';
+      default: return '请选择一个班次查看详情';
     }
   })();
 
   const bookDisabled =
-    !selectedInstance || !selectedStatus || selectedStatus === 'full' || selectedStatus === 'closed' ||
-    selectedStatus === 'departed' || selectedStatus === 'not-open';
+    !selectedInstance || !isBookableStatus(selectedInstance.status);
 
   if (lastReservation) {
     return (
@@ -238,6 +270,7 @@ const CustomBusPage: React.FC = () => {
           <div className={styles.successInfo}>
             <div><b>线路：</b>{lastReservation.routeName}</div>
             <div><b>班次：</b>{lastReservation.scheduleId}</div>
+            <div><b>日期：</b>{lastReservation.date}</div>
             <div><b>上车地点：</b>{lastReservation.boardingPoint}</div>
             <div><b>发车时间：</b>{lastReservation.departureTime}</div>
             <div><b>预约编号：</b>{lastReservation.reservationNo}</div>
@@ -268,19 +301,16 @@ const CustomBusPage: React.FC = () => {
 
       {message && <div className={styles.notice} role="status">{message}</div>}
 
-      {/* 今日全部结束 → 自动切到明日 */}
       {autoSwitched && (
         <div className={styles.dateNotice} role="status">
-          今日班次预约已结束，已为您展示 {date === toDateStr(addDays(now, 1)) ? '明日' : '可预约日'} 可预约班次。
+          今日班次预约已结束，已为您展示可预约班次。
         </div>
       )}
 
-      {/* 日期选择：今天 / 明天 / 后天 / 选择日期 */}
       <div className={styles.dateBar}>
         {DATE_SHORTCUTS.map(shortcut => {
           const d = addDays(now, shortcut.key);
-          const dStr = toDateStr(d);
-          const bookable = hasBookable(instancesForDate(now, d), now);
+          const dStr = fmtDate(d);
           return (
             <button
               key={shortcut.key}
@@ -289,7 +319,6 @@ const CustomBusPage: React.FC = () => {
               onClick={() => selectDate(dStr)}
             >
               {shortcut.label}
-              <span className={styles.dateBookable}>{bookable ? '可预约' : '已结束'}</span>
             </button>
           );
         })}
@@ -297,20 +326,22 @@ const CustomBusPage: React.FC = () => {
           type="date"
           className={styles.datePicker}
           value={date}
-          min={toDateStr(now)}
-          max={toDateStr(addDays(now, OPEN_WINDOW_DAYS - 1))}
+          min={fmtDate(now)}
           onChange={e => e.target.value && selectDate(e.target.value)}
           aria-label="选择预约日期"
         />
       </div>
 
-      <div className={styles.routeList}>
-        {dateInstances.length === 0 ? (
-          <div className={styles.emptyText}>该日期暂无可预约班次</div>
-        ) : (
-          dateInstances.map(item => {
-            const status = computeBusStatus(item, now);
-            const meta = BUS_STATUS_META[status];
+      {schedulesLoading ? (
+        <div className={styles.emptyText}>正在加载班次...</div>
+      ) : schedulesError ? (
+        <div className={styles.dateNotice}>⚠️ {schedulesError}</div>
+      ) : schedules.length === 0 ? (
+        <div className={styles.emptyText}>该日期暂无可用班次</div>
+      ) : (
+        <div className={styles.routeList}>
+          {schedules.map(item => {
+            const meta = STATUS_META[item.status];
             return (
               <button
                 type="button"
@@ -329,38 +360,34 @@ const CustomBusPage: React.FC = () => {
                   <span>🕒 {item.date} {item.departTime} - {item.arriveTime}</span>
                   <span>¥{item.price}/人</span>
                 </div>
-                {/* 座位信息：可预约/即将截止显示余座；已满/截止/发车说明原因 */}
-                {status === 'available' && item.seats > 0 && (
-                  <div className={styles.seatsLow}>余 {item.seats} 座 · 可预约</div>
+                {item.status === 'AVAILABLE' && (
+                  <div className={styles.seatsLow}>余 {item.remainingSeats} 座 · 可预约</div>
                 )}
-                {status === 'closing-soon' && item.seats > 0 && (
-                  <div className={styles.seatsUrgent}>
-                    仅剩 {item.seats} 座 · {minutesToCutoff(item, now)} 分钟后停止预约
-                  </div>
+                {item.status === 'CLOSING' && (
+                  <div className={styles.seatsUrgent}>仅剩 {item.remainingSeats} 座 · 即将截止</div>
                 )}
-                {status === 'full' && (
-                  <div className={styles.seatsNote}>座位已满 · 本班次 {item.departTime} 发车，{cutoffTimeLabel(item)} 停止预约</div>
+                {item.status === 'FULL' && (
+                  <div className={styles.seatsNote}>座位已满 · 本班次 {item.departTime} 发车</div>
                 )}
-                {status === 'closed' && (
-                  <div className={styles.seatsNote}>本班次 {item.departTime} 发车，{cutoffTimeLabel(item)} 已停止预约</div>
+                {item.status === 'CLOSED' && (
+                  <div className={styles.seatsNote}>本班次 {item.departTime} 发车，预约已截止</div>
                 )}
-                {status === 'departed' && (
+                {item.status === 'DEPARTED' && (
                   <div className={styles.seatsNote}>本班次已于 {item.departTime} 发车</div>
                 )}
-                {status === 'not-open' && (
-                  <div className={styles.seatsNote}>尚未开放预约 · 最多提前 {OPEN_WINDOW_DAYS} 天预约</div>
+                {item.status === 'NOT_OPEN' && (
+                  <div className={styles.seatsNote}>尚未开放预约</div>
                 )}
               </button>
             );
-          })
-        )}
-      </div>
+          })}
+        </div>
+      )}
 
       {selectedInstance && (
         <div className={styles.bookForm}>
           <div className={styles.bookTitle}>预约信息</div>
-          {/* 选中班次的提示区：内容随状态动态变化 */}
-          <div className={selectedStatus === 'closing-soon' ? styles.hintUrgent : styles.hintInfo}>
+          <div className={selectedInstance.status === 'CLOSING' ? styles.hintUrgent : styles.hintInfo}>
             {selectedHint}
           </div>
           <div className={styles.bookRow}><span className={styles.bookLabel}>线路</span><span className={styles.bookVal}>{selectedInstance.from} → {selectedInstance.to}</span></div>
@@ -370,15 +397,15 @@ const CustomBusPage: React.FC = () => {
             <div className={styles.paxPicker}>
               <button type="button" className={styles.paxBtn} onClick={() => setPassengers(Math.max(1, passengers - 1))}>−</button>
               <span className={styles.paxNum}>{passengers}</span>
-              <button type="button" className={styles.paxBtn} onClick={() => setPassengers(Math.min(Math.min(5, selectedInstance.seats), passengers + 1))}>+</button>
+              <button type="button" className={styles.paxBtn} onClick={() => setPassengers(Math.min(Math.min(5, selectedInstance.remainingSeats), passengers + 1))}>+</button>
             </div>
           </div>
           <div className={styles.bookRow}><span className={styles.bookLabel}>费用</span><span className={styles.bookPrice}>¥{selectedInstance.price * passengers}</span></div>
           <button type="button" className={styles.bookBtn} onClick={handleBook} disabled={bookDisabled}>
-            {selectedStatus === 'full' ? '已满员'
-              : selectedStatus === 'closed' ? '已停止预约'
-                : selectedStatus === 'departed' ? '已发车'
-                  : selectedStatus === 'not-open' ? '尚未开放'
+            {selectedInstance.status === 'FULL' ? '已满员'
+              : selectedInstance.status === 'CLOSED' ? '已停止预约'
+                : selectedInstance.status === 'DEPARTED' ? '已发车'
+                  : selectedInstance.status === 'NOT_OPEN' ? '尚未开放'
                     : `预约 · ¥${selectedInstance.price * passengers}`}
           </button>
         </div>

@@ -6,5 +6,6 @@ export * from './types/user';
 export * from './types/news';
 export * from './types/carbon';
 export * from './types/management';
+export * from './types/customBus';
 export * from './types/api';
 export * from './utils';

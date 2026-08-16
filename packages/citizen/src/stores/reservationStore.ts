@@ -5,6 +5,8 @@ const PENDING_KEY = 'zhitu_pending_custom_bus_reservation';
 const LAST_KEY = 'zhitu_last_custom_bus_reservation';
 
 export interface PendingReservation {
+  /** 班次实例 ID（预约真实对象，后端生成） */
+  scheduleInstanceId: string;
   routeId: string;
   scheduleId: string;
   routeName: string;

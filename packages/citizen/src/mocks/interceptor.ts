@@ -12,6 +12,11 @@ import {
   addReport, getReports,
 } from '../stores/persistence';
 import { DEMO_ACCESSIBLE_FACILITIES } from '../data/accessibilityFacilities';
+import {
+  CUTOFF_MINUTES,
+  computeBusStatus,
+  instancesForDate,
+} from '../utils/customBusSchedule';
 import { createMockTrip, findMockTrip, finishMockTrip, listMockTrips } from './tripRepository';
 import type { CreateTripRequest } from '../types/trip';
 
@@ -231,6 +236,68 @@ export function fetchInterceptor() {
     // 无障碍设施（平民端查询）：mock 环境下返回演示数据，对齐后端契约
     if (url === '/api/accessibility/stations') {
       return new Response(JSON.stringify(json(DEMO_ACCESSIBLE_FACILITIES.map(f => ({ ...f, source: 'backend' })))), { headers: { 'Content-Type': 'application/json' } });
+    }
+
+    // 定制公交（mock 模拟后端：班次实例 / 预约）。真实后端实现后前端零改动。
+    if (url === '/api/custom-bus/schedules' && method === 'GET') {
+      const params = new URL(url, 'http://x').searchParams;
+      const dateStr = params.get('date') || new Date().toISOString().slice(0, 10);
+      const now = new Date();
+      const nowMs = Date.now();
+      // 用模板生成完整班次实例，再映射到 shared CustomBusSchedule 契约
+      const instances = instancesForDate(now, new Date(`${dateStr}T00:00:00`));
+      const schedules = instances.map(instance => {
+        const depart = new Date(`${dateStr}T${instance.departTime}:00`);
+        const cutoff = new Date(depart.getTime() - CUTOFF_MINUTES * 60 * 1000);
+        const status = computeBusStatus(instance, now);
+        return {
+          id: instance.id,
+          templateId: instance.templateId,
+          scheduleId: instance.scheduleId,
+          from: instance.from,
+          to: instance.to,
+          boardingPointId: instance.boardingPointId,
+          date: instance.date,
+          departTime: instance.departTime,
+          arriveTime: instance.arriveTime,
+          price: instance.price,
+          totalSeats: instance.seats,
+          bookedSeats: 0,
+          remainingSeats: instance.seats,
+          type: instance.type,
+          status,
+          cutoffAt: cutoff.getTime(),
+        };
+      });
+      return new Response(JSON.stringify(json(schedules)), { headers: { 'Content-Type': 'application/json' } });
+    }
+    if (url === '/api/custom-bus/reservations' && method === 'GET') {
+      const userId = mockUserId(input, init);
+      if (!userId) return response({ code: 401, message: '请先登录', data: null }, 401);
+      return response(json([]));
+    }
+    if (url === '/api/custom-bus/reservations' && method === 'POST') {
+      const userId = mockUserId(input, init);
+      if (!userId) return response({ code: 401, message: '请先登录', data: null }, 401);
+      const body = await requestBody(input, init);
+      const scheduleInstanceId = String(body.scheduleInstanceId || '');
+      if (!scheduleInstanceId) return response({ code: 400, message: '班次实例缺失', data: null }, 400);
+      return response(json({
+        id: `cbres_${Date.now().toString(36)}`,
+        reservationNo: 'CB' + Date.now().toString(36).toUpperCase(),
+        scheduleInstanceId,
+        templateId: scheduleInstanceId.split('-').slice(0, 2).join('-'),
+        routeName: '定制公交',
+        scheduleId: scheduleInstanceId,
+        date: new Date().toISOString().slice(0, 10),
+        departureTime: '',
+        boardingPoint: '',
+        destination: '',
+        price: Number(body.passengerCount || 1) * 8,
+        passengerCount: Number(body.passengerCount || 1),
+        status: 'pending',
+        createdAt: Date.now(),
+      }));
     }
 
     // 停车充电
