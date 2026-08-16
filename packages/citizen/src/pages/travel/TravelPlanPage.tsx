@@ -17,7 +17,8 @@ const TravelPlanPage: React.FC = () => {
   const [busLines, setBusLines] = useState<TransitLine[]>([]);
   const [metroLines, setMetroLines] = useState<TransitLine[]>([]);
 
-  const isTransitMode = mode === 'transit';
+  // 无障碍出行底层基于公交/地铁，同样展示公交辅助模块
+  const isTransitMode = mode === 'transit' || mode === 'accessible';
 
   useEffect(() => {
     const requestedMode = parseTravelMode(new URLSearchParams(location.search).get('mode'));
@@ -62,7 +63,7 @@ const TravelPlanPage: React.FC = () => {
       <TravelModeSelector value={mode} onChange={setMode} className={styles.travelPageModeSelector} />
 
       {isTransitMode && <>
-      {/* 公交地铁辅助模块只在 transit 模式显示 */}
+      {/* 公交地铁辅助模块在 transit / accessible 模式显示（无障碍出行底层基于公交地铁） */}
       <div className={styles.transitSection}>
         <div className={styles.sectionTitle}>🔍 搜索公交 / 地铁</div>
         <TransitSearchPanel active />

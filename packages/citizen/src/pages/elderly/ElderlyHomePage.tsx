@@ -8,6 +8,7 @@ import { searchLocationCandidates, reverseGeocodeDetail } from '../../services/l
 import { planAmapRoute } from '../../services/routePlanningService';
 import { isTransitSupported } from '../../services/transitEligibility';
 import LocationPickerModal from '../movecar/LocationPickerModal';
+import ElderlyBusCard from './ElderlyBusCard';
 import styles from './Elderly.module.css';
 
 const DEFAULT_ELDERLY_MODE: ElderlyDisplayMode = 'transit';
@@ -33,7 +34,6 @@ const ElderlyHomePage: React.FC = () => {
   const origin = useTravelLocationStore(s => s.origin);
   const [dest, setDest] = useState('');
   const [voiceActive, setVoiceActive] = useState(false);
-  const [busResult, setBusResult] = useState<{name:string;arrival:number;crowding:string}[]>([]);
   const [sosOpen, setSosOpen] = useState(false);
   const [exitConfirm, setExitConfirm] = useState(false);
 
@@ -113,13 +113,6 @@ const ElderlyHomePage: React.FC = () => {
       setVoiceActive(false);
       setDest('北京市第一人民医院');
     }, 2000);
-  };
-
-  const handleBusQuery = () => {
-    setBusResult([
-      { name:'8路', arrival:180, crowding:'normal' },
-      { name:'56路', arrival:420, crowding:'crowded' },
-    ]);
   };
 
   const selectMode = (mode: ElderlyDisplayMode) => {
@@ -373,18 +366,7 @@ const ElderlyHomePage: React.FC = () => {
         </div>
 
         {/* 2. 公交车到哪了 */}
-        <div className={styles.card}>
-          <div className={styles.cardTitle}>2️⃣ 公交车到哪了</div>
-          <button className={styles.btn} onClick={handleBusQuery}>🚌 查询常用线路</button>
-          {busResult.length > 0 && <div style={{fontSize:13,color:'#ad6800',marginTop:6}}>演示数据，非实时到站</div>}
-          {busResult.map((b,i)=>(
-            <div key={i} className={styles.busRow}>
-              <span className={styles.busName}>{b.name}</span>
-              <span className={styles.busArrival}>{Math.floor(b.arrival/60)}分钟后到站</span>
-              <span>{b.crowding==='normal'?'🟡适中':'🟠拥挤'}</span>
-            </div>
-          ))}
-        </div>
+        <ElderlyBusCard />
 
         {/* 3. 上报问题 */}
         <div className={styles.card}>

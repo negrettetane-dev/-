@@ -14,6 +14,34 @@
 .busName { font-weight: 700; background: var(--primary); color: #fff; padding: 6px 16px; border-radius: 10px; }
 .busArrival { color: var(--primary); font-weight: 600; }
 
+/* ===== 公交车到哪了（长辈模式） ===== */
+.busDemoBanner { background: #fff7e6; border: 2px solid #ffd591; color: #ad6800; border-radius: 12px; padding: 14px 16px; font-size: 20px; font-weight: 700; text-align: center; }
+.busRefreshRow { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.busUpdatedAt { font-size: 18px; color: var(--text-secondary); }
+.busRefreshBtn { padding: 12px 22px; background: #1677ff; color: #fff; border: none; border-radius: 12px; font-size: 20px; cursor: pointer; font-weight: 600; }
+.busStatusText { font-size: 22px; color: var(--text-secondary); padding: 20px 12px; text-align: center; }
+.busStatusHint { font-size: 17px; color: var(--text-hint); text-align: center; margin-top: 4px; }
+.busStationCard { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: #f0f5ff; border: 2px solid #adc6ff; border-radius: 16px; padding: 18px 20px; }
+.busStationLabel { font-size: 18px; color: var(--text-secondary); }
+.busStationName { font-size: 28px; font-weight: 700; }
+.busLineCard { background: var(--bg-page); border: 2px solid #eee; border-radius: 16px; padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+.busLineHead { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+.busLineName { font-size: 40px; font-weight: 700; }
+.busLineDirection { font-size: 24px; font-weight: 600; color: var(--primary); }
+.busVehicleRow { font-size: 22px; }
+.busKeyStats { display: flex; align-items: baseline; gap: 10px; }
+.busKeyStat { display: flex; align-items: baseline; gap: 6px; }
+.busKeyNum { font-size: 44px; font-weight: 800; color: #1677ff; }
+.busKeyUnit { font-size: 22px; color: var(--text-secondary); }
+.busKeyDot { font-size: 32px; color: var(--text-hint); }
+.busCrowding { font-size: 24px; font-weight: 600; }
+.busActions { display: flex; gap: 12px; }
+.busActionBtn { flex: 1; padding: 16px; background: #fff; border: 2px solid #1677ff; color: #1677ff; border-radius: 12px; font-size: 20px; cursor: pointer; font-weight: 600; }
+.busActionBtn:disabled { opacity: 0.45; cursor: not-allowed; }
+.busStopRow { display: flex; align-items: center; gap: 14px; padding: 16px 0; border-bottom: 1px solid #eee; font-size: 22px; }
+.busStopSeq { width: 40px; height: 40px; border-radius: 50%; background: #1677ff; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 700; flex-shrink: 0; }
+.busStopName { font-size: 24px; }
+
 /* SOS 弹窗 */
 .sosOverlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 2000; display: flex; align-items: center; justify-content: center; padding: 24px; }
 .sosDialog { background: #fff; border-radius: 20px; padding: 32px 28px; width: 100%; max-width: 400px; text-align: center; }

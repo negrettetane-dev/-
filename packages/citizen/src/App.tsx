@@ -24,6 +24,7 @@ import TripDetailPage from './pages/profile/TripDetailPage';
 import MyReservationsPage from './pages/profile/MyReservationsPage';
 import ElderlyHomePage from './pages/elderly/ElderlyHomePage';
 import ElderlyNavigationPage from './pages/elderly/ElderlyNavigationPage';
+import ElderlyBusDetailPage from './pages/elderly/ElderlyBusDetailPage';
 import LoginPage from './pages/auth/LoginPage';
 import RegisterPage from './pages/auth/RegisterPage';
 import QRCodePage from './pages/qrcode/QRCodePage';
@@ -95,6 +96,7 @@ const App: React.FC = () => {
         <Routes>
           <Route path="/elderly" element={<ElderlyHomePage />} />
           <Route path="/elderly/navigation" element={<ElderlyNavigationPage />} />
+          <Route path="/elderly/bus/:lineId" element={<ElderlyBusDetailPage />} />
         </Routes>
       ) : isAuthPage ? (
         <Routes>
