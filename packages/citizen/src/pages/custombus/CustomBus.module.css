@@ -18,7 +18,33 @@
 .routeStations { font-size: 17px; font-weight: 700; margin-bottom: 6px; display: flex; align-items: center; gap: 10px; }
 .routeArrow { color: var(--text-hint); }
 .routeMeta { display: flex; gap: 20px; font-size: 13px; color: var(--text-hint); }
-.seatsLow { margin-top: 8px; font-size: 12px; color: #f5222d; font-weight: 600; }
+.seatsLow { margin-top: 8px; font-size: 12px; color: #52c41a; font-weight: 600; }
+.seatsUrgent { margin-top: 8px; font-size: 12px; color: #f5222d; font-weight: 700; }
+.seatsNote { margin-top: 8px; font-size: 12px; color: var(--text-hint); }
+
+/* ===== 日期栏 ===== */
+.dateBar { display: flex; gap: 8px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
+.dateBtn { padding: 8px 14px; background: #fff; border: 1px solid var(--border-color); border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.dateBtn:hover { border-color: var(--primary); }
+.dateActive { border-color: var(--primary); background: #f0f5ff; color: var(--primary); }
+.dateBookable { font-size: 11px; color: #52c41a; font-weight: 500; }
+.dateActive .dateBookable { color: var(--primary); }
+.datePicker { padding: 7px 10px; border: 1px solid var(--border-color); border-radius: 10px; font-size: 13px; color: var(--text-secondary); cursor: pointer; }
+
+/* ===== 状态标签 ===== */
+.stNotOpen { font-size: 13px; color: #8c8c8c; font-weight: 600; }
+.stAvailable { font-size: 13px; color: #52c41a; font-weight: 700; }
+.stClosing { font-size: 13px; color: #fa8c16; font-weight: 700; }
+.stFull { font-size: 13px; color: #f5222d; font-weight: 700; }
+.stClosed { font-size: 13px; color: #8c8c8c; font-weight: 600; }
+.stDeparted { font-size: 13px; color: var(--text-hint); font-weight: 600; }
+
+/* ===== 今日结束提示 / 选中班次提示区 ===== */
+.dateNotice { margin-bottom: 14px; padding: 11px 13px; border: 1px solid #ffd591; border-radius: 9px; background: #fffbe6; color: #ad6800; font-size: 13px; }
+.hintInfo { padding: 10px 12px; border-radius: 9px; background: #f0f5ff; color: #0958d9; font-size: 13px; margin-bottom: 12px; }
+.hintUrgent { padding: 10px 12px; border-radius: 9px; background: #fff1f0; color: #a8071a; font-size: 13px; font-weight: 600; margin-bottom: 12px; }
+
+.emptyText { padding: 30px 0; text-align: center; color: var(--text-hint); font-size: 14px; }
 
 /* 预约表单 */
 .bookForm { background: #fff; border-radius: 14px; padding: 20px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
