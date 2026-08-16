@@ -100,10 +100,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
-  loginWithSms: async () => ({
-    ok: false,
-    error: '后端当前只提供发送验证码接口，尚未提供验证码登录校验接口',
-  }),
+  loginWithSms: async (phone, code) => {
+    try {
+      // 真实后端：POST /api/auth/verify-code { phone, code }（校验验证码；未注册手机号自动注册）
+      const data = await apiPost<Partial<User> & Record<string, unknown> & { token: string }>(
+        '/auth/verify-code',
+        { phone, code },
+      );
+      const user = normalizeUser(data);
+      persistLogin(user, data.token);
+      set({ isLoggedIn: true, isAuthenticated: true, authStatus: 'authenticated', user, token: data.token });
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error: errorMessage(error, '验证码登录失败，请重试') };
+    }
+  },
 
   register: async ({ username, phone, email, password, nickname }) => {
     try {

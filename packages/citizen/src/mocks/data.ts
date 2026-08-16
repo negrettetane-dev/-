@@ -143,12 +143,19 @@ export const MOCK_WORK_ORDERS = [
   ]},
 ];
 
+// 今日资讯演示：n1/n2/n5 为当天发布（供首页「今日交通资讯」筛选展示），其余为历史（验证当天 0 条时不补历史）
+const todayAt = (hour: number, minute = 0) => {
+  const d = new Date();
+  d.setHours(hour, minute, 0, 0);
+  return d.getTime();
+};
+
 export const MOCK_NEWS = [
-  { id:'n1', category:'construction' as const, title:'三环路外环路面提升改造施工公告', summary:'2026年8月10日至9月20日，三环外环（十里河至分钟寺桥）夜间22:00-次日6:00半幅施工', content:'<p>为提升城市快速路通行条件，市交通委计划对三环路外环进行路面提升改造...</p>', source:'北京市交通委员会', publishTime:Date.now()-86400000, tags:['施工','三环路','交通管制'] },
-  { id:'n2', category:'control' as const, title:'2026北京马拉松期间交通管制通告', summary:'9月20日6:00-14:00，长安街、二环路部分路段实施临时交通管制', content:'<p>为保障2026北京马拉松顺利进行...</p>', source:'北京市公安局交管局', publishTime:Date.now()-172800000, tags:['马拉松','交通管制','赛事'] },
+  { id:'n1', category:'construction' as const, title:'三环路外环路面提升改造施工公告', summary:'2026年8月10日至9月20日，三环外环（十里河至分钟寺桥）夜间22:00-次日6:00半幅施工', content:'<p>为提升城市快速路通行条件，市交通委计划对三环路外环进行路面提升改造...</p>', source:'北京市交通委员会', publishTime:todayAt(9, 30), tags:['施工','三环路','交通管制'] },
+  { id:'n2', category:'control' as const, title:'2026北京马拉松期间交通管制通告', summary:'9月20日6:00-14:00，长安街、二环路部分路段实施临时交通管制', content:'<p>为保障2026北京马拉松顺利进行...</p>', source:'北京市公安局交管局', publishTime:todayAt(10, 15), tags:['马拉松','交通管制','赛事'] },
   { id:'n3', category:'policy' as const, title:'北京市智慧交通建设行动计划发布', summary:'到2028年，全市信号灯联网率达到95%，智慧停车覆盖8000个停车场', content:'<p>北京市人民政府印发《北京市智慧交通建设行动计划(2025-2028)》...</p>', source:'北京市人民政府', publishTime:Date.now()-604800000, tags:['智慧交通','政策','规划'] },
   { id:'n4', category:'safety' as const, title:'夏季高温天气行车安全注意事项', summary:'高温天气轮胎爆胎风险增加，请注意检查胎压，避免疲劳驾驶', content:'<p>夏季高温天气对行车安全带来挑战...</p>', source:'北京交警', publishTime:Date.now()-1209600000, tags:['安全','夏季','驾驶提示'] },
-  { id:'n5', category:'holiday' as const, title:'2026中秋国庆假期出行提示', summary:'预计9月30日-10月2日为出城高峰，京藏、京承、京港澳高速易拥堵', content:'<p>2026年中秋国庆假期将至...</p>', source:'北京高速交警', publishTime:Date.now()-259200000, tags:['中秋','国庆','高速','出行'] },
+  { id:'n5', category:'holiday' as const, title:'2026中秋国庆假期出行提示', summary:'预计9月30日-10月2日为出城高峰，京藏、京承、京港澳高速易拥堵', content:'<p>2026年中秋国庆假期将至...</p>', source:'北京高速交警', publishTime:todayAt(11, 0), tags:['中秋','国庆','高速','出行'] },
 ];
 
 export const MOCK_CARBON_RECORDS = [

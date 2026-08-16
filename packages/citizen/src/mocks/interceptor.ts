@@ -202,9 +202,10 @@ export function fetchInterceptor() {
       return new Response(JSON.stringify(json(results.slice(0, 12))), { headers:{'Content-Type':'application/json'} });
     }
 
-    // 附近公交/地铁站
+    // 附近公交/地铁站（返回 type 字段，与真实后端一致；前端 getNearbyStations 读 station.type）
     if (url.startsWith('/api/transit/nearby')) {
-      const sorted = [...MOCK_NEARBY_STATIONS].sort((a, b) => a.distance - b.distance);
+      const sorted = [...MOCK_NEARBY_STATIONS].sort((a, b) => a.distance - b.distance)
+        .map(s => ({ ...s, type: s.mode }));
       return new Response(JSON.stringify(json(sorted)), { headers:{'Content-Type':'application/json'} });
     }
 
@@ -341,7 +342,50 @@ export function fetchInterceptor() {
     }
 
     // ====== 多账号认证（验证码 / 密码） ======
-    if (url === '/api/user/send-code' && method === 'POST') return new Response(JSON.stringify(json({ success:true })), { headers:{'Content-Type':'application/json'} });
+    // 发送验证码（演示环境：明文回传验证码，与真实后端契约对齐 { expiresIn, code, demo:true }）
+    if (url === '/api/user/send-code' && method === 'POST') {
+      const body = await requestBody(input, init);
+      const phone = String(body.phone || '').trim();
+      if (!/^1[3-9]\d{9}$/.test(phone)) {
+        return new Response(JSON.stringify({ code: 'INVALID_PHONE', message: '手机号格式不正确', data: null }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+      }
+      // 演示环境固定验证码 123456（与 verify-code 校验一致），真实后端会回传随机验证码
+      return new Response(JSON.stringify(json({ expiresIn: 300, code: '123456', demo: true })), { headers: { 'Content-Type': 'application/json' } });
+    }
+
+    // 验证码登录：手机号 + 6 位验证码；未注册手机号自动注册（与真实后端契约对齐）
+    if (url === '/api/auth/verify-code' && method === 'POST') {
+      const body = await requestBody(input, init);
+      const phone = String(body.phone || '').trim();
+      const code = String(body.code || '').trim();
+      if (!/^1[3-9]\d{9}$/.test(phone)) {
+        return new Response(JSON.stringify({ code: 'INVALID_PHONE', message: '手机号格式不正确', data: null }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+      }
+      if (!/^\d{6}$/.test(code)) {
+        return new Response(JSON.stringify({ code: 'INVALID_CODE', message: '验证码格式不正确', data: null }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+      }
+      // 演示环境固定校验码 123456（无短信网关，真实环境由后端校验）
+      if (code !== '123456') {
+        return new Response(JSON.stringify({ code: 'CODE_MISMATCH', message: '验证码错误', data: null }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+      }
+      let account = findAccount(phone);
+      if (!account) {
+        // 未注册手机号自动注册：用户名 u + 后四位
+        const username = `u${phone.slice(-4)}`;
+        const reg = registerAccount({ username, phone, email: '', password: phone.slice(-6), nickname: username });
+        account = reg.account || null;
+      }
+      if (!account) {
+        return new Response(JSON.stringify({ code: 'REGISTER_FAILED', message: '自动注册失败', data: null }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+      }
+      const user = {
+        id: account.id, username: account.username, nickname: account.nickname,
+        phone: account.phone, email: account.email || '', avatar: account.avatar || '', role: account.role,
+        isVerified: true, carbonCredits: account.carbonCredits,
+        token: makeMockToken(account.id),
+      };
+      return new Response(JSON.stringify(json(user)), { headers: { 'Content-Type': 'application/json' } });
+    }
 
     // 登录：支持两种 body
     //   验证码: { phone, code }

@@ -24,6 +24,7 @@ const LoginPage: React.FC = () => {
   const [countdown, setCountdown] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [demoCode, setDemoCode] = useState<string>('');
 
   const from = (location.state as any)?.from || '/';
   const fromState = (location.state as any)?.fromState;
@@ -32,8 +33,10 @@ const LoginPage: React.FC = () => {
   const sendCode = async () => {
     if (!/^1[3-9]\d{9}$/.test(phone)) { setError('请输入正确的手机号'); return; }
     try {
-      await apiPost('/user/send-code', { phone });
+      // 后端 /api/user/send-code 在演示环境无短信网关时明文回传验证码 { expiresIn, code, demo:true }，便于联调
+      const res = await apiPost<{ expiresIn?: number; code?: string; demo?: boolean }>('/user/send-code', { phone });
       setError('');
+      setDemoCode(res?.demo && res?.code ? res.code : '');
     } catch (error) {
       setError(error instanceof Error ? error.message : '验证码发送失败');
       return;
@@ -149,6 +152,13 @@ const LoginPage: React.FC = () => {
               </span>
             </label>
           </>
+        )}
+
+        {demoCode && (
+          <div className="flex items-start gap-2 rounded-xl border border-blue-100 bg-blue-50 px-3.5 py-3 text-sm text-blue-700" role="status">
+            <Info className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>演示环境未接入短信网关，验证码为：<b className="text-blue-800">{demoCode}</b>（可自动填入）</span>
+          </div>
         )}
 
         {error && (

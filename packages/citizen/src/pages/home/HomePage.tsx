@@ -1,9 +1,9 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowUpDown, LocateFixed, Plus, X } from 'lucide-react';
 import { loadAMap } from '../../lib/amap';
 import AIAssistant from '../../components/AIAssistant';
-import TravelModeSelector, { normalizeTravelMode, type TravelModeOption } from '../../components/travel/TravelModeSelector';
+import TravelModeSelector, { normalizeTravelMode, TRAVEL_MODE_OPTIONS, type TravelModeOption } from '../../components/travel/TravelModeSelector';
 import styles from './HomePage.module.css';
 import { apiGet } from '../../services/apiClient';
 import { planAmapRoute, resolveRouteLocations } from '../../services/routePlanningService';
@@ -14,9 +14,23 @@ import { restoreDepartureState, type DepartureState } from '../../utils/departur
 import { fromLegacyRouteMode, parseTravelMode } from '../../types/travelMode';
 import { useElderly } from '../../App';
 
-interface Alert { id:string; category:string; title:string; summary:string; severity:string; publishTime:number }
-interface News { id:string; title:string; summary:string; source:string; publishTime:number }
+interface News { id:string; category:string; title:string; summary:string; source:string; publishTime:number }
 interface Snapshot { cityIndex:number; avgSpeed:number; congestedRoadCount:number; totalRoadCount:number; trend24h:{hour:number;index:number}[] }
+
+const HOME_NEWS_CATEGORY_PRIORITY = ['control', 'construction', 'metro', 'bus', 'holiday'];
+
+/** publishTime 是否属于今天 */
+function isToday(ts: number): boolean {
+  const d = new Date(ts);
+  const now = new Date();
+  return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+}
+
+/** 首页相关分类优先级：control/construction/metro/bus/holiday 靠前，其余靠后 */
+function categoryPriority(category: string): number {
+  const idx = HOME_NEWS_CATEGORY_PRIORITY.indexOf(category as (typeof HOME_NEWS_CATEGORY_PRIORITY)[number]);
+  return idx === -1 ? HOME_NEWS_CATEGORY_PRIORITY.length : idx;
+}
 
 const HomePage: React.FC = () => {
   const navigate = useNavigate();
@@ -26,11 +40,15 @@ const HomePage: React.FC = () => {
   const mapInstance = useRef<any>(null);
   const homeRoutePolyline = useRef<any>(null);
   const homeRouteRequestId = useRef(0);
-  const [alerts, setAlerts] = useState<Alert[]>([]);
   const [news, setNews] = useState<News[]>([]);
+  const [newsFailed, setNewsFailed] = useState(false);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
+  const [snapshotFailed, setSnapshotFailed] = useState(false);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [mapError, setMapError] = useState('');
+  // 首页路线规划状态提示（避免「高亮按钮但地图没反应」的无反馈问题）
+  const [routePreviewStatus, setRoutePreviewStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [routePreviewMessage, setRoutePreviewMessage] = useState('');
   const { origin, setOrigin, locate, status: locationStatus, error: locationError } = useTravelLocationStore();
   const [destination, setDestination] = useState('');
   const [waypoints, setWaypoints] = useState<string[]>([]);
@@ -118,37 +136,10 @@ const HomePage: React.FC = () => {
           viewMode: '2D',
           resizeEnable: true,
         });
-        // 实时路况图层
+        // 实时路况图层（保留；不再叠加固定的“演示交通事件” Marker）
         map.add(new AMap.TileLayer.Traffic({ zIndex: 10 }));
         map.addControl(new AMap.Scale({ position: 'LB' }));
         map.addControl(new AMap.ToolBar({ position: 'RT', liteStyle: true }));
-        // 几个示例事件标记
-        const incidents = [
-          { position: [116.432, 39.940], title: '二环路东直门桥事故', type: 'accident' },
-          { position: [116.390, 39.858], title: '三环十里河施工', type: 'construction' },
-          { position: [116.390, 39.908], title: '长安街临时管制', type: 'control' },
-        ];
-        incidents.forEach(inc => {
-          const color = inc.type === 'accident' ? '#f5222d' : inc.type === 'construction' ? '#faad14' : '#1677ff';
-          const m = new AMap.Marker({
-            position: inc.position as [number, number],
-            icon: new AMap.Icon({
-              size: new AMap.Size(28, 28),
-              image: 'data:image/svg+xml,' + encodeURIComponent(
-                `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 28 28"><circle cx="14" cy="14" r="13" fill="${color}" stroke="#fff" stroke-width="2"/><text x="14" y="19" text-anchor="middle" font-size="13">${inc.type==='accident'?'✕':inc.type==='construction'?'▲':'⛔'}</text></svg>`
-              ),
-            }),
-            title: inc.title,
-          });
-          m.on('click', () => {
-            const win = new AMap.InfoWindow({
-              content: `<div style="padding:8px;font-size:13px"><b>${inc.title}</b><br/>北京市 · 实时交通事件</div>`,
-              offset: new AMap.Pixel(0, -30),
-            });
-            win.open(map, inc.position as [number, number]);
-          });
-          map.add(m);
-        });
         mapInstance.current = map;
         setMapLoaded(true);
       })
@@ -172,6 +163,8 @@ const HomePage: React.FC = () => {
 
     const requestId = ++homeRouteRequestId.current;
     const routeMode = normalizeTravelMode(selectedMode);
+    setRoutePreviewStatus('loading');
+    setRoutePreviewMessage(`正在规划${TRAVEL_MODE_OPTIONS.find(m => m.key === selectedMode)?.label || ''}路线...`);
     resolveRouteLocations(
       origin.address,
       destination,
@@ -180,6 +173,10 @@ const HomePage: React.FC = () => {
       .then(({ start, end }) => planAmapRoute(routeMode, start, end))
       .then((route) => {
         if (requestId !== homeRouteRequestId.current || !mapInstance.current) return;
+        // 空路径不静默成功：请求成功但没解析出有效路径 → 明确报错
+        if (!route.path || route.path.length < 2) {
+          throw new Error(`${selectedMode} 路线规划成功，但未解析到有效路径`);
+        }
         const AMap = (window as any).AMap;
         if (!AMap?.Polyline) return;
         const polyline = new AMap.Polyline({
@@ -195,8 +192,15 @@ const HomePage: React.FC = () => {
         mapInstance.current.add(polyline);
         homeRoutePolyline.current = polyline;
         mapInstance.current.setFitView([polyline], false, [70, 70, 100, 440]);
+        setRoutePreviewStatus('success');
+        setRoutePreviewMessage('');
       })
-      .catch(error => console.warn('Home route planning failed:', error));
+      .catch(error => {
+        if (requestId !== homeRouteRequestId.current) return;
+        console.warn('Home route planning failed:', error);
+        setRoutePreviewStatus('error');
+        setRoutePreviewMessage(error instanceof Error ? error.message : '暂未获取到该路线');
+      });
 
     return () => {
       homeRouteRequestId.current += 1;
@@ -205,32 +209,38 @@ const HomePage: React.FC = () => {
 
   // 加载数据
   useEffect(() => {
-    apiGet<Array<{
-      id:string; type?:string; category?:string; title:string; description?:string; summary?:string;
-      severity:string; time?:number; publishTime?:number;
-    }>>('/traffic/alerts')
-      .then(data => setAlerts(data.map(item => ({
-        id:item.id, category:item.category || item.type || 'other', title:item.title,
-        summary:item.summary || item.description || '',
-        severity:item.severity,
-        publishTime:item.publishTime ?? item.time ?? Date.now(),
-      }))))
-      .catch(() => setAlerts([]));
-    apiGet<News[]>('/news/list').then(data => setNews(data.slice(0, 4))).catch(() => setNews([]));
+    // 今日交通资讯：复用 /news/list，保存完整数据，前端按 publishTime 筛选
+    apiGet<News[]>('/news/list')
+      .then(data => { setNews(data); setNewsFailed(false); })
+      .catch(() => { setNews([]); setNewsFailed(true); });
+    // 北京 · 交通运行参考：仍为模拟数据，失败不生成随机指数
     apiGet<Partial<Snapshot> & { congestionIndex?:number; activeAlerts?:number }>('/traffic/snapshot')
-      .then(data => setSnapshot({
-        cityIndex:data.cityIndex ?? data.congestionIndex ?? 0,
-        avgSpeed:data.avgSpeed ?? 0,
-        congestedRoadCount:data.congestedRoadCount ?? data.activeAlerts ?? 0,
-        totalRoadCount:data.totalRoadCount ?? 0,
-        trend24h:data.trend24h ?? [],
-      }))
-      .catch(() => setSnapshot(null));
+      .then(data => {
+        setSnapshot({
+          cityIndex:data.cityIndex ?? data.congestionIndex ?? 0,
+          avgSpeed:data.avgSpeed ?? 0,
+          congestedRoadCount:data.congestedRoadCount ?? data.activeAlerts ?? 0,
+          totalRoadCount:data.totalRoadCount ?? 0,
+          trend24h:data.trend24h ?? [],
+        });
+        setSnapshotFailed(false);
+      })
+      .catch(() => { setSnapshot(null); setSnapshotFailed(true); });
   }, []);
 
-  const severityColor = (s:string) => (s==='critical'?'#f5222d':s==='warning'?'#faad14':'#1677ff');
-  const severityBg = (s:string) => (s==='critical'?'#fff1f0':s==='warning'?'#fff7e6':'#e6f4ff');
-  const alertIcon = (c:string) => ({accident:'🚨',construction:'🚧',weather:'🌧️',control:'🚫',congestion:'🚦'}[c] || '⚠️');
+  // 今日交通资讯：publishTime 属于今天 → 优先首页相关分类（control/construction/metro/bus/holiday）→ 按时间倒序取最新 3 条
+  const todayNews = useMemo(() => {
+    const today = news
+      .filter(n => isToday(n.publishTime))
+      .sort((a, b) => {
+        const pa = categoryPriority(a.category);
+        const pb = categoryPriority(b.category);
+        if (pa !== pb) return pa - pb;
+        return b.publishTime - a.publishTime;
+      });
+    return today.slice(0, 3);
+  }, [news]);
+
   const formatRelative = (ts:number) => { const d=Date.now()-ts; if(d<3600000)return `${Math.max(1,Math.floor(d/60000))}分钟前`; if(d<86400000)return `${Math.floor(d/3600000)}小时前`; return `${Math.floor(d/86400000)}天前`; };
 
   return (
@@ -342,21 +352,49 @@ const HomePage: React.FC = () => {
 
         <TravelModeSelector value={selectedMode} onChange={selectTravelMode} className={styles.heroModeSelector} />
 
-        {/* 实时预警浮动标签 */}
+        {/* 路线规划状态提示：避免「高亮按钮但地图没反应」 */}
+        {routePreviewStatus === 'loading' && (
+          <div style={{ position: 'absolute', left: '50%', bottom: 76, transform: 'translateX(-50%)', background: 'rgba(0,0,0,0.7)', color: '#fff', padding: '8px 16px', borderRadius: 20, fontSize: 13, zIndex: 30 }}>
+            ⏳ {routePreviewMessage}
+          </div>
+        )}
+        {routePreviewStatus === 'error' && (
+          <div style={{ position: 'absolute', left: '50%', bottom: 76, transform: 'translateX(-50%)', background: 'rgba(245,34,45,0.9)', color: '#fff', padding: '8px 16px', borderRadius: 20, fontSize: 13, zIndex: 30 }}>
+            ⚠️ {routePreviewMessage}
+          </div>
+        )}
+
+        {/* 右侧浮动：今日交通资讯 + 北京 · 交通运行参考 */}
         <div className={styles.alertFloat}>
-          {alerts.slice(0,3).map(a => (
-            <div key={a.id} className={styles.alertFloatItem}>
-              <span style={{color:severityColor(a.severity)}}>{alertIcon(a.category)}</span>
-              <span className={styles.alertFloatTitle}>{a.title}</span>
-              <span className={styles.alertFloatTime}>{formatRelative(a.publishTime)}</span>
+          {/* 今日交通资讯：当天发布、倒序、最新 3 条，优先首页相关分类 */}
+          <div className={styles.alertNewsCard}>
+            <div className={styles.indexHead}>
+              <span>📰 今日交通资讯</span>
+              <span className={styles.sectionMore} onClick={()=>navigate('/news')}>更多 →</span>
             </div>
-          ))}
-          {snapshot && (
-            <div className={styles.indexCard}>
-              <div className={styles.indexHead}>
-                <span>北京 · 拥堵指数</span>
-                <span style={{ fontSize: 11, color: 'var(--text-hint)' }}>模拟数据 · 非官方实时</span>
-              </div>
+            {newsFailed ? (
+              <div className={styles.alertEmpty}>交通资讯暂时无法加载</div>
+            ) : todayNews.length === 0 ? (
+              <div className={styles.alertEmpty}>今日暂无新的交通资讯</div>
+            ) : (
+              todayNews.map(n => (
+                <div key={n.id} className={styles.alertFloatItem} onClick={()=>navigate(`/news/${n.id}`)}>
+                  <span className={styles.alertFloatTitle}>{n.title}</span>
+                  <span className={styles.alertFloatTime}>{formatRelative(n.publishTime)}</span>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* 北京 · 交通运行参考：模拟数据，非官方实时 */}
+          <div className={styles.indexCard}>
+            <div className={styles.indexHead}>
+              <span>北京 · 交通运行参考</span>
+              <span style={{ fontSize: 11, color: 'var(--text-hint)' }}>模拟数据 · 非官方实时</span>
+            </div>
+            {snapshotFailed ? (
+              <div className={styles.alertEmpty}>交通运行数据暂不可用</div>
+            ) : snapshot ? (
               <div className={styles.indexBody}>
                 <span className={styles.indexNum} style={{ color: snapshot.cityIndex>7?'#f5222d':snapshot.cityIndex>5?'#ff7a00':'#52c41a' }}>
                   {snapshot.cityIndex}
@@ -366,8 +404,8 @@ const HomePage: React.FC = () => {
                   <div>拥堵路段 <b style={{color:'#f5222d'}}>{snapshot.congestedRoadCount}</b>/{snapshot.totalRoadCount}</div>
                 </div>
               </div>
-            </div>
-          )}
+            ) : null}
+          </div>
         </div>
       </section>
 
@@ -400,14 +438,16 @@ const HomePage: React.FC = () => {
         </div>
       </section>
 
-      {/* ===== 24h 拥堵趋势 + 实时预警 ===== */}
+      {/* ===== 24h 拥堵趋势 + 交通资讯 ===== */}
       <section className={styles.bottomSection}>
         <div className={styles.siteCard}>
           <div className={styles.sectionHead}>
             <h2 className={styles.sectionTitle}>📊 24小时拥堵趋势</h2>
-            <span className={styles.sectionMore}>实时数据</span>
+            <span className={styles.sectionMore}>模拟数据</span>
           </div>
-          {snapshot && (
+          {snapshotFailed ? (
+            <div className={styles.alertEmpty}>交通运行数据暂不可用</div>
+          ) : snapshot ? (
             <div className={styles.sparkArea}>
               <div className={styles.sparkline}>
                 {snapshot.trend24h.map((p,i)=>(
@@ -418,7 +458,7 @@ const HomePage: React.FC = () => {
               </div>
               <div className={styles.sparkLabels}><span>0:00</span><span>6:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div>
             </div>
-          )}
+          ) : null}
         </div>
 
         <div className={styles.siteCard}>
@@ -426,17 +466,21 @@ const HomePage: React.FC = () => {
             <h2 className={styles.sectionTitle}>📰 交通资讯</h2>
             <span className={styles.sectionMore} onClick={()=>navigate('/news')}>更多 →</span>
           </div>
-          <div className={styles.newsList}>
-            {news.map(n => (
-              <div key={n.id} className={styles.newsItem} onClick={()=>navigate(`/news/${n.id}`)}>
-                <div className={styles.newsTitle}>{n.title}</div>
-                <div className={styles.newsMeta}>
-                  <span>{n.source}</span>
-                  <span>{formatRelative(n.publishTime)}</span>
+          {newsFailed ? (
+            <div className={styles.alertEmpty}>交通资讯暂时无法加载</div>
+          ) : (
+            <div className={styles.newsList}>
+              {news.map(n => (
+                <div key={n.id} className={styles.newsItem} onClick={()=>navigate(`/news/${n.id}`)}>
+                  <div className={styles.newsTitle}>{n.title}</div>
+                  <div className={styles.newsMeta}>
+                    <span>{n.source}</span>
+                    <span>{formatRelative(n.publishTime)}</span>
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       </section>
 
