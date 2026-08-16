@@ -23,6 +23,8 @@ export interface RouteRequestSnapshot {
   origin: string;
   originCoords: { lng: number; lat: number } | null;
   destination: string;
+  /** 目的地坐标：设施「去这里」等场景必须有，结果页优先使用，避免重新解析名称 */
+  destinationCoords: { lng: number; lat: number } | null;
   waypoints: string[];
   mode: TravelMode;
   profile: TravelProfile;
@@ -167,6 +169,7 @@ export function createRouteRequestSnapshot(): RouteRequestSnapshot | null {
     origin: origin.name.trim(),
     originCoords: origin.lng != null && origin.lat != null ? { lng: origin.lng, lat: origin.lat } : null,
     destination: destination.name.trim(),
+    destinationCoords: destination.lng != null && destination.lat != null ? { lng: destination.lng, lat: destination.lat } : null,
     waypoints: waypoints.map(point => point.trim()).filter(Boolean),
     mode,
     profile,

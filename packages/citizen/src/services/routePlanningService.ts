@@ -89,6 +89,7 @@ export async function resolveRouteLocations(
   origin: string,
   destination: string,
   originCoords?: { lng: number; lat: number } | null,
+  destinationCoords?: { lng: number; lat: number } | null,
 ): Promise<{ start: [number, number]; end: [number, number]; originLabel: string; destinationLabel: string }> {
   const resolveOrigin = async () => {
     if (originCoords && isValidCoord(originCoords.lng, originCoords.lat)) {
@@ -100,6 +101,10 @@ export async function resolveRouteLocations(
     return { coord: [result.lng, result.lat] as [number, number], label: result.address || origin };
   };
   const resolveDestination = async () => {
+    // 设施「去这里」等场景已带完整坐标：直接使用，不再重新解析名称
+    if (destinationCoords && isValidCoord(destinationCoords.lng, destinationCoords.lat)) {
+      return { coord: [destinationCoords.lng, destinationCoords.lat] as [number, number], label: destination };
+    }
     const known = Object.entries(KNOWN_COORDS).find(([key]) => destination.includes(key) || key.includes(destination));
     if (known) return { coord: known[1], label: destination || known[0] };
     const result = await geocodeLocation(destination);

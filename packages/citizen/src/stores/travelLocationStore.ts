@@ -10,7 +10,7 @@ export interface UnifiedLocation {
   address: string;
   lng: number | null;
   lat: number | null;
-  source: 'geolocation' | 'manual' | 'map-select' | 'poi-search' | 'demo';
+  source: 'geolocation' | 'manual' | 'map-select' | 'poi-search' | 'facility' | 'demo';
   timestamp?: number;
 }
 

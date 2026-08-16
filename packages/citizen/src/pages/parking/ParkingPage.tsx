@@ -4,7 +4,9 @@ import { loadAMap } from '../../lib/amap';
 import styles from './Parking.module.css';
 import { apiGet } from '../../services/apiClient';
 import { formatPrice } from '../../utils/price';
+import { openRouteToPlace, PlaceNavError } from '../../services/placeRouteService';
 import type { PriceValue } from '../../types/price';
+import type { PlaceDestination } from '../../types/facility';
 
 interface ParkingLot { id:string; name:string; address:string; position:[number,number]; totalSpots:number; availableSpots:number; price:PriceValue; type:string; distance:number; hasCharging:boolean }
 interface ChargingStation { id:string; name:string; address:string; position:[number,number]; operator:string; totalPiles:number; availablePiles:number; power:string; price:PriceValue; distance:number; status:string }
@@ -16,6 +18,8 @@ const ParkingPage: React.FC = () => {
   const [parking, setParking] = useState<ParkingLot[]>([]);
   const [charging, setCharging] = useState<ChargingStation[]>([]);
   const [mapError, setMapError] = useState('');
+  const [navError, setNavError] = useState('');
+  const [navTarget, setNavTarget] = useState('');
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
 
@@ -23,6 +27,44 @@ const ParkingPage: React.FC = () => {
     apiGet<ParkingLot[]>('/parking/lots').then(setParking).catch(() => setParking([]));
     apiGet<ChargingStation[]>('/parking/charging').then(setCharging).catch(() => setCharging([]));
   }, []);
+
+  // ===== 设施「去这里」：统一走 openRouteToPlace（真实起点 + 设施坐标），结果页只规划一次 =====
+  const toParkingPlace = (p: ParkingLot): PlaceDestination => ({
+    id: p.id, type: 'parking', name: p.name, address: p.address,
+    lng: p.position[0], lat: p.position[1], source: 'facility', dataSource: 'demo',
+  });
+  const toChargingPlace = (c: ChargingStation): PlaceDestination => ({
+    id: c.id, type: 'charging', name: c.name, address: c.address,
+    lng: c.position[0], lat: c.position[1], source: 'facility', dataSource: 'demo',
+  });
+
+  const goHere = async (place: PlaceDestination) => {
+    setNavError('');
+    setNavTarget(place.id);
+    try {
+      const snapshot = await openRouteToPlace(place);
+      navigate('/travel/result', { state: snapshot });
+    } catch (e) {
+      setNavError(e instanceof PlaceNavError ? e.message : '路线规划失败，请稍后重试');
+    } finally {
+      setNavTarget('');
+    }
+  };
+
+  // 地图 Marker InfoWindow 的「去这里」入口（AMap 内部 DOM 事件委托到 window）
+  useEffect(() => {
+    (window as any).__zhituNavToPlace = (type: 'parking' | 'charging', id: string) => {
+      if (type === 'charging') {
+        const c = charging.find(item => item.id === id);
+        if (c) void goHere(toChargingPlace(c));
+      } else {
+        const p = parking.find(item => item.id === id);
+        if (p) void goHere(toParkingPlace(p));
+      }
+    };
+    return () => { delete (window as any).__zhituNavToPlace; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [parking, charging]);
 
   // 加载地图
   useEffect(() => {
@@ -63,7 +105,7 @@ const ParkingPage: React.FC = () => {
           label: { content: `<div style="background:#1677ff;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px;white-space:nowrap">${p.name}</div>`, direction: 'top' },
         });
         m.on('click', () => {
-          const info = `<div style="padding:8px;font-size:13px"><b>${p.name}</b><br/>空位: ${p.availableSpots}/${p.totalSpots}<br/>${formatPrice(p.price)}</div>`;
+          const info = `<div style="padding:8px;font-size:13px"><b>${p.name}</b><br/>空位: ${p.availableSpots}/${p.totalSpots}<br/>${formatPrice(p.price)}<br/><span style="color:#1677ff;cursor:pointer" onclick="window.__zhituNavToPlace('parking','${p.id}')">🧭 去这里</span></div>`;
           const infoWin = new AMap.InfoWindow({ content: info, offset: new AMap.Pixel(0, -30) });
           infoWin.open(map, p.position);
         });
@@ -83,7 +125,7 @@ const ParkingPage: React.FC = () => {
           label: { content: `<div style="background:#52c41a;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">${c.name}</div>`, direction: 'top' },
         });
         m.on('click', () => {
-          const info = `<div style="padding:8px;font-size:13px"><b>${c.name}</b><br/>空闲: ${c.availablePiles}/${c.totalPiles}<br/>${c.power} · ${formatPrice(c.price)}</div>`;
+          const info = `<div style="padding:8px;font-size:13px"><b>${c.name}</b><br/>空闲: ${c.availablePiles}/${c.totalPiles}<br/>${c.power} · ${formatPrice(c.price)}<br/><span style="color:#1677ff;cursor:pointer" onclick="window.__zhituNavToPlace('charging','${c.id}')">🧭 去这里</span></div>`;
           const infoWin = new AMap.InfoWindow({ content: info, offset: new AMap.Pixel(0, -30) });
           infoWin.open(map, c.position);
         });
@@ -104,6 +146,11 @@ const ParkingPage: React.FC = () => {
       <div style={{ fontSize: 12, color: '#ad8b00', background: '#fffbe6', padding: '6px 10px', borderRadius: 8, marginBottom: 10 }}>
         余位 / 空闲桩为演示余位，数据来源待确认
       </div>
+      {navError && (
+        <div style={{ fontSize: 13, color: '#f5222d', background: '#fff1f0', padding: '8px 10px', borderRadius: 8, marginBottom: 10 }}>
+          ⚠️ {navError}
+        </div>
+      )}
       <div className={styles.tabRow}>
         <button className={`${styles.tab} ${tab==='parking'?styles.tabActive:''}`} onClick={()=>setTab('parking')}>🅿️ 停车场</button>
         <button className={`${styles.tab} ${tab==='charging'?styles.tabActive:''}`} onClick={()=>setTab('charging')}>⚡ 充电桩</button>
@@ -151,10 +198,9 @@ const ParkingPage: React.FC = () => {
                     </div>
                     <div style={{textAlign:'right'}}>
                       <div style={{fontWeight:600,color:'#f5222d',fontSize:15}}>{formatPrice(p.price)}</div>
-                      <button className={styles.navBtn} onClick={() => {
-                        const [lng, lat] = p.position;
-                        navigate(`/travel/result`, { state: { origin: '我的位置', destination: p.name, mode: 'drive' } });
-                      }}>🧭 导航至此</button>
+                      <button className={styles.navBtn} disabled={navTarget === p.id} onClick={() => void goHere(toParkingPlace(p))}>
+                        {navTarget === p.id ? '规划中...' : '🧭 去这里'}
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -184,14 +230,26 @@ const ParkingPage: React.FC = () => {
                     </div>
                     <div style={{textAlign:'right'}}>
                       <div style={{fontWeight:600,fontSize:15}}>{formatPrice(c.price)}</div>
-                      <button className={styles.navBtn} onClick={() => navigate('/charging/scan', { state: {
-                        stationId: c.id,
-                        stationName: c.name,
-                        operator: c.operator,
-                        power: c.power,
-                        price: c.price,
-                        address: c.address,
-                      } })}>🔌 扫码充电</button>
+                      <div style={{display:'flex',gap:6,justifyContent:'flex-end'}}>
+                        <button className={styles.navBtn} disabled={navTarget === c.id} onClick={() => void goHere(toChargingPlace(c))}>
+                          {navTarget === c.id ? '规划中...' : '🧭 去这里'}
+                        </button>
+                        <button
+                          className={styles.navBtn}
+                          disabled={c.status === 'offline'}
+                          title={c.status === 'offline' ? '该充电站离线，暂不可扫码' : '扫码充电'}
+                          onClick={() => navigate('/charging/scan', { state: {
+                            stationId: c.id,
+                            stationName: c.name,
+                            operator: c.operator,
+                            power: c.power,
+                            price: c.price,
+                            address: c.address,
+                          } })}
+                        >
+                          {c.status === 'offline' ? '⚡ 离线' : '🔌 扫码充电'}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>

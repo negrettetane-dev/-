@@ -92,12 +92,13 @@ function withTimeout<T>(promise: Promise<T>, label: string, timeoutMs = 15000): 
 const RouteResultPage: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { origin = '我的位置', destination = '目的地', waypoints = [], originCoords = null, departureMode: stateDepartureMode, departureAt: stateDepartureAt, departureTimeLabel: stateDepartureTimeLabel, departureTime = '现在出发' } = (location.state || {}) as {
+  const { origin = '我的位置', destination = '目的地', waypoints = [], originCoords = null, destinationCoords = null, departureMode: stateDepartureMode, departureAt: stateDepartureAt, departureTimeLabel: stateDepartureTimeLabel, departureTime = '现在出发' } = (location.state || {}) as {
     origin?: string;
     destination?: string;
     waypoints?: string[];
     mode?: string;
     originCoords?: { lng: number; lat: number } | null;
+    destinationCoords?: { lng: number; lat: number } | null;
     departureMode?: 'now' | 'plus30' | 'plus60' | 'custom';
     departureAt?: string;
     departureTimeLabel?: string;
@@ -200,7 +201,7 @@ const RouteResultPage: React.FC = () => {
     setLocationError('');
     setRouteResults({});
 
-    resolveRouteLocations(origin, destination, originCoords)
+    resolveRouteLocations(origin, destination, originCoords, destinationCoords)
       .then(({ start, end, originLabel, destinationLabel }) => {
         if (cancelled) return;
         startCoord.current = start;
@@ -221,7 +222,7 @@ const RouteResultPage: React.FC = () => {
       });
 
     return () => { cancelled = true; };
-  }, [origin, destination, originCoords]);
+  }, [origin, destination, originCoords, destinationCoords]);
 
   // ===== 三路并发规划 =====
   useEffect(() => {
