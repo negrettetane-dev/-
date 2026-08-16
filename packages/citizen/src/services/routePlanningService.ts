@@ -138,6 +138,14 @@ function toLngLatTuple(point: any): [number, number] | null {
 }
 
 export function normalizePath(rawPath: any): [number, number][] {
+  // 高德部分结构（rides[].polyline / steps[].polyline）为分号编码字符串："lng,lat;lng,lat"
+  if (typeof rawPath === 'string' && rawPath.trim()) {
+    return rawPath
+      .split(';')
+      .map(seg => seg.split(',').map(Number))
+      .filter(pair => pair.length >= 2 && Number.isFinite(pair[0]) && Number.isFinite(pair[1]))
+      .map(pair => [pair[0], pair[1]] as [number, number]);
+  }
   if (!Array.isArray(rawPath)) return [];
   return rawPath
     .map(toLngLatTuple)
