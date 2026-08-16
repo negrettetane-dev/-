@@ -25,6 +25,7 @@ import MyReservationsPage from './pages/profile/MyReservationsPage';
 import ElderlyHomePage from './pages/elderly/ElderlyHomePage';
 import ElderlyNavigationPage from './pages/elderly/ElderlyNavigationPage';
 import ElderlyBusDetailPage from './pages/elderly/ElderlyBusDetailPage';
+import { loadAccessibilityFacilities } from './data/accessibilityFacilities';
 import LoginPage from './pages/auth/LoginPage';
 import RegisterPage from './pages/auth/RegisterPage';
 import QRCodePage from './pages/qrcode/QRCodePage';
@@ -54,6 +55,9 @@ export const useElderly = () => useContext(ElderlyContext);
 if (import.meta.env.VITE_ENABLE_MOCK === 'true') {
   fetchInterceptor();
 }
+
+// 启动时拉取无障碍设施数据（幂等：后端可用则用真实数据，失败静默降级演示数据）
+void loadAccessibilityFacilities();
 
 /** 需要登录才能访问的页面 */
 const RequireAuth: React.FC<{ children: React.ReactNode }> = ({ children }) => {

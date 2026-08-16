@@ -11,6 +11,7 @@ import {
   findAccount, findAccountById, registerAccount, hashPassword,
   addReport, getReports,
 } from '../stores/persistence';
+import { DEMO_ACCESSIBLE_FACILITIES } from '../data/accessibilityFacilities';
 import { createMockTrip, findMockTrip, finishMockTrip, listMockTrips } from './tripRepository';
 import type { CreateTripRequest } from '../types/trip';
 
@@ -225,6 +226,11 @@ export function fetchInterceptor() {
         updatedAt: Date.now(),
         source: 'mock',
       })), { headers:{'Content-Type':'application/json'} });
+    }
+
+    // 无障碍设施（平民端查询）：mock 环境下返回演示数据，对齐后端契约
+    if (url === '/api/accessibility/stations') {
+      return new Response(JSON.stringify(json(DEMO_ACCESSIBLE_FACILITIES.map(f => ({ ...f, source: 'backend' })))), { headers: { 'Content-Type': 'application/json' } });
     }
 
     // 停车充电

@@ -11,7 +11,7 @@ import RouteForecastPanel from '../../components/travel/RouteForecastPanel';
 import TravelModeSelector, { normalizeTravelMode, type RouteTravelMode, type TravelModeOption } from '../../components/travel/TravelModeSelector';
 import AccessibleRouteCard from '../../components/travel/AccessibleRouteCard';
 import { buildAccessibleOptions, type AccessibleRouteOption } from '../../services/accessibilityService';
-import { getFacilityForStation } from '../../data/accessibilityFacilities';
+import { getFacilityForStation, getFacilitySource } from '../../data/accessibilityFacilities';
 import { useAuthStore } from '../../stores/authStore';
 import { useTripStore } from '../../stores/tripStore';
 import { useTravelPlanStore } from '../../stores/travelPlanStore';
@@ -1074,7 +1074,7 @@ const RouteResultPage: React.FC = () => {
             </div>
           </div>
           <div className={styles.departAdvice} style={{ marginTop: 8, fontSize: 13, color: '#722ed1' }}>
-            ♿ 无障碍优化 · 未接入官方实时设施数据，设施状态为演示数据
+            ♿ 无障碍优化 · 设施数据{getFacilitySource() === 'backend' ? '来自后台维护' : '为演示数据（未接入官方实时）'}
           </div>
         </div>
       ) : !navActive && !isPlanning && availableModes.length > 0 && recommendationId ? (
