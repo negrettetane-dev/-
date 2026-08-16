@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { AnimatePresence, motion, useMotionValue, useSpring, useTransform, type MotionValue } from 'motion/react';
 import styles from './TravelModeSelector.module.css';
-import type { LegacyRouteMode } from '../../types/travelMode';
+import { toLegacyRouteMode, type LegacyRouteMode } from '../../types/travelMode';
 
 export type TravelModeOption = 'ev' | 'driving' | 'transit' | 'riding' | 'walking' | 'accessible';
 export type RouteTravelMode = LegacyRouteMode;
@@ -19,12 +19,8 @@ export const TRAVEL_MODE_OPTIONS: Array<{
   { key: 'accessible', label: '无障碍出行', icon: '♿' },
 ];
 
-export function normalizeTravelMode(mode: TravelModeOption): RouteTravelMode {
-  if (mode === 'transit' || mode === 'accessible') return 'bus';
-  if (mode === 'riding') return 'bike';
-  if (mode === 'walking') return 'walk';
-  return 'drive';
-}
+/** 统一模式转换：用户层 canonical → 底层引擎。所有模式映射集中在此，禁止页面散落 drive/bus/transit 判断。 */
+export const normalizeTravelMode: (mode: TravelModeOption) => RouteTravelMode = toLegacyRouteMode;
 
 interface TravelModeSelectorProps {
   value: TravelModeOption;

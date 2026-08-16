@@ -180,7 +180,7 @@ const ElderlyHomePage: React.FC = () => {
     setStatus('planning');
     setStatusText('正在规划路线…');
     try {
-      const route = await planAmapRoute(option.route, [originLoc.lng, originLoc.lat], [destLoc.lng, destLoc.lat]);
+      const route = await planAmapRoute(option.route, [originLoc.lng, originLoc.lat], [destLoc.lng, destLoc.lat], originLoc.city || originLoc.province || null);
       if (!route || !Array.isArray(route.path) || route.path.length < 2) {
         throw new Error('route-empty');
       }

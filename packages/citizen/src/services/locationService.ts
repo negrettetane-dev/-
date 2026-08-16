@@ -14,21 +14,32 @@ export interface LocatedPosition {
 export interface ResolvedLocation extends LocatedPosition {
   address: string;
   source: 'geolocation' | 'map';
+  province?: string;
   city?: string;
+  /** 高德 citycode（市级，同城判断优先使用） */
+  cityCode?: string;
   adcode?: string;
+  district?: string;
 }
 
 export interface GeocodedLocation extends LocatedPosition {
   name: string;
   address: string;
+  province?: string;
   city?: string;
+  cityCode?: string;
   adcode?: string;
+  district?: string;
 }
 
 export interface ReverseGeocodeResult {
   address: string;
+  province?: string;
   city?: string;
+  /** 高德 citycode（市级，同城判断优先使用） */
+  cityCode?: string;
   adcode?: string;
+  district?: string;
 }
 
 /** 高德定位：优先（GCJ-02，与高德地图一致） */
@@ -128,8 +139,11 @@ export function searchLocationCandidates(
               address: String(p.address || p.pname + p.cityname + p.adname || ''),
               lng,
               lat,
+              province: p.pname ? String(p.pname) : undefined,
               city: p.cityname ? String(p.cityname) : undefined,
+              cityCode: p.citycode ? String(p.citycode) : undefined,
               adcode: p.adcode ? String(p.adcode) : undefined,
+              district: p.adname ? String(p.adname) : undefined,
               source: 'poi-search',
             };
           })
@@ -158,8 +172,11 @@ export function geocodeLocation(keyword: string, city = '北京'): Promise<Geoco
           address: String(item.formattedAddress || query),
           lng,
           lat,
+          province: item.province ? String(item.province) : undefined,
           city: item.city ? String(item.city) : undefined,
+          cityCode: item.citycode ? String(item.citycode) : undefined,
           adcode: item.adcode ? String(item.adcode) : undefined,
+          district: item.district ? String(item.district) : undefined,
         });
       } else {
         reject(new Error('location-not-found'));
@@ -168,7 +185,7 @@ export function geocodeLocation(keyword: string, city = '北京'): Promise<Geoco
   }));
 }
 
-/** 逆地理编码详情：坐标 → 地址 + 城市 + adcode（用于同城判断） */
+/** 逆地理编码详情：坐标 → 地址 + 省/市/区县 + citycode + adcode（用于同城判断） */
 export function reverseGeocodeDetail(lng: number, lat: number): Promise<ReverseGeocodeResult> {
   return loadAMap().then((AMap: any) => new Promise<ReverseGeocodeResult>((resolve, reject) => {
     const geocoder = new AMap.Geocoder();
@@ -176,11 +193,16 @@ export function reverseGeocodeDetail(lng: number, lat: number): Promise<ReverseG
       const re = result?.regeocode;
       const comp = re?.addressComponent;
       if (status === 'complete' && re?.formattedAddress) {
-        const city = Array.isArray(comp?.city) && comp.city[0] ? String(comp.city[0]) : comp?.province ? String(comp.province) : undefined;
+        const cityArr = comp?.city && Array.isArray(comp.city) && comp.city[0] ? comp.city[0] : null;
+        // 直辖市 city 为空数组时用 province（如「北京市」）
+        const city = cityArr ? String(cityArr) : comp?.province ? String(comp.province) : undefined;
         resolve({
           address: String(re.formattedAddress),
+          province: comp?.province ? String(comp.province) : undefined,
           city,
+          cityCode: comp?.citycode ? String(comp.citycode) : undefined,
           adcode: comp?.adcode ? String(comp.adcode) : undefined,
+          district: comp?.district ? String(comp.district) : undefined,
         });
       } else {
         reject(new Error('geocode-failed'));
@@ -193,17 +215,23 @@ export function reverseGeocodeDetail(lng: number, lat: number): Promise<ReverseG
 export async function getCurrentResolvedLocation(timeout?: number): Promise<ResolvedLocation> {
   const pos = await getCurrentLocation(timeout);
   let address = '';
+  let province: string | undefined;
   let city: string | undefined;
+  let cityCode: string | undefined;
   let adcode: string | undefined;
+  let district: string | undefined;
   try {
     const detail = await reverseGeocodeDetail(pos.lng, pos.lat);
     address = detail.address;
+    province = detail.province;
     city = detail.city;
+    cityCode = detail.cityCode;
     adcode = detail.adcode;
+    district = detail.district;
   } catch {
     address = '地址解析失败，可通过地图重新选点';
   }
-  return { lng: pos.lng, lat: pos.lat, accuracy: pos.accuracy, address, city, adcode, source: 'geolocation' as const };
+  return { lng: pos.lng, lat: pos.lat, accuracy: pos.accuracy, address, province, city, cityCode, adcode, district, source: 'geolocation' as const };
 }
 
 /** 定位错误 → 中文提示 */

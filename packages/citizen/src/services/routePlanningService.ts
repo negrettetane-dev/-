@@ -316,10 +316,12 @@ export function parseTransitPlan(plan: any): ParsedTransitPlan {
  *   - 起终点直线距离 > 100km → 拒绝
  *   - 任一方案含铁路/城际段（hasRailway）→ 该方案判定不可用，跳过
  * 无任何有效方案时抛错，不返回空数组冒充成功。
+ * city：真实起点城市名（如「北京」），不再写死。
  */
 export async function planTransitCandidates(
   start: [number, number],
   end: [number, number],
+  city?: string | null,
 ): Promise<TransitCandidate[]> {
   if (haversineKm(start, end) > CROSS_CITY_TRANSIT_KM) {
     throw new Error('CROSS_CITY_TRANSIT_UNSUPPORTED');
@@ -328,9 +330,12 @@ export async function planTransitCandidates(
   const startLngLat = new AMap.LngLat(start[0], start[1]);
   const endLngLat = new AMap.LngLat(end[0], end[1]);
 
+  // 高德 Transfer 的 city 应使用真实起点城市；未知时不传（由高德按坐标推断）
+  const transferOptions: any = { policy: AMap.TransferPolicy.LEAST_TIME, nightflag: false };
+  if (city && city.trim()) transferOptions.city = city.trim().replace(/市$/, '');
   const result = await withTimeout(new Promise<any>((resolve, reject) => {
     AMap.plugin(['AMap.Transfer'], () => {
-      const transfer = new AMap.Transfer({ policy: AMap.TransferPolicy.LEAST_TIME, city: '北京', nightflag: false });
+      const transfer = new AMap.Transfer(transferOptions);
       transfer.search(startLngLat, endLngLat, (status: string, data: any) => {
         if (status !== 'complete' || !data?.plans?.length) {
           reject(new Error(data?.info || '公交路线规划失败'));
@@ -375,6 +380,7 @@ export async function planAmapRoute(
   mode: RouteTravelMode,
   start: [number, number],
   end: [number, number],
+  city?: string | null,
 ): Promise<PlannedRoute> {
   const AMap = await withTimeout(loadAMap(), 'AMap load');
   const startLngLat = new AMap.LngLat(start[0], start[1]);
@@ -388,6 +394,11 @@ export async function planAmapRoute(
           if (status === 'complete' && result.routes?.length) {
             const route = result.routes[0];
             const path = extractRoutePath(route);
+            // 空路径/无效结果不静默成功：EMPTY_ROUTE 明确报错
+            if (path.length < 2 || !Number(route.distance) || !Number(route.time)) {
+              reject(new Error('EMPTY_ROUTE'));
+              return;
+            }
             resolve({
               mode, distance: route.distance, duration: route.time, path, polyline: path,
               congestionSegments: [{ level: 'slow', ratio: 0.3 }, { level: 'free', ratio: 0.7 }],
@@ -400,7 +411,7 @@ export async function planAmapRoute(
   }
 
   if (mode === 'bus') {
-    const candidates = await planTransitCandidates(start, end);
+    const candidates = await planTransitCandidates(start, end, city);
     return candidates[0].route;
   }
 
@@ -413,6 +424,11 @@ export async function planAmapRoute(
         if (status === 'complete' && result.routes?.length) {
           const route = result.routes[0];
           const path = extractRoutePath(route);
+          // 空路径/无效结果不静默成功
+          if (path.length < 2 || !Number(route.distance) || !Number(route.time)) {
+            reject(new Error('EMPTY_ROUTE'));
+            return;
+          }
           resolve({
             mode, distance: route.distance, duration: route.time, path, polyline: path,
             calories: Math.round(route.distance / 1000 * (isBike ? 30 : 45)),

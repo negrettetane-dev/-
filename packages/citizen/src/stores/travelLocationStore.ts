@@ -11,12 +11,16 @@ export interface UnifiedLocation {
   lng: number | null;
   lat: number | null;
   source: 'geolocation' | 'manual' | 'map-select' | 'poi-search' | 'facility' | 'demo';
+  /** 省级行政区名（如「北京市」「湖南省」） */
+  province?: string;
   /** 城市名（如「北京市」「长沙市」），用于同城判断 */
   city?: string;
-  /** 高德 citycode */
+  /** 高德 citycode（市级），同城判断优先使用 */
   cityCode?: string;
   /** 高德行政区划代码（如 110000 / 430100），前 4 位代表市级 */
   adcode?: string;
+  /** 区县级行政区划（如「朝阳区」） */
+  district?: string;
   timestamp?: number;
 }
 
@@ -98,8 +102,11 @@ export const useTravelLocationStore = create<TravelLocationState>((set, get) => 
         address: resolved.address,
         lng: resolved.lng,
         lat: resolved.lat,
+        province: resolved.province,
         city: resolved.city,
+        cityCode: resolved.cityCode,
         adcode: resolved.adcode,
+        district: resolved.district,
         source: 'geolocation',
         timestamp: Date.now(),
       };

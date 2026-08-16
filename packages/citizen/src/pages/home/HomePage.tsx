@@ -175,7 +175,7 @@ const HomePage: React.FC = () => {
       destination,
       origin.lng != null && origin.lat != null ? { lng: origin.lng, lat: origin.lat } : null,
     )
-      .then(({ start, end }) => planAmapRoute(routeMode, start, end))
+      .then(({ start, end }) => planAmapRoute(routeMode, start, end, origin.city || origin.province || null))
       .then((route) => {
         if (requestId !== homeRouteRequestId.current || !mapInstance.current) return;
         // 空路径不静默成功：请求成功但没解析出有效路径 → 明确报错

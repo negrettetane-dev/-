@@ -262,9 +262,12 @@ const RouteResultPage: React.FC = () => {
     }
 
     // 无障碍出行：取全部真实公交候选 → 按无障碍目标重排（无障碍推荐/时间较短/移动较少）
+    // 真实起点城市：从 origin store 读取（高德 Transfer 不再写死「北京」）
+    const originLoc = useTravelLocationStore.getState().origin;
+    const transitCity = originLoc?.city || originLoc?.province || null;
     const planSelected = async (): Promise<PlannedRoute> => {
       if (selectedMode === 'bus' && selectedDisplayMode === 'accessible') {
-        const candidates = await planTransitCandidates(s, e);
+        const candidates = await planTransitCandidates(s, e, transitCity);
         const accessible = buildAccessibleOptions(candidates);
         setAccessibleOptions(accessible);
         setAccessibleUnavailableNote(accessible.length ? '' : '');
@@ -272,7 +275,7 @@ const RouteResultPage: React.FC = () => {
         setAccessibleSelectedId(accessible[0].id);
         return accessible[0].route;
       }
-      return planAmapRoute(selectedMode, s, e);
+      return planAmapRoute(selectedMode, s, e, transitCity);
     };
 
     planSelected()
@@ -288,9 +291,11 @@ const RouteResultPage: React.FC = () => {
         setRouteResults({});
         const msg = error instanceof Error ? error.message : '';
         if (selectedMode === 'bus' && msg.includes('CROSS_CITY_TRANSIT_UNSUPPORTED')) {
-          setUnavailableNote('🚌 当前起终点不在同一城市，暂不支持跨城市公交/地铁联程规划。');
+          setUnavailableNote('🚌 当前起终点不在同一城市，暂不支持跨城市公交/地铁规划。');
         } else if (selectedMode === 'bus' && msg.includes('transit-no-valid-segment')) {
           setUnavailableNote('🚌 暂无可用公交/地铁方案。');
+        } else if (msg.includes('EMPTY_ROUTE')) {
+          setUnavailableNote(`暂未找到可用${MODE_META[selectedMode].label}路线，请稍后重试。`);
         } else {
           setUnavailableNote(`该起终点暂无可用${MODE_META[selectedMode].label}路线`);
         }
@@ -604,6 +609,11 @@ const RouteResultPage: React.FC = () => {
 
   // ===== 开始导航：先校验路线有效性（最终一道防线），再置状态机 + 登录用户创建 Trip =====
   const startNavigation = (mode: TravelMode) => {
+    // 防重复进入：导航中/已到达/已结束时不允许再次启动导航（避免重复创建 Trip）
+    if (navStatusRef.current === 'navigating' || navStatusRef.current === 'arrived' || navStatusRef.current === 'ended') {
+      setNavRouteError('当前已有进行中的导航');
+      return;
+    }
     // 路线数据必须与请求模式匹配：transit 绝不能用 driving path 冒充
     const route = routeResults[mode];
     if (!route) {
@@ -736,6 +746,11 @@ const RouteResultPage: React.FC = () => {
 
   // ===== 无障碍模式开始导航（复用现有 bus 导航逻辑，仅改文案/设施提示） =====
   const startAccessibleNavigation = (option: AccessibleRouteOption) => {
+    // 防重复进入：导航中/已到达/已结束时不允许再次启动导航
+    if (navStatusRef.current === 'navigating' || navStatusRef.current === 'arrived' || navStatusRef.current === 'ended') {
+      setNavRouteError('当前已有进行中的导航');
+      return;
+    }
     // 硬性规则兜底：仅楼梯 → 不建议开始无障碍导航
     if (option.metrics.stairsRiskCount > 0 && option.score.level === 'not_recommended') {
       setNavRouteError('当前方案存在仅楼梯出入口，不建议轮椅用户选择，请更换方案。');
@@ -980,6 +995,14 @@ const RouteResultPage: React.FC = () => {
                     {mock.congestionSegments.map((s, j) => (
                       <div key={j} style={{ flex: s.ratio, background: congestionColor(s.level), height: '100%', borderRadius: 2 }} />
                     ))}
+                  </div>
+                )}
+
+                {/* 新能源（EV）：底层复用驾车路线，叠加充电/能耗业务信息（演示数据标注） */}
+                {mode === 'drive' && selectedDisplayMode === 'ev' && (
+                  <div className={styles.bikeInfo}>
+                    <span>⚡ 底层引擎：驾车</span>
+                    <span>🔋 能耗/充电信息为演示数据</span>
                   </div>
                 )}
 

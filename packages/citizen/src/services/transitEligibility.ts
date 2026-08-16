@@ -11,12 +11,13 @@ export interface TransitEligibility {
   message?: string;
 }
 
-/** 提取市级标识：优先 adcode 前 4 位；否则城市名（去「市」后缀） */
-function cityKey(loc: UnifiedLocation | null): { adcode4?: string; cityName?: string } {
+/** 提取市级标识：优先 cityCode；其次 adcode 前 4 位；再城市名（去「市」后缀） */
+function cityKey(loc: UnifiedLocation | null): { cityCode?: string; adcode4?: string; cityName?: string } {
   if (!loc) return {};
+  const cityCode = (loc.cityCode || '').trim() || undefined;
   const adcode4 = loc.adcode && loc.adcode.length >= 4 ? loc.adcode.slice(0, 4) : undefined;
   const cityName = (loc.city || '').replace(/市$/, '').trim() || undefined;
-  return { adcode4, cityName };
+  return { cityCode, adcode4, cityName };
 }
 
 export function isTransitSupported(
@@ -30,7 +31,19 @@ export function isTransitSupported(
   const o = cityKey(origin);
   const d = cityKey(destination);
 
-  // 1) 双方都有 adcode：前 4 位不同 → 跨城市
+  // 1) 双方都有 cityCode（市级唯一标识）：优先比较 cityCode
+  if (o.cityCode && d.cityCode) {
+    if (o.cityCode !== d.cityCode) {
+      return {
+        supported: false,
+        reason: 'CROSS_CITY_TRANSIT_UNSUPPORTED',
+        message: '当前起终点不在同一城市，暂不支持跨城市公交/地铁规划。',
+      };
+    }
+    return { supported: true };
+  }
+
+  // 2) 双方都有 adcode：前 4 位不同 → 跨城市（同城不同区县前 4 位相同，不会误拦）
   if (o.adcode4 && d.adcode4) {
     if (o.adcode4 !== d.adcode4) {
       return {
@@ -42,7 +55,7 @@ export function isTransitSupported(
     return { supported: true };
   }
 
-  // 2) 双方都有城市名且不同 → 跨城市
+  // 3) 双方都有城市名且不同 → 跨城市
   if (o.cityName && d.cityName && o.cityName !== d.cityName) {
     return {
       supported: false,
@@ -51,6 +64,6 @@ export function isTransitSupported(
     };
   }
 
-  // 3) 缺数据：不误拦
+  // 4) 缺数据：不误拦
   return { supported: true };
 }
