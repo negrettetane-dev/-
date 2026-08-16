@@ -21,6 +21,20 @@ import styles from './Travel.module.css';
 /** 到达判定阈值：当前车辆与终点剩余距离 ≤ 50m 即视为到达（避免 GPS 误差导致永不触发） */
 const ARRIVAL_THRESHOLD_METERS = 50;
 
+/** 跨城公交距离硬门槛：起终点直线距离超过该值（km）判定为跨城/长途，城市公交不支持 */
+const CROSS_CITY_TRANSIT_KM = 100;
+
+/** 两坐标直线距离（km），Haversine 公式 */
+function haversineKm(a: [number, number], b: [number, number]): number {
+  const R = 6371;
+  const dLat = ((b[1] - a[1]) * Math.PI) / 180;
+  const dLng = ((b[0] - a[0]) * Math.PI) / 180;
+  const la1 = (a[1] * Math.PI) / 180;
+  const la2 = (b[1] * Math.PI) / 180;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(la1) * Math.cos(la2) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
 // ===== 统一路线类型 =====
 type TravelMode = RouteTravelMode;
 
@@ -431,6 +445,15 @@ const RouteResultPage: React.FC = () => {
         if (!transitCheck.supported) {
           setRouteResults({});
           setUnavailableNote(transitCheck.message || '🚌 暂不支持跨城市公交/地铁规划。');
+          setIsPlanning(false);
+          return;
+        }
+        // 距离硬门槛（不依赖高德返回结构、不依赖 city 数据）：起终点直线距离过远 → 判定跨城/长途
+        const s = startCoord.current;
+        const e = endCoord.current;
+        if (s && e && haversineKm(s, e) > CROSS_CITY_TRANSIT_KM) {
+          setRouteResults({});
+          setUnavailableNote('🚌 当前起终点不在同一城市，暂不支持跨城市公交/地铁联程规划。');
           setIsPlanning(false);
           return;
         }

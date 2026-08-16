@@ -74,6 +74,26 @@ function inferTransitType(value: unknown, name = ''): 'bus' | 'metro' {
     : 'bus';
 }
 
+/** 判断是否为铁路/城际/长途段：跨城市公交/地铁当前不支持，任何此类段都判定无效 */
+function isRailwayLike(value: unknown, name = ''): boolean {
+  const raw = `${String(value ?? '')} ${name}`.toLowerCase();
+  return /高铁|城际|动车|火车|铁路|railway|intercity|train|高速铁路/.test(raw);
+}
+
+/** 跨城公交距离硬门槛（km）：城市公交只支持同城短途 */
+const CROSS_CITY_TRANSIT_KM = 100;
+
+/** 两坐标直线距离（km），Haversine 公式 */
+function haversineKm(a: [number, number], b: [number, number]): number {
+  const R = 6371;
+  const dLat = ((b[1] - a[1]) * Math.PI) / 180;
+  const dLng = ((b[0] - a[0]) * Math.PI) / 180;
+  const la1 = (a[1] * Math.PI) / 180;
+  const la2 = (b[1] * Math.PI) / 180;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(la1) * Math.cos(la2) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
 function extractRoutePath(route: any): [number, number][] {
   if (Array.isArray(route?.path) && route.path.length) return route.path;
   if (Array.isArray(route?.polyline) && route.polyline.length) return route.polyline;
@@ -148,6 +168,10 @@ export async function planAmapRoute(
   }
 
   if (mode === 'bus') {
+    // 距离硬门槛：起终点直线距离过远 → 跨城/长途，城市公交不支持（不依赖高德返回结构）
+    if (haversineKm(start, end) > CROSS_CITY_TRANSIT_KM) {
+      return Promise.reject(new Error('CROSS_CITY_TRANSIT_UNSUPPORTED'));
+    }
     return withTimeout(new Promise((resolve, reject) => {
       AMap.plugin(['AMap.Transfer'], () => {
         const transfer = new AMap.Transfer({ policy: AMap.TransferPolicy.LEAST_TIME, city: '北京', nightflag: false });
@@ -159,6 +183,7 @@ export async function planAmapRoute(
           const plan = result.plans[0];
           const segments: SegmentData[] = [];
           const paths: [number, number][] = [];
+          let hasRailway = false; // 铁路/城际/长途段标记：任何此类段都判定跨城/长途
           plan.segments.forEach((segment: any) => {
             if (segment.walking) {
               segments.push({ type: 'walk', instruction: `步行 ${formatDistance(segment.walking.distance || 0)}`, duration: segment.walking.duration });
@@ -168,6 +193,7 @@ export async function planAmapRoute(
             if (segment.bus?.buslines?.length) {
               const line = segment.bus.buslines[0];
               const lineName = String(line.name || line.lineName || line.route || '').trim();
+              if (isRailwayLike(line.type || line.lineType || segment.bus.type, lineName)) hasRailway = true;
               const item: SegmentData = {
                 type: inferTransitType(line.type || line.lineType || segment.bus.type, lineName), lineName,
                 fromStation: line.departure_stop?.name || line.departureStop?.name || line.startStation?.name || '',
@@ -180,20 +206,14 @@ export async function planAmapRoute(
               return;
             }
             if (segment.railway) {
-              const railway = segment.railway;
-              const item: SegmentData = {
-                type: 'metro', lineName: railway.name || railway.lineName || '轨道交通',
-                fromStation: railway.departure_stop?.name || railway.startStation?.name || '',
-                toStation: railway.arrival_stop?.name || railway.endStation?.name || '',
-                stationCount: railway.station_count || railway.stationCount, duration: railway.duration,
-              };
-              if (hasSegmentContent(item)) segments.push(item);
-              if (Array.isArray(railway.path)) paths.push(...railway.path);
+              // 铁路段 = 跨城/长途，当前不支持城市公交联程，直接标记（不再转成 metro 冒充地铁）
+              hasRailway = true;
               return;
             }
             if (segment.transit) {
               const transit = segment.transit;
               const lineName = String(transit.name || transit.line || transit.route || transit.transitName || '').trim();
+              if (isRailwayLike(transit.type || transit.transitType, lineName)) hasRailway = true;
               const item: SegmentData = {
                 type: inferTransitType(transit.type || transit.transitType, lineName), lineName,
                 fromStation: (transit.departureStop || transit.startStation || transit.onStation)?.name || '',
@@ -206,11 +226,8 @@ export async function planAmapRoute(
           });
           if (!paths.length) { reject(new Error('公交路线无路径数据')); return; }
           // ===== 公交段类型校验：只接受真实城市公共交通 =====
-          // 1) 含铁路/高铁/城际/动车段 → 判定为跨城或长途，当前不支持
-          const crossCitySeg = segments.find(s =>
-            /高铁|城际|动车|火车|铁路|railway|intercity|train|高速铁路/i.test(`${s.lineName ?? ''} ${s.instruction ?? ''}`),
-          );
-          if (crossCitySeg) {
+          // 1) 含铁路/高铁/城际/动车/长途段 → 判定为跨城或长途，当前不支持
+          if (hasRailway) {
             reject(new Error('CROSS_CITY_TRANSIT_UNSUPPORTED'));
             return;
           }
