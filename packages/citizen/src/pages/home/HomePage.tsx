@@ -12,6 +12,7 @@ import { useTravelPlanStore } from '../../stores/travelPlanStore';
 import DepartureTimeSelect from '../../components/travel/DepartureTimeSelect';
 import { restoreDepartureState, type DepartureState } from '../../utils/departureTime';
 import { fromLegacyRouteMode, parseTravelMode } from '../../types/travelMode';
+import { useElderly } from '../../App';
 
 interface Alert { id:string; category:string; title:string; summary:string; severity:string; publishTime:number }
 interface News { id:string; title:string; summary:string; source:string; publishTime:number }
@@ -19,6 +20,7 @@ interface Snapshot { cityIndex:number; avgSpeed:number; congestedRoadCount:numbe
 
 const HomePage: React.FC = () => {
   const navigate = useNavigate();
+  const { elderlyMode, disableElderlyMode } = useElderly();
   const [searchParams] = useSearchParams();
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<any>(null);
@@ -233,6 +235,17 @@ const HomePage: React.FC = () => {
 
   return (
     <div>
+      {/* 长辈模式已开启：返回首页 ≠ 退出长辈模式，保持大字号（data-elderly 全局生效） */}
+      {elderlyMode && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', background: '#fff7e6', borderBottom: '1px solid #ffe7ba', fontSize: 15 }}>
+          <span style={{ fontWeight: 700 }}>👴 长辈模式已开启</span>
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+            <button onClick={() => navigate('/elderly')} style={{ padding: '8px 16px', borderRadius: 10, border: '1px solid #d9a94e', background: '#fff', color: '#8a5a00', fontSize: 14, cursor: 'pointer' }}>返回长辈首页</button>
+            <button onClick={disableElderlyMode} style={{ padding: '8px 16px', borderRadius: 10, border: 'none', background: '#faad14', color: '#fff', fontSize: 14, cursor: 'pointer' }}>退出长辈模式</button>
+          </span>
+        </div>
+      )}
+
       {/* ===== 大图地图 Hero ===== */}
       <section className={styles.hero}>
         <div ref={mapContainer} className={styles.heroMap} />

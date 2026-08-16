@@ -34,13 +34,18 @@ import CustomBusPage from './pages/custombus/CustomBusPage';
 import MetroDetailPage from './pages/metro/MetroDetailPage';
 
 // 长辈模式 Context
+// 原则：返回首页 ≠ 退出长辈模式。只有主动调用 disableElderlyMode 才关闭模式。
 interface ElderlyContextType {
   elderlyMode: boolean;
   toggleElderlyMode: () => void;
+  enableElderlyMode: () => void;
+  disableElderlyMode: () => void;
 }
 export const ElderlyContext = createContext<ElderlyContextType>({
   elderlyMode: false,
   toggleElderlyMode: () => {},
+  enableElderlyMode: () => {},
+  disableElderlyMode: () => {},
 });
 export const useElderly = () => useContext(ElderlyContext);
 
@@ -79,7 +84,12 @@ const App: React.FC = () => {
 
   return (
     <ElderlyContext.Provider
-      value={{ elderlyMode, toggleElderlyMode: () => setElderlyMode(v => !v) }}
+      value={{
+        elderlyMode,
+        toggleElderlyMode: () => setElderlyMode(v => !v),
+        enableElderlyMode: () => setElderlyMode(true),
+        disableElderlyMode: () => setElderlyMode(false),
+      }}
     >
       {isFullScreen ? (
         <Routes>

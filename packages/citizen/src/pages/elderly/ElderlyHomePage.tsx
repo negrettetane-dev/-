@@ -27,11 +27,12 @@ function readMode(): ElderlyDisplayMode {
 
 const ElderlyHomePage: React.FC = () => {
   const navigate = useNavigate();
-  const { toggleElderlyMode } = useElderly();
+  const { disableElderlyMode } = useElderly();
   const [dest, setDest] = useState('');
   const [voiceActive, setVoiceActive] = useState(false);
   const [busResult, setBusResult] = useState<{name:string;arrival:number;crowding:string}[]>([]);
   const [sosOpen, setSosOpen] = useState(false);
+  const [exitConfirm, setExitConfirm] = useState(false);
 
   // 长辈导航：模式 + 状态机 + 候选
   const [displayMode, setDisplayMode] = useState<ElderlyDisplayMode>(readMode);
@@ -185,11 +186,26 @@ const ElderlyHomePage: React.FC = () => {
 
   return (
     <div className={styles.page}>
-      {/* Top bar */}
+      {/* Top bar：返回首页 ≠ 退出长辈模式 */}
       <div className={styles.topBar}>
-        <span className={styles.logo}>智途云枢</span>
-        <button className={styles.exitBtn} onClick={()=>{toggleElderlyMode();navigate('/');}}>退出长辈模式</button>
+        <button className={styles.exitBtn} onClick={() => navigate('/')} style={{ marginRight: 'auto' }}>🏠 返回首页</button>
+        <span className={styles.logo}>智途云枢 · 长辈模式</span>
+        <button className={styles.exitBtn} onClick={() => setExitConfirm(true)} style={{ marginLeft: 'auto' }}>退出长辈模式</button>
       </div>
+
+      {/* 退出长辈模式确认弹窗（应用内弹窗，不用浏览器 confirm） */}
+      {exitConfirm && (
+        <div className={styles.sosOverlay} onClick={() => setExitConfirm(false)}>
+          <div className={styles.sosDialog} onClick={e => e.stopPropagation()}>
+            <div className={styles.sosTitle}>确定退出长辈模式吗？</div>
+            <div className={styles.sosDesc}>退出后将恢复普通模式显示。</div>
+            <div className={styles.sosActions} style={{ display: 'flex', gap: 10 }}>
+              <button className={styles.sosClose} onClick={() => setExitConfirm(false)} style={{ flex: 1 }}>继续使用</button>
+              <button className={styles.btn} onClick={() => { disableElderlyMode(); setExitConfirm(false); navigate('/'); }} style={{ flex: 1 }}>退出</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Emergency button */}
       <div className={styles.emergency}>
