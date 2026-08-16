@@ -3,12 +3,15 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { AMAP_KEY, loadAMap } from '../../lib/amap';
 import { formatDistance } from '@zhitu/shared';
 import { getRouteForecast } from '../../services/routeForecastService';
-import { hasSegmentContent, resolveRouteLocations, type PlannedRoute, type SegmentData } from '../../services/routePlanningService';
+import { hasSegmentContent, resolveRouteLocations, planAmapRoute, planTransitCandidates, type PlannedRoute, type SegmentData } from '../../services/routePlanningService';
 import type { RouteForecastPoint, TravelMode as ForecastMode } from '../../types/routeForecast';
 import { calculateRouteScore, recommendBestRoute, generateRecommendationReason, generateDepartureAdvice } from '../../utils/routeRecommendation';
 import { isValidDepartureAt, labelForDepartureAt, computeDepartureState, saveDepartureState } from '../../utils/departureTime';
 import RouteForecastPanel from '../../components/travel/RouteForecastPanel';
 import TravelModeSelector, { normalizeTravelMode, type RouteTravelMode, type TravelModeOption } from '../../components/travel/TravelModeSelector';
+import AccessibleRouteCard from '../../components/travel/AccessibleRouteCard';
+import { buildAccessibleOptions, type AccessibleRouteOption } from '../../services/accessibilityService';
+import { getFacilityForStation } from '../../data/accessibilityFacilities';
 import { useAuthStore } from '../../stores/authStore';
 import { useTripStore } from '../../stores/tripStore';
 import { useTravelPlanStore } from '../../stores/travelPlanStore';
@@ -20,20 +23,6 @@ import styles from './Travel.module.css';
 
 /** 到达判定阈值：当前车辆与终点剩余距离 ≤ 50m 即视为到达（避免 GPS 误差导致永不触发） */
 const ARRIVAL_THRESHOLD_METERS = 50;
-
-/** 跨城公交距离硬门槛：起终点直线距离超过该值（km）判定为跨城/长途，城市公交不支持 */
-const CROSS_CITY_TRANSIT_KM = 100;
-
-/** 两坐标直线距离（km），Haversine 公式 */
-function haversineKm(a: [number, number], b: [number, number]): number {
-  const R = 6371;
-  const dLat = ((b[1] - a[1]) * Math.PI) / 180;
-  const dLng = ((b[0] - a[0]) * Math.PI) / 180;
-  const la1 = (a[1] * Math.PI) / 180;
-  const la2 = (b[1] * Math.PI) / 180;
-  const h = Math.sin(dLat / 2) ** 2 + Math.cos(la1) * Math.cos(la2) * Math.sin(dLng / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(h));
-}
 
 // ===== 统一路线类型 =====
 type TravelMode = RouteTravelMode;
@@ -86,23 +75,6 @@ function getTransportLabel(type?: string): string {
   if (['drive', 'driving'].includes(key)) return '驾车';
   if (['bike', 'cycling', 'riding', 'bicycle'].includes(key)) return '骑行';
   return '';
-}
-
-function inferTransitType(value: unknown, name = ''): 'bus' | 'metro' {
-  const raw = `${String(value ?? '')} ${name}`.toLowerCase();
-  return ['subway', 'metro', 'railway', 'rail', 'tram', 'train', '地铁', '轻轨', '有轨'].some(key => raw.includes(key))
-    ? 'metro'
-    : 'bus';
-}
-
-function withTimeout<T>(promise: Promise<T>, label: string, timeoutMs = 15000): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const timer = window.setTimeout(() => reject(new Error(`${label} timeout`)), timeoutMs);
-    promise.then(
-      value => { window.clearTimeout(timer); resolve(value); },
-      error => { window.clearTimeout(timer); reject(error); },
-    );
-  });
 }
 
 const RouteResultPage: React.FC = () => {
@@ -168,6 +140,14 @@ const RouteResultPage: React.FC = () => {
   const [departureAdvice, setDepartureAdvice] = useState('');
   const [compareOpen, setCompareOpen] = useState(false);
 
+  // 无障碍出行：从高德真实多方案中按无障碍目标重排出的候选
+  const [accessibleOptions, setAccessibleOptions] = useState<AccessibleRouteOption[]>([]);
+  const [accessibleSelectedId, setAccessibleSelectedId] = useState<'accessible' | 'fastest' | 'least-walk' | null>(null);
+  const [accessibleUnavailableNote, setAccessibleUnavailableNote] = useState('');
+  // 无障碍模式派生状态（须在组件顶部、所有 effect 依赖数组之前定义，避免 TDZ）
+  const accessibleActive = selectedDisplayMode === 'accessible';
+  const accessibleSelected = accessibleOptions.find(o => o.id === accessibleSelectedId) || accessibleOptions[0] || null;
+
   // 导航状态
   const [navActive, setNavActive] = useState(false);
   const [navMode, setNavMode] = useState<TravelMode | null>(null);
@@ -205,6 +185,8 @@ const RouteResultPage: React.FC = () => {
   const routeRequestIdRef = useRef(0);
   const [mapReady, setMapReady] = useState(false);
   const [mapError, setMapError] = useState('');
+  // 无障碍设施标记（♿/🛗/⚠️），仅无障碍模式绘制，进入导航时清除
+  const accessibleMarkersRef = useRef<any[]>([]);
 
   // ===== 解析起终点：标题、Marker、路线规划和导航共用这一对坐标 =====
   useEffect(() => {
@@ -260,234 +242,61 @@ const RouteResultPage: React.FC = () => {
       .then(r => r.json())
       .then(d => { if (d.data) setCardData(Array.isArray(d.data) ? d.data : [d.data]); });
 
-    // 真实 AMap 三路规划
-    withTimeout(loadAMap(), 'AMap load').then((AMap: any) => {
-      const s = startCoord.current;
-      const e = endCoord.current;
-      if (!s || !e) throw new Error('起点或终点坐标无效');
-      const startLngLat = new AMap.LngLat(s[0], s[1]);
-      const endLngLat = new AMap.LngLat(e[0], e[1]);
+    // 真实 AMap 规划：统一走 routePlanningService（唯一实现），不再在结果页重复维护 planner
+    const s = startCoord.current;
+    const e = endCoord.current;
+    if (!s || !e) { setIsPlanning(false); return; }
 
-      // --- 驾车 ---
-      const planDrive = (): Promise<PlannedRoute> => withTimeout(new Promise((resolve, reject) => {
-        AMap.plugin(['AMap.Driving'], () => {
-          const drv = new AMap.Driving({ policy: AMap.DrivingPolicy.LEAST_TIME });
-          drv.search(startLngLat, endLngLat, (status: string, result: any) => {
-            if (status === 'complete' && result.routes?.length) {
-              const r = result.routes[0];
-              resolve({
-                mode: 'drive', distance: r.distance, duration: r.time,
-                path: extractRoutePath(r),
-                polyline: extractRoutePath(r),
-                congestionSegments: [{ level: 'slow', ratio: 0.3 }, { level: 'free', ratio: 0.7 }],
-                aiAdvice: '建议避开长安街东段，走三环辅路可节省约8分钟',
-              });
-            } else {
-              console.warn('Driving route failed:', result.info);
-              reject(new Error(result.info || '驾车路线规划失败'));
-            }
-          });
-        });
-      }), 'Driving route');
-
-      // --- 公交 ---
-      const planTransit = (): Promise<PlannedRoute> => withTimeout(new Promise((resolve, reject) => {
-        AMap.plugin(['AMap.Transfer'], () => {
-          const transfer = new AMap.Transfer({
-            policy: AMap.TransferPolicy.LEAST_TIME,
-            city: '北京',
-            nightflag: false,
-          });
-          transfer.search(startLngLat, endLngLat, (status: string, result: any) => {
-            if (status === 'complete' && result.plans?.length) {
-              const plan = result.plans[0];
-              // 提取各段路径和换乘信息（按高德真实 segment 结构解析：
-              //   walking / bus.buslines / railway / transit，兼容多种字段别名）
-              const segs: SegmentData[] = [];
-              const paths: [number, number][] = [];
-              plan.segments.forEach((seg: any) => {
-                // 1) 步行段
-                if (seg.walking) {
-                  segs.push({ type: 'walk', instruction: `步行 ${formatDistance(seg.walking.distance || 0)}`, duration: seg.walking.duration });
-                  if (Array.isArray(seg.walking.path)) paths.push(...seg.walking.path);
-                  return;
-                }
-                // 2) 公交/地铁段（高德 Transfer 实际结构：seg.bus.buslines[] 候选线路）
-                if (seg.bus?.buslines?.length) {
-                  // 只取主选线路 buslines[0]，不要把所有候选线路都渲染
-                  const line = seg.bus.buslines[0];
-                  const lineName = String(line.name || line.lineName || line.route || '').trim();
-                  const segment: SegmentData = {
-                    type: inferTransitType(line.type || line.lineType || seg.bus.type, lineName),
-                    lineName,
-                    fromStation: line.departure_stop?.name || line.departureStop?.name || line.startStation?.name || '',
-                    toStation: line.arrival_stop?.name || line.arrivalStop?.name || line.endStation?.name || '',
-                    stationCount: line.station_count || line.stationCount,
-                    duration: seg.bus.duration || line.duration,
-                  };
-                  if (hasSegmentContent(segment)) segs.push(segment);
-                  if (Array.isArray(line.path)) paths.push(...line.path);
-                  else if (Array.isArray(seg.bus.path)) paths.push(...seg.bus.path);
-                  return;
-                }
-                // 3) 铁路 / 轨道交通段
-                if (seg.railway) {
-                  const rw = seg.railway;
-                  const segment: SegmentData = {
-                    type: 'metro',
-                    lineName: rw.name || rw.lineName || '轨道交通',
-                    fromStation: rw.departure_stop?.name || rw.startStation?.name || '',
-                    toStation: rw.arrival_stop?.name || rw.endStation?.name || '',
-                    stationCount: rw.station_count || rw.stationCount,
-                    duration: rw.duration,
-                  };
-                  if (hasSegmentContent(segment)) segs.push(segment);
-                  if (Array.isArray(rw.path)) paths.push(...rw.path);
-                  return;
-                }
-                // 4) 兜底：旧版 transit 结构 / 纯指令段
-                if (seg.transit) {
-                  const t = seg.transit;
-                  const lineName = String(t.name || t.line || t.route || t.transitName || '').trim();
-                  const segment: SegmentData = {
-                    type: inferTransitType(t.type || t.transitType, lineName),
-                    lineName,
-                    fromStation: (t.departureStop || t.startStation || t.onStation)?.name || '',
-                    toStation: (t.arrivalStop || t.endStation || t.offStation)?.name || '',
-                    stationCount: t.stationCount,
-                    duration: seg.transit.duration,
-                  };
-                  if (hasSegmentContent(segment)) segs.push(segment);
-                  if (seg.transit.path) paths.push(...seg.transit.path);
-                  return;
-                }
-                // 5) 纯指令段兜底
-                if (seg.instruction) {
-                  const text = String(seg.instruction.text || seg.instruction.instruction || '').trim();
-                  if (text) segs.push({ type: text.includes('步行') ? 'walk' : 'bus', instruction: text, duration: 0 });
-                }
-              });
-              // 只有高德返回了真实路径才视为成功；无路径不补模拟路线（按需求隐藏该方案）
-              if (!paths.length) {
-                console.warn('Transit route has no path segments');
-                reject(new Error('公交路线无路径数据'));
-                return;
-              }
-              resolve({
-                mode: 'bus', distance: plan.distance || 9200,
-                duration: plan.time, path: paths,
-                polyline: paths,
-                segments: segs, cost: plan.cost || 5,
-              });
-            } else {
-              console.warn('Transit route failed:', result.info);
-              reject(new Error(result.info || '公交路线规划失败'));
-            }
-          });
-        });
-      }), 'Transit route');
-
-      // --- 骑行 ---
-      const planRiding = (): Promise<PlannedRoute> => withTimeout(new Promise((resolve, reject) => {
-        AMap.plugin(['AMap.Riding'], () => {
-          const riding = new AMap.Riding({});
-          riding.search(startLngLat, endLngLat, (status: string, result: any) => {
-            if (status === 'complete' && result.routes?.length) {
-              const r = result.routes[0];
-              resolve({
-                mode: 'bike', distance: r.distance, duration: r.time,
-                path: extractRoutePath(r),
-                polyline: extractRoutePath(r),
-                calories: Math.round(r.distance / 1000 * 30),
-              });
-            } else {
-              console.warn('Riding route failed:', result.info);
-              reject(new Error(result.info || '骑行路线规划失败'));
-            }
-          });
-        });
-      }), 'Riding route');
-
-      // --- 步行（独立规划，不复用公交/驾车） ---
-      const planWalking = (): Promise<PlannedRoute> => withTimeout(new Promise((resolve, reject) => {
-        AMap.plugin(['AMap.Walking'], () => {
-          const walking = new AMap.Walking({});
-          walking.search(startLngLat, endLngLat, (status: string, result: any) => {
-            if (status === 'complete' && result.routes?.length) {
-              const r = result.routes[0];
-              resolve({
-                mode: 'walk', distance: r.distance, duration: r.time,
-                path: extractRoutePath(r),
-                polyline: extractRoutePath(r),
-                calories: Math.round(r.distance / 1000 * 45),
-              });
-            } else {
-              console.warn('Walking route failed:', result.info);
-              reject(new Error(result.info || '步行路线规划失败'));
-            }
-          });
-        });
-      }), 'Walking route');
-
-      const plannerByMode: Record<TravelMode, () => Promise<PlannedRoute>> = {
-        drive: planDrive,
-        bus: planTransit,
-        bike: planRiding,
-        walk: planWalking,
-      };
-
-      // 公交/地铁：调用前先判断同城（city/adcode 可用时提前拦截，不调高德公交接口）
-      if (selectedMode === 'bus') {
-        const transitCheck = isTransitSupported(
-          useTravelLocationStore.getState().origin,
-          useTravelPlanStore.getState().destination,
-        );
-        if (!transitCheck.supported) {
-          setRouteResults({});
-          setUnavailableNote(transitCheck.message || '🚌 暂不支持跨城市公交/地铁规划。');
-          setIsPlanning(false);
-          return;
-        }
-        // 距离硬门槛（不依赖高德返回结构、不依赖 city 数据）：起终点直线距离过远 → 判定跨城/长途
-        const s = startCoord.current;
-        const e = endCoord.current;
-        if (s && e && haversineKm(s, e) > CROSS_CITY_TRANSIT_KM) {
-          setRouteResults({});
-          setUnavailableNote('🚌 当前起终点不在同一城市，暂不支持跨城市公交/地铁联程规划。');
-          setIsPlanning(false);
-          return;
-        }
+    // 公交/地铁：调用前先判断同城（city/adcode 可用时提前拦截，不调高德公交接口）
+    if (selectedMode === 'bus') {
+      const transitCheck = isTransitSupported(
+        useTravelLocationStore.getState().origin,
+        useTravelPlanStore.getState().destination,
+      );
+      if (!transitCheck.supported) {
+        setRouteResults({});
+        setUnavailableNote(transitCheck.message || '🚌 暂不支持跨城市公交/地铁规划。');
+        setIsPlanning(false);
+        return;
       }
+    }
 
-      plannerByMode[selectedMode]()
-        .then((route) => {
-          if (requestId !== routeRequestIdRef.current) return;
-          setRouteResults({ [route.mode]: route });
-          setUnavailableNote('');
-          setIsPlanning(false);
-        })
-        .catch((error) => {
-          if (requestId !== routeRequestIdRef.current) return;
-          console.error(`${selectedMode} 规划失败（不展示该方案）:`, error);
-          setRouteResults({});
-          const msg = error instanceof Error ? error.message : '';
-          if (selectedMode === 'bus' && msg.includes('CROSS_CITY_TRANSIT_UNSUPPORTED')) {
-            setUnavailableNote('🚌 当前起终点不在同一城市，暂不支持跨城市公交/地铁联程规划。');
-          } else if (selectedMode === 'bus' && msg.includes('transit-no-valid-segment')) {
-            setUnavailableNote('🚌 暂无可用公交/地铁方案。');
-          } else {
-            setUnavailableNote(`该起终点暂无可用${MODE_META[selectedMode].label}路线`);
-          }
-          setIsPlanning(false);
-        });
-    }).catch((e) => {
-      if (requestId !== routeRequestIdRef.current) return;
-      console.error('AMap load failed:', e);
-      setMapError('地图加载失败，请检查高德 Key / 安全密钥 / 域名白名单');
-      setRouteResults({});
-      setIsPlanning(false);
-    });
-  }, [origin, destination, waypoints, originCoords, locationsReady, selectedMode]);
+    // 无障碍出行：取全部真实公交候选 → 按无障碍目标重排（无障碍推荐/时间较短/移动较少）
+    const planSelected = async (): Promise<PlannedRoute> => {
+      if (selectedMode === 'bus' && selectedDisplayMode === 'accessible') {
+        const candidates = await planTransitCandidates(s, e);
+        const accessible = buildAccessibleOptions(candidates);
+        setAccessibleOptions(accessible);
+        setAccessibleUnavailableNote(accessible.length ? '' : '');
+        if (accessible.length === 0) throw new Error('transit-no-valid-segment');
+        setAccessibleSelectedId(accessible[0].id);
+        return accessible[0].route;
+      }
+      return planAmapRoute(selectedMode, s, e);
+    };
+
+    planSelected()
+      .then((route) => {
+        if (requestId !== routeRequestIdRef.current) return;
+        setRouteResults({ [route.mode]: route });
+        setUnavailableNote('');
+        setIsPlanning(false);
+      })
+      .catch((error) => {
+        if (requestId !== routeRequestIdRef.current) return;
+        console.error(`${selectedMode} 规划失败（不展示该方案）:`, error);
+        setRouteResults({});
+        const msg = error instanceof Error ? error.message : '';
+        if (selectedMode === 'bus' && msg.includes('CROSS_CITY_TRANSIT_UNSUPPORTED')) {
+          setUnavailableNote('🚌 当前起终点不在同一城市，暂不支持跨城市公交/地铁联程规划。');
+        } else if (selectedMode === 'bus' && msg.includes('transit-no-valid-segment')) {
+          setUnavailableNote('🚌 暂无可用公交/地铁方案。');
+        } else {
+          setUnavailableNote(`该起终点暂无可用${MODE_META[selectedMode].label}路线`);
+        }
+        setIsPlanning(false);
+      });
+  }, [origin, destination, waypoints, originCoords, locationsReady, selectedMode, selectedDisplayMode]);
 
   // ===== 规划完成后加载每条成功路线的未来拥堵预测（模拟 Service） =====
   useEffect(() => {
@@ -636,6 +445,50 @@ const RouteResultPage: React.FC = () => {
     }
   }, [selectedMode, routeResults, mapReady, navActive]);
 
+  // ===== 无障碍模式：绘制 ♿/🛗/⚠️ 设施节点标记（复用唯一地图） =====
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    const AMap = (window as any).AMap;
+    if (!AMap) return;
+
+    // 清除旧标记
+    accessibleMarkersRef.current.forEach(m => { try { map.remove(m); } catch { /* ignore */ } });
+    accessibleMarkersRef.current = [];
+
+    if (!accessibleActive || !accessibleSelected || !accessibleSelected.route.path?.length || navActive) return;
+
+    // 途经站点的无障碍设施 → 标记
+    const stationNames = accessibleSelected.metrics.stationNames;
+    stationNames.forEach(name => {
+      const facility = getFacilityForStation(name);
+      if (!facility) return;
+      const best = facility.entrances.slice().sort((a, b) =>
+        Number(b.wheelchairAccessible && b.elevator) - Number(a.wheelchairAccessible && a.elevator) ||
+        Number(b.wheelchairAccessible) - Number(a.wheelchairAccessible) ||
+        Number(b.ramp) - Number(a.ramp),
+      )[0];
+      const isObstacle = best?.stairsOnly || best?.status === 'obstacle';
+      const hasElevator = best?.elevator;
+      const emoji = isObstacle ? '⚠️' : hasElevator ? '🛗' : '♿';
+      const color = isObstacle ? '#f5222d' : hasElevator ? '#13c2c2' : '#722ed1';
+      const marker = new AMap.Marker({
+        position: [facility.lng, facility.lat],
+        content: `<div style="width:30px;height:30px;border-radius:50%;background:${color};border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;font-size:15px;">${emoji}</div>`,
+        offset: new AMap.Pixel(-15, -15),
+        title: `${facility.stationName} · ${best?.name || ''}${best?.elevator ? ' 电梯' : ''}${best?.status === 'verified' ? ' · 已确认' : best?.status === 'unknown' ? ' · 待确认' : ' · 存在障碍'}`,
+      });
+      marker.on('click', () => {
+        new AMap.InfoWindow({
+          content: `<div style="padding:10px 12px;font-size:13px;min-width:180px"><b>♿ ${facility.stationName}</b><br/>${facility.entrances.map(e => `${e.name} ${e.elevator ? '🛗' : ''}${e.ramp ? '↗️' : ''}${e.stairsOnly ? '⚠️楼梯' : '♿'} ${e.status === 'verified' ? '🟢已确认' : e.status === 'unknown' ? '🟡待确认' : '🔴存在障碍'}`).join('<br/>')}</div>`,
+          offset: new AMap.Pixel(0, -30),
+        }).open(map, [facility.lng, facility.lat]);
+      });
+      map.add(marker);
+      accessibleMarkersRef.current.push(marker);
+    });
+  }, [accessibleActive, accessibleSelected, accessibleSelectedId, mapReady, navActive]);
+
   // ===== 导航模式：复用唯一地图，只切换视角 + 车辆 Marker =====
   useEffect(() => {
     if (!navActive || !navMode) return;
@@ -667,12 +520,13 @@ const RouteResultPage: React.FC = () => {
     if (!AMap) return;
 
     // 创建唯一车辆 Marker
-    const modeIcon = MODE_META[navMode].icon;
+    const modeIcon = accessibleActive ? '♿' : MODE_META[navMode].icon;
+    const markerColor = accessibleActive ? '#722ed1' : MODE_META[navMode].color;
     const carMarker = new AMap.Marker({
       position: resolvedStart, anchor: 'center',
       icon: new AMap.Icon({
         image: 'data:image/svg+xml,' + encodeURIComponent(
-          `<svg xmlns="http://www.w3.org/2000/svg" width="44" height="44"><circle cx="22" cy="22" r="20" fill="${MODE_META[navMode].color}" stroke="#fff" stroke-width="3"/><text x="22" y="29" text-anchor="middle" fill="#fff" font-size="20">${modeIcon}</text></svg>`
+          `<svg xmlns="http://www.w3.org/2000/svg" width="44" height="44"><circle cx="22" cy="22" r="20" fill="${markerColor}" stroke="#fff" stroke-width="3"/><text x="22" y="29" text-anchor="middle" fill="#fff" font-size="20">${modeIcon}</text></svg>`
         ),
         size: new AMap.Size(44, 44),
       }),
@@ -805,6 +659,10 @@ const RouteResultPage: React.FC = () => {
     const map = mapRef.current;
     if (map && carMarkerRef.current) { map.remove(carMarkerRef.current); }
     carMarkerRef.current = null;
+    if (map) {
+      accessibleMarkersRef.current.forEach(m => { try { map.remove(m); } catch { /* ignore */ } });
+    }
+    accessibleMarkersRef.current = [];
     movePathRef.current = [];
     pathIdxRef.current = 0;
     Object.values(routePolylineRefs.current).forEach(pl => { if (pl) pl.setOptions({ visible: true }); });
@@ -860,6 +718,61 @@ const RouteResultPage: React.FC = () => {
     setSelectedMode(normalizeTravelMode(mode));
   };
 
+  // ===== 无障碍出行：默认选中「无障碍推荐」方案，写入地图/导航数据 =====
+  useEffect(() => {
+    // 无障碍模式 + 有候选 + 尚未选中时：默认选「无障碍推荐」，并把该方案写入 routeResults.bus 供地图/导航使用
+    if (!accessibleActive || !accessibleOptions.length || accessibleSelectedId) return;
+    const first = accessibleOptions[0];
+    if (!first) return;
+    setAccessibleSelectedId(first.id);
+    setRouteResults(prev => prev?.bus ? prev : { ...prev, bus: first.route });
+  }, [accessibleActive, accessibleOptions, accessibleSelectedId]);
+
+  // 无障碍模式：切换候选方案时同步更新地图路线（复用 routeResults.bus）
+  const selectAccessibleOption = (option: AccessibleRouteOption) => {
+    setAccessibleSelectedId(option.id);
+    setRouteResults(prev => ({ ...prev, bus: option.route }));
+  };
+
+  // ===== 无障碍模式开始导航（复用现有 bus 导航逻辑，仅改文案/设施提示） =====
+  const startAccessibleNavigation = (option: AccessibleRouteOption) => {
+    // 硬性规则兜底：仅楼梯 → 不建议开始无障碍导航
+    if (option.metrics.stairsRiskCount > 0 && option.score.level === 'not_recommended') {
+      setNavRouteError('当前方案存在仅楼梯出入口，不建议轮椅用户选择，请更换方案。');
+      return;
+    }
+    setSelectedMode('bus');
+    setRouteResults(prev => ({ ...prev, bus: option.route }));
+    setNavMode('bus');
+    navStatusRef.current = 'navigating';
+    setNavStatus('navigating');
+    setNavActive(true);
+    hasCompletedTripRef.current = false;
+    setArrivedTrip(null);
+    if (isLoggedIn) {
+      const s = startCoord.current, e = endCoord.current;
+      if (s && e) {
+        const clientSessionId = typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : `nav_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+        void useTripStore.getState().startTrip({
+          clientSessionId,
+          mode: 'bus',
+          profile: 'accessible',
+          origin: { name: displayOrigin, address: displayOrigin, lng: s[0], lat: s[1] },
+          destination: { name: displayDest, address: displayDest, lng: e[0], lat: e[1] },
+          routeSnapshot: {
+            estimatedDistance: option.route.distance,
+            estimatedDuration: option.route.duration,
+            routeProvider: 'amap',
+            path: option.route.path,
+          },
+          dataSource: 'demo',
+        }).catch(() => undefined);
+      }
+    }
+  };
+
   // 只有高德规划成功的方案才展示
   const availableModes = VALID_MODES.filter(m => routeResults[m]);
   const displayedModes = routeResults[selectedMode] ? [selectedMode] : [];
@@ -909,7 +822,7 @@ const RouteResultPage: React.FC = () => {
       {/* 加载中（仅普通模式） */}
       {!navActive && isPlanning && (
         <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--text-hint)', background: '#fff', borderRadius: 12, marginBottom: 16 }}>
-          <div>{MODE_META[selectedMode].icon} 正在规划{MODE_META[selectedMode].label}路线...</div>
+          <div>{accessibleActive ? '♿ 正在规划无障碍路线...' : `${MODE_META[selectedMode].icon} 正在规划${MODE_META[selectedMode].label}路线...`}</div>
         </div>
       )}
 
@@ -932,7 +845,7 @@ const RouteResultPage: React.FC = () => {
           <div className={styles.navTopBar}>
             <span className={styles.navCloseBtn} onClick={handleCloseNav}>✕ 退出导航</span>
             <span className={styles.navModeTag}>
-              {navMode ? `${MODE_META[navMode].icon} ${MODE_META[navMode].label}` : ''}
+              {navMode ? (accessibleActive ? '♿ 无障碍出行' : `${MODE_META[navMode].icon} ${MODE_META[navMode].label}`) : ''}
             </span>
           </div>
           {navStatus === 'arrived' ? (
@@ -1004,7 +917,33 @@ const RouteResultPage: React.FC = () => {
       )}
 
       <div className={styles.optionScroll}>
-        {displayedModes.length === 0 ? (
+        {accessibleActive ? (
+          /* ===== 无障碍出行：多候选方案卡片 ===== */
+          isPlanning ? (
+            <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-hint)' }}>♿ 正在规划无障碍路线...</div>
+          ) : accessibleOptions.length === 0 ? (
+            <div>
+              <div style={{ textAlign: 'center', padding: 30, color: 'var(--text-hint)' }}>
+                {mapError ? `⚠️ ${mapError}` : '♿ 暂未找到完整无障碍路线'}
+              </div>
+              {!mapError && (
+                <div style={{ textAlign: 'center', fontSize: 13, color: 'var(--text-hint)', paddingBottom: 16 }}>
+                  当前候选路线均存在无障碍设施信息缺失或长距离移动路段
+                </div>
+              )}
+            </div>
+          ) : (
+            accessibleOptions.map(option => (
+              <AccessibleRouteCard
+                key={option.id}
+                option={option}
+                active={accessibleSelectedId === option.id}
+                onSelect={() => selectAccessibleOption(option)}
+                onStart={() => startAccessibleNavigation(option)}
+              />
+            ))
+          )
+        ) : displayedModes.length === 0 ? (
           <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-hint)' }}>
             {isPlanning ? '正在规划当前出行方式...' : mapError ? `⚠️ ${mapError}` : `该起终点暂无可用${MODE_META[selectedMode].label}路线`}
           </div>
@@ -1106,7 +1045,39 @@ const RouteResultPage: React.FC = () => {
       </div>
 
       {/* ===== 智能推荐 + 出发时间建议 ===== */}
-      {!navActive && !isPlanning && availableModes.length > 0 && recommendationId && (
+      {!navActive && !isPlanning && accessibleActive && accessibleOptions.length > 0 ? (
+        /* ===== 无障碍智能推荐 ===== */
+        <div className={styles.forecastSection} style={{ background: '#f9f0ff', border: '1px solid #efdbff' }}>
+          <div className={styles.forecastTitle}>
+            🧠 无障碍智能推荐
+            <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-hint)' }}>无障碍优化</span>
+          </div>
+          <div className={styles.forecastReason}>
+            ♿ 推荐方案：<b>无障碍出行</b>
+            <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 6 }}>
+              {(() => {
+                const recommended = accessibleOptions[0];
+                const fastest = accessibleOptions.find(o => o.id === 'fastest') || null;
+                if (!recommended) return '当前候选方案信息待确认。';
+                let text = `当前方案轮椅/步行移动约${Math.round(recommended.walkingDistance)}m，换乘 ${recommended.transferCount} 次。`;
+                if (fastest && fastest !== recommended) {
+                  const savedWalk = Math.max(0, fastest.walkingDistance - recommended.walkingDistance);
+                  const savedTransfer = Math.max(0, fastest.transferCount - recommended.transferCount);
+                  if (savedWalk > 0 || savedTransfer > 0) {
+                    text += `相比最短时间方案，减少${Math.round(savedWalk)}m 移动距离${savedTransfer > 0 ? `、${savedTransfer} 次换乘` : ''}。`;
+                  }
+                }
+                if (recommended.metrics.elevatorCoverage > 0) text += ' 🛗 途经站点优先选择设有电梯的出入口。';
+                if (recommended.metrics.unknownFacilityCount > 0) text += ' ⚠ 部分设施状态暂无实时信息，建议出发前确认。';
+                return text;
+              })()}
+            </div>
+          </div>
+          <div className={styles.departAdvice} style={{ marginTop: 8, fontSize: 13, color: '#722ed1' }}>
+            ♿ 无障碍优化 · 未接入官方实时设施数据，设施状态为演示数据
+          </div>
+        </div>
+      ) : !navActive && !isPlanning && availableModes.length > 0 && recommendationId ? (
         <div className={styles.forecastSection} style={{ background: '#f0f5ff', border: '1px solid #d6e4ff' }}>
           <div className={styles.forecastTitle}>
             🧠 智能路线推荐
@@ -1133,10 +1104,10 @@ const RouteResultPage: React.FC = () => {
             🕐 出发时间建议：{departureAdvice}
           </div>
         </div>
-      )}
+      ) : null}
 
-      {/* ===== 未来拥堵预测面板 ===== */}
-      {!navActive && !isPlanning && availableModes.length > 0 && (
+      {/* ===== 未来拥堵预测面板（无障碍模式不展示拥堵预测，优先展示无障碍信息） ===== */}
+      {!navActive && !isPlanning && !accessibleActive && availableModes.length > 0 && (
         <RouteForecastPanel
           forecast={forecasts[selectedMode] || []}
           loading={forecastLoading}
@@ -1197,21 +1168,6 @@ const RouteResultPage: React.FC = () => {
 };
 
 // ===== 工具函数 =====
-
-function extractRoutePath(route: any): [number, number][] {
-  if (Array.isArray(route?.path) && route.path.length) return route.path;
-  if (Array.isArray(route?.polyline) && route.polyline.length) return route.polyline;
-  const steps = Array.isArray(route?.steps)
-    ? route.steps
-    : route?.steps && typeof route.steps === 'object'
-      ? Object.values(route.steps)
-      : [];
-  return steps.flatMap((step: any) => {
-    if (Array.isArray(step?.path)) return step.path;
-    if (Array.isArray(step?.polyline)) return step.polyline;
-    return [];
-  });
-}
 
 function makeMarkerIcon(AMap: any, color: string, text: string, size: number) {
   return new AMap.Icon({

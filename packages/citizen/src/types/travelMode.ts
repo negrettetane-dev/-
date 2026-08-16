@@ -10,7 +10,7 @@ export const MODE_META: Record<TravelMode, { label: string; icon: string }> = {
   transit: { label: '公交地铁', icon: '🚌' },
   riding: { label: '骑行', icon: '🚲' },
   walking: { label: '步行', icon: '🚶' },
-  accessible: { label: '无障碍', icon: '♿' },
+  accessible: { label: '无障碍出行', icon: '♿' },
 };
 
 export function toLegacyRouteMode(mode: TravelMode): LegacyRouteMode {

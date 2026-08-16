@@ -18,6 +18,25 @@ const ModeAssistPanel: React.FC<{ mode: TravelModeOption }> = ({ mode }) => {
   if (mode === 'transit') return <section className={styles.panel}><h2>公交 / 地铁服务</h2><p className={styles.hint}>搜索线路、查看附近站点和实时换乘信息</p></section>;
   if (mode === 'driving') return <section className={styles.panel}><h2>驾车辅助服务</h2><AssistCard icon="🅿️" title="附近停车场" detail="查找目的地周边可用停车场" action="查看停车" onClick={() => navigate('/parking')} /><AssistCard icon="🚦" title="实时交通路况" detail="查看当前道路拥堵和交通事件" action="查看路况" onClick={() => navigate('/')} source="simulated" /></section>;
   if (mode === 'ev') return <section className={styles.panel}><h2>新能源辅助服务</h2><AssistCard icon="⚡" title="附近充电站" detail="充电枪状态为演示数据" action="查看充电" onClick={() => navigate('/charging/scan')} source="demo" /><AssistCard icon="🅿️" title="附近停车场" detail="停车后可继续充电" action="查看停车" onClick={() => navigate('/parking')} /></section>;
+  // 无障碍出行：底层基于公交/地铁，辅助面板引导查看公交线路，并明确设施数据边界
+  if (mode === 'accessible') return (
+    <section className={styles.panel}>
+      <h2>♿ 无障碍出行服务</h2>
+      <AssistCard
+        icon="🚌"
+        title="公交 / 地铁线路"
+        detail="无障碍出行基于公交地铁规划，可先查看下方线路"
+        action="查看线路"
+        onClick={() => navigate('/travel')}
+      />
+      <AssistCard
+        icon="🛗"
+        title="无障碍设施说明"
+        detail="结果页按无障碍目标推荐路线；当前设施数据为演示，未覆盖站点标为「待确认」"
+        source="demo"
+      />
+    </section>
+  );
   // 项目尚未接入无障碍设施数据时保持简洁，不用演示内容冒充真实能力。
   return null;
 };

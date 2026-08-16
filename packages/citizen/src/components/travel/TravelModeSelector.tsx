@@ -16,7 +16,7 @@ export const TRAVEL_MODE_OPTIONS: Array<{
   { key: 'transit', label: '公交地铁', icon: '🚌' },
   { key: 'riding', label: '骑行', icon: '🚲' },
   { key: 'walking', label: '步行', icon: '🚶' },
-  { key: 'accessible', label: '无障碍', icon: '♿' },
+  { key: 'accessible', label: '无障碍出行', icon: '♿' },
 ];
 
 export function normalizeTravelMode(mode: TravelModeOption): RouteTravelMode {

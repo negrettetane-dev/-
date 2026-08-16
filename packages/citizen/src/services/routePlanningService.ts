@@ -32,6 +32,23 @@ export interface PlannedRoute {
   error?: string;
 }
 
+export interface TransitCandidate {
+  plan: any;
+  route: PlannedRoute;
+  segments: SegmentData[];
+  walkingDistance: number;
+  transferCount: number;
+}
+
+export interface ParsedTransitPlan {
+  segments: SegmentData[];
+  path: [number, number][];
+  walkingDistance: number;
+  transferCount: number;
+  /** 含铁路/城际段（跨城/长途）：不能把铁路当城市公交，整体判为不可用方案 */
+  hasRailway: boolean;
+}
+
 const ROUTE_TIMEOUT_MS = 15000;
 
 const KNOWN_COORDS: Record<string, [number, number]> = {
@@ -94,15 +111,73 @@ function haversineKm(a: [number, number], b: [number, number]): number {
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
+// ===== 坐标归一化：兼容 [lng,lat] / AMap.LngLat / {lng,lat} / {longitude,latitude} =====
+
+function toLngLatTuple(point: any): [number, number] | null {
+  if (!point) return null;
+  // [lng, lat]
+  if (Array.isArray(point) && point.length >= 2) {
+    const lng = Number(point[0]);
+    const lat = Number(point[1]);
+    if (Number.isFinite(lng) && Number.isFinite(lat)) return [lng, lat];
+  }
+  // AMap.LngLat（getLng/getLat）
+  if (typeof point.getLng === 'function' && typeof point.getLat === 'function') {
+    const lng = Number(point.getLng());
+    const lat = Number(point.getLat());
+    if (Number.isFinite(lng) && Number.isFinite(lat)) return [lng, lat];
+  }
+  // { lng, lat }
+  const lng = Number(point.lng ?? point.longitude ?? point.location?.lng);
+  const lat = Number(point.lat ?? point.latitude ?? point.location?.lat);
+  if (Number.isFinite(lng) && Number.isFinite(lat)) return [lng, lat];
+  return null;
+}
+
+export function normalizePath(rawPath: any): [number, number][] {
+  if (!Array.isArray(rawPath)) return [];
+  return rawPath
+    .map(toLngLatTuple)
+    .filter((point): point is [number, number] => point !== null);
+}
+
+/**
+ * 从高德单条路线对象提取路径。
+ * 兼容结构（按优先级）：
+ *   route.path / route.polyline
+ *   route.steps[].path|polyline        —— 驾车 / 步行
+ *   route.rides[].path|polyline        —— 骑行（AMap.Riding）
+ */
 function extractRoutePath(route: any): [number, number][] {
-  if (Array.isArray(route?.path) && route.path.length) return route.path;
-  if (Array.isArray(route?.polyline) && route.polyline.length) return route.polyline;
+  const direct = normalizePath(route?.path);
+  if (direct.length) return direct;
+  const directPolyline = normalizePath(route?.polyline);
+  if (directPolyline.length) return directPolyline;
+
   const steps = Array.isArray(route?.steps)
     ? route.steps
     : route?.steps && typeof route.steps === 'object'
       ? Object.values(route.steps)
       : [];
-  return steps.flatMap((step: any) => step?.path || step?.polyline || []);
+  const stepPath: [number, number][] = [];
+  steps.forEach((step: any) => {
+    stepPath.push(...normalizePath(step?.path));
+    stepPath.push(...normalizePath(step?.polyline));
+  });
+  if (stepPath.length) return stepPath;
+
+  // 骑行：AMap.Riding 的 routes[0].rides[].path
+  const rides = Array.isArray(route?.rides)
+    ? route.rides
+    : route?.rides && typeof route.rides === 'object'
+      ? Object.values(route.rides)
+      : [];
+  const ridePath: [number, number][] = [];
+  rides.forEach((ride: any) => {
+    ridePath.push(...normalizePath(ride?.path));
+    ridePath.push(...normalizePath(ride?.polyline));
+  });
+  return ridePath;
 }
 
 export async function resolveRouteLocations(
@@ -139,6 +214,163 @@ export async function resolveRouteLocations(
   };
 }
 
+// ===== 公交/地铁：TransferPlan 解析（唯一实现，结果页复用） =====
+
+/**
+ * 解析高德单个 TransferPlan 为段列表 + 路径 + 基础统计。
+ * 兼容官方结构 segment.transit_mode + segment.transit（WalkDetails / TransitDetails.lines[]），
+ * 同时兼容旧字段 segment.walking / segment.bus.buslines / segment.railway / segment.transit。
+ * 路径优先使用 plan.path（高德返回的整条换乘方案完整路径）；无 plan.path 时才用分段路径兜底。
+ */
+export function parseTransitPlan(plan: any): ParsedTransitPlan {
+  const segments: SegmentData[] = [];
+  const planPath = normalizePath(plan?.path);
+  const mergedSegmentPath: [number, number][] = [];
+  let walkingDistance = 0;
+  let hasRailway = false;
+
+  const rawSegments = Array.isArray(plan?.segments) ? plan.segments : [];
+
+  rawSegments.forEach((segment: any) => {
+    const mode = String(segment?.transit_mode || segment?.transitMode || '').toUpperCase();
+    const instruction = segment?.instruction;
+
+    // --- 步行（WALK / segment.walking） ---
+    if (mode === 'WALK' || segment?.walking) {
+      const walk = segment?.walking || segment?.transit || {};
+      const dist = Number(walk.distance ?? segment?.distance ?? 0) || 0;
+      walkingDistance += dist;
+      const text = typeof instruction === 'object' ? instruction.text : instruction;
+      const item: SegmentData = {
+        type: 'walk',
+        instruction: text ? String(text) : `步行 ${formatDistance(dist)}`,
+        duration: Number(walk.duration ?? segment?.time ?? segment?.duration ?? 0),
+      };
+      if (hasSegmentContent(item) || item.instruction) segments.push(item);
+      mergedSegmentPath.push(...normalizePath(walk.path));
+      (Array.isArray(walk.steps) ? walk.steps : []).forEach((step: any) => {
+        mergedSegmentPath.push(...normalizePath(step?.path));
+      });
+      return;
+    }
+
+    // --- 公交 / 地铁（BUS / SUBWAY / METRO_RAIL / segment.bus / segment.transit） ---
+    if (mode === 'BUS' || mode === 'SUBWAY' || mode === 'METRO_RAIL' || segment?.bus?.buslines?.length || segment?.transit) {
+      const transit = segment?.transit || segment?.bus || {};
+      const line = Array.isArray(transit.lines) && transit.lines.length
+        ? transit.lines[0]
+        : segment?.bus?.buslines?.length
+          ? segment.bus.buslines[0]
+          : transit;
+      const lineName = String(line?.name || line?.lineName || line?.route || transit.name || transit.route || '').trim();
+      const rawType = line?.type || line?.lineType || transit.type || transit.transit_type || transit.transitType;
+      if (isRailwayLike(rawType, lineName)) hasRailway = true;
+      const isMetro = mode === 'SUBWAY' || mode === 'METRO_RAIL' || inferTransitType(rawType, lineName) === 'metro';
+      const item: SegmentData = {
+        type: isMetro ? 'metro' : 'bus',
+        lineName,
+        fromStation: line?.departure_stop?.name || line?.departureStop?.name || line?.startStation?.name || transit?.on_station?.name || transit?.onStation?.name || '',
+        toStation: line?.arrival_stop?.name || line?.arrivalStop?.name || line?.endStation?.name || transit?.off_station?.name || transit?.offStation?.name || '',
+        stationCount: line?.station_count ?? line?.stationCount ?? transit?.via_num ?? transit?.viaNum ?? 0,
+        duration: Number(segment?.time ?? segment?.duration ?? transit?.time ?? transit?.duration ?? 0),
+      };
+      if (hasSegmentContent(item)) segments.push(item);
+      const linePath = normalizePath(line?.path ?? line?.polyline ?? transit?.path ?? segment?.bus?.path);
+      if (linePath.length) mergedSegmentPath.push(...linePath);
+      (Array.isArray(transit.steps) ? transit.steps : []).forEach((step: any) => {
+        mergedSegmentPath.push(...normalizePath(step?.path));
+      });
+      return;
+    }
+
+    // --- 铁路段：标记跨城/长途，当前不支持城市公交联程，不转成地铁 ---
+    if (segment?.railway) {
+      hasRailway = true;
+      mergedSegmentPath.push(...normalizePath(segment.railway.path));
+      return;
+    }
+
+    // --- 纯指令段兜底 ---
+    if (instruction) {
+      const text = typeof instruction === 'object' ? String(instruction.text || instruction.instruction || '') : String(instruction || '');
+      if (text) {
+        const type: SegmentData['type'] = text.includes('步行') ? 'walk' : 'bus';
+        segments.push({ type, instruction: text, duration: 0 });
+      }
+    }
+  });
+
+  // 换乘次数 = 公交/地铁段数 - 1（至少 0）
+  const transitSegments = segments.filter(s => s.type === 'bus' || s.type === 'metro');
+  const transferCount = Math.max(0, transitSegments.length - 1);
+
+  // 路径：优先 plan.path（整条方案），否则用分段合并路径
+  const path = planPath.length ? planPath : mergedSegmentPath;
+
+  return { segments, path, walkingDistance, transferCount, hasRailway };
+}
+
+/**
+ * 公交/地铁规划：调用高德 Transfer，返回全部真实候选方案（供普通公交取第一个、无障碍取全部重排）。
+ * 跨城/长途硬门槛（不依赖高德返回结构）：
+ *   - 起终点直线距离 > 100km → 拒绝
+ *   - 任一方案含铁路/城际段（hasRailway）→ 该方案判定不可用，跳过
+ * 无任何有效方案时抛错，不返回空数组冒充成功。
+ */
+export async function planTransitCandidates(
+  start: [number, number],
+  end: [number, number],
+): Promise<TransitCandidate[]> {
+  if (haversineKm(start, end) > CROSS_CITY_TRANSIT_KM) {
+    throw new Error('CROSS_CITY_TRANSIT_UNSUPPORTED');
+  }
+  const AMap = await withTimeout(loadAMap(), 'AMap load');
+  const startLngLat = new AMap.LngLat(start[0], start[1]);
+  const endLngLat = new AMap.LngLat(end[0], end[1]);
+
+  const result = await withTimeout(new Promise<any>((resolve, reject) => {
+    AMap.plugin(['AMap.Transfer'], () => {
+      const transfer = new AMap.Transfer({ policy: AMap.TransferPolicy.LEAST_TIME, city: '北京', nightflag: false });
+      transfer.search(startLngLat, endLngLat, (status: string, data: any) => {
+        if (status !== 'complete' || !data?.plans?.length) {
+          reject(new Error(data?.info || '公交路线规划失败'));
+          return;
+        }
+        resolve(data);
+      });
+    });
+  }), 'Transit route');
+
+  const candidates: TransitCandidate[] = [];
+  (result.plans as any[]).forEach((plan: any) => {
+    const parsed = parseTransitPlan(plan);
+    // 含铁路/城际段：该方案不可用（不把铁路当城市公交）
+    if (parsed.hasRailway) return;
+    if (parsed.path.length < 2) return;
+    // 必须至少包含真实公交/地铁/步行段；纯驾车/直线/通用 path 不算公交方案
+    const hasValidSegment = parsed.segments.some(s => s.type === 'bus' || s.type === 'metro' || s.type === 'walk');
+    if (!hasValidSegment) return;
+    candidates.push({
+      plan,
+      segments: parsed.segments,
+      walkingDistance: parsed.walkingDistance,
+      transferCount: parsed.transferCount,
+      route: {
+        mode: 'bus',
+        distance: Number(plan.distance) || 9200,
+        duration: Number(plan.time) || 0,
+        path: parsed.path,
+        polyline: parsed.path,
+        segments: parsed.segments,
+        cost: Number(plan.cost) || 5,
+      },
+    });
+  });
+
+  if (!candidates.length) throw new Error('transit-no-valid-segment');
+  return candidates;
+}
+
 export async function planAmapRoute(
   mode: RouteTravelMode,
   start: [number, number],
@@ -168,79 +400,8 @@ export async function planAmapRoute(
   }
 
   if (mode === 'bus') {
-    // 距离硬门槛：起终点直线距离过远 → 跨城/长途，城市公交不支持（不依赖高德返回结构）
-    if (haversineKm(start, end) > CROSS_CITY_TRANSIT_KM) {
-      return Promise.reject(new Error('CROSS_CITY_TRANSIT_UNSUPPORTED'));
-    }
-    return withTimeout(new Promise((resolve, reject) => {
-      AMap.plugin(['AMap.Transfer'], () => {
-        const transfer = new AMap.Transfer({ policy: AMap.TransferPolicy.LEAST_TIME, city: '北京', nightflag: false });
-        transfer.search(startLngLat, endLngLat, (status: string, result: any) => {
-          if (status !== 'complete' || !result.plans?.length) {
-            reject(new Error(result.info || '公交路线规划失败'));
-            return;
-          }
-          const plan = result.plans[0];
-          const segments: SegmentData[] = [];
-          const paths: [number, number][] = [];
-          let hasRailway = false; // 铁路/城际/长途段标记：任何此类段都判定跨城/长途
-          plan.segments.forEach((segment: any) => {
-            if (segment.walking) {
-              segments.push({ type: 'walk', instruction: `步行 ${formatDistance(segment.walking.distance || 0)}`, duration: segment.walking.duration });
-              if (Array.isArray(segment.walking.path)) paths.push(...segment.walking.path);
-              return;
-            }
-            if (segment.bus?.buslines?.length) {
-              const line = segment.bus.buslines[0];
-              const lineName = String(line.name || line.lineName || line.route || '').trim();
-              if (isRailwayLike(line.type || line.lineType || segment.bus.type, lineName)) hasRailway = true;
-              const item: SegmentData = {
-                type: inferTransitType(line.type || line.lineType || segment.bus.type, lineName), lineName,
-                fromStation: line.departure_stop?.name || line.departureStop?.name || line.startStation?.name || '',
-                toStation: line.arrival_stop?.name || line.arrivalStop?.name || line.endStation?.name || '',
-                stationCount: line.station_count || line.stationCount, duration: segment.bus.duration || line.duration,
-              };
-              if (hasSegmentContent(item)) segments.push(item);
-              if (Array.isArray(line.path)) paths.push(...line.path);
-              else if (Array.isArray(segment.bus.path)) paths.push(...segment.bus.path);
-              return;
-            }
-            if (segment.railway) {
-              // 铁路段 = 跨城/长途，当前不支持城市公交联程，直接标记（不再转成 metro 冒充地铁）
-              hasRailway = true;
-              return;
-            }
-            if (segment.transit) {
-              const transit = segment.transit;
-              const lineName = String(transit.name || transit.line || transit.route || transit.transitName || '').trim();
-              if (isRailwayLike(transit.type || transit.transitType, lineName)) hasRailway = true;
-              const item: SegmentData = {
-                type: inferTransitType(transit.type || transit.transitType, lineName), lineName,
-                fromStation: (transit.departureStop || transit.startStation || transit.onStation)?.name || '',
-                toStation: (transit.arrivalStop || transit.endStation || transit.offStation)?.name || '',
-                stationCount: transit.stationCount, duration: transit.duration,
-              };
-              if (hasSegmentContent(item)) segments.push(item);
-              if (Array.isArray(transit.path)) paths.push(...transit.path);
-            }
-          });
-          if (!paths.length) { reject(new Error('公交路线无路径数据')); return; }
-          // ===== 公交段类型校验：只接受真实城市公共交通 =====
-          // 1) 含铁路/高铁/城际/动车/长途段 → 判定为跨城或长途，当前不支持
-          if (hasRailway) {
-            reject(new Error('CROSS_CITY_TRANSIT_UNSUPPORTED'));
-            return;
-          }
-          // 2) 必须至少包含一个公交/地铁/步行段；纯驾车/直线/通用 path 不算公交方案
-          const hasValidSegment = segments.some(s => s.type === 'bus' || s.type === 'metro' || s.type === 'walk');
-          if (!hasValidSegment) {
-            reject(new Error('transit-no-valid-segment'));
-            return;
-          }
-          resolve({ mode, distance: plan.distance || 9200, duration: plan.time, path: paths, polyline: paths, segments, cost: plan.cost || 5 });
-        });
-      });
-    }), 'Transit route');
+    const candidates = await planTransitCandidates(start, end);
+    return candidates[0].route;
   }
 
   const isBike = mode === 'bike';

@@ -1,0 +1,29 @@
+.card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 18px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+  cursor: pointer;
+  transition: all 0.25s;
+  border: 2px solid transparent;
+}
+.card:hover { box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1); }
+.cardActive { border-color: var(--primary); background: #fafcff; }
+
+.head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.role { font-size: 18px; font-weight: 700; }
+.level { font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 20px; white-space: nowrap; }
+
+.stats { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+.duration { font-size: 24px; font-weight: 800; color: var(--primary); }
+.distance { font-size: 14px; color: var(--text-secondary); }
+
+.metrics { display: flex; gap: 16px; font-size: 13px; color: var(--text-secondary); margin-bottom: 10px; flex-wrap: wrap; }
+
+.tags { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.tag { font-size: 13px; background: #f0f5ff; color: #1677ff; border: 1px solid #d6e4ff; border-radius: 8px; padding: 4px 10px; }
+
+.unknown { font-size: 12px; color: #ad6800; background: #fffbe6; border-radius: 8px; padding: 8px 10px; margin-bottom: 10px; }
+
+.navBtn { width: 100%; padding: 13px; background: #722ed1; color: #fff; border: none; border-radius: 10px; font-size: 15px; font-weight: 700; cursor: pointer; }
+.navBtn:hover { opacity: 0.9; }
