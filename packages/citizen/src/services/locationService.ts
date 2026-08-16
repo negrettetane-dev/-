@@ -3,6 +3,7 @@
 // 逆地理编码使用高德 Geocoder。
 
 import { loadAMap } from '../lib/amap';
+import type { UnifiedLocation } from '../stores/travelLocationStore';
 
 export interface LocatedPosition {
   lng: number;
@@ -81,6 +82,48 @@ export function reverseGeocode(lng: number, lat: number): Promise<string> {
       } else {
         reject(new Error('geocode-failed'));
       }
+    });
+  }));
+}
+
+/**
+ * 地点候选搜索：用高德 PlaceSearch 做真实 POI 搜索，返回多个候选（用于长辈模式选点）。
+ * 不用固定坐标表冒充真实搜索结果。
+ */
+export function searchLocationCandidates(
+  query: string,
+  opts: { city?: string; pageSize?: number } = {},
+): Promise<UnifiedLocation[]> {
+  const keyword = query.trim();
+  if (!keyword) return Promise.reject(new Error('empty-location'));
+  const city = opts.city || '北京';
+  const pageSize = opts.pageSize || 5;
+
+  return loadAMap().then((AMap: any) => new Promise<UnifiedLocation[]>((resolve, reject) => {
+    AMap.plugin(['AMap.PlaceSearch'], () => {
+      const placeSearch = new AMap.PlaceSearch({ city, pageSize, pageIndex: 1 });
+      placeSearch.search(keyword, (status: string, result: any) => {
+        const pois = result?.poiList?.pois;
+        if (status !== 'complete' || !Array.isArray(pois) || pois.length === 0) {
+          reject(new Error('location-not-found'));
+          return;
+        }
+        const list = pois
+          .map((p: any): UnifiedLocation | null => {
+            const lng = Number(p?.location?.lng);
+            const lat = Number(p?.location?.lat);
+            if (!isValidCoord(lng, lat)) return null;
+            return {
+              name: String(p.name || keyword),
+              address: String(p.address || p.pname + p.cityname + p.adname || ''),
+              lng,
+              lat,
+              source: 'poi-search',
+            };
+          })
+          .filter((item: UnifiedLocation | null): item is UnifiedLocation => item !== null);
+        resolve(list);
+      });
     });
   }));
 }

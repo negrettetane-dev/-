@@ -23,6 +23,7 @@ import MyTripsPage from './pages/profile/MyTripsPage';
 import TripDetailPage from './pages/profile/TripDetailPage';
 import MyReservationsPage from './pages/profile/MyReservationsPage';
 import ElderlyHomePage from './pages/elderly/ElderlyHomePage';
+import ElderlyNavigationPage from './pages/elderly/ElderlyNavigationPage';
 import LoginPage from './pages/auth/LoginPage';
 import RegisterPage from './pages/auth/RegisterPage';
 import QRCodePage from './pages/qrcode/QRCodePage';
@@ -83,6 +84,7 @@ const App: React.FC = () => {
       {isFullScreen ? (
         <Routes>
           <Route path="/elderly" element={<ElderlyHomePage />} />
+          <Route path="/elderly/navigation" element={<ElderlyNavigationPage />} />
         </Routes>
       ) : isAuthPage ? (
         <Routes>
