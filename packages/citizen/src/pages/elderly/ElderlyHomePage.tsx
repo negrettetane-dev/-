@@ -1,11 +1,13 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useElderly } from '../../App';
 import { useTravelLocationStore, type UnifiedLocation } from '../../stores/travelLocationStore';
 import { useTravelPlanStore } from '../../stores/travelPlanStore';
 import { useNavigationStore, type ElderlyDisplayMode, type ElderlyRouteMode } from '../../stores/navigationStore';
-import { searchLocationCandidates } from '../../services/locationService';
+import { searchLocationCandidates, reverseGeocodeDetail } from '../../services/locationService';
 import { planAmapRoute } from '../../services/routePlanningService';
+import { isTransitSupported } from '../../services/transitEligibility';
+import LocationPickerModal from '../movecar/LocationPickerModal';
 import styles from './Elderly.module.css';
 
 const DEFAULT_ELDERLY_MODE: ElderlyDisplayMode = 'transit';
@@ -28,24 +30,81 @@ function readMode(): ElderlyDisplayMode {
 const ElderlyHomePage: React.FC = () => {
   const navigate = useNavigate();
   const { disableElderlyMode } = useElderly();
+  const origin = useTravelLocationStore(s => s.origin);
   const [dest, setDest] = useState('');
   const [voiceActive, setVoiceActive] = useState(false);
   const [busResult, setBusResult] = useState<{name:string;arrival:number;crowding:string}[]>([]);
   const [sosOpen, setSosOpen] = useState(false);
   const [exitConfirm, setExitConfirm] = useState(false);
 
-  // 长辈导航：模式 + 状态机 + 候选
+  // 起点选择：更换弹窗 / 手动输入 / 地图选点
+  const [originPickerOpen, setOriginPickerOpen] = useState(false);
+  const [manualOriginMode, setManualOriginMode] = useState(false);
+  const [manualOriginText, setManualOriginText] = useState('');
+  const [mapPickerOpen, setMapPickerOpen] = useState(false);
+  const [originLocating, setOriginLocating] = useState(false);
+
+  // 导航状态机 + 候选
   const [displayMode, setDisplayMode] = useState<ElderlyDisplayMode>(readMode);
   const [status, setStatus] = useState<PlanStatus>('idle');
   const [statusText, setStatusText] = useState('');
   const [errorText, setErrorText] = useState('');
   const [candidates, setCandidates] = useState<UnifiedLocation[]>([]);
   const [pendingDest, setPendingDest] = useState('');
-  const [manualOriginOpen, setManualOriginOpen] = useState(false);
-  const [manualOrigin, setManualOrigin] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   const isBusy = status === 'locating' || status === 'resolving' || status === 'planning';
+  const originValid = origin.lng != null && origin.lat != null;
+
+  // 挂载时：无有效起点则尝试真实定位（不使用固定北京坐标兜底）
+  useEffect(() => {
+    const o = useTravelLocationStore.getState().origin;
+    if (!o.lng || !o.lat) {
+      setOriginLocating(true);
+      void useTravelLocationStore.getState().locate()
+        .catch(() => undefined)
+        .finally(() => setOriginLocating(false));
+    }
+  }, []);
+
+  const startLocate = () => {
+    setOriginLocating(true);
+    void useTravelLocationStore.getState().locate()
+      .catch(() => undefined)
+      .finally(() => setOriginLocating(false));
+  };
+
+  // 手动输入起点：真实候选搜索，选第一个，写入完整对象（含 city/adcode）
+  const confirmManualOrigin = async () => {
+    const text = manualOriginText.trim();
+    if (!text) return;
+    setOriginLocating(true);
+    let list: UnifiedLocation[] = [];
+    try { list = await searchLocationCandidates(text); } catch { list = []; }
+    setOriginLocating(false);
+    if (list.length === 0) {
+      setStatus('error');
+      setErrorText(`没有找到起点「${text}」，请换个名字试试`);
+      return;
+    }
+    useTravelLocationStore.getState().setOrigin(list[0]);
+    setManualOriginMode(false);
+    setManualOriginText('');
+    setErrorText('');
+  };
+
+  // 地图选点：坐标 + 逆地理补 city/adcode → 写入完整对象
+  const applyPickedOrigin = async (lng: number, lat: number, address: string) => {
+    const loc: UnifiedLocation = { name: '地图选点', address, lng, lat, source: 'map-select' };
+    try {
+      const detail = await reverseGeocodeDetail(lng, lat);
+      loc.address = detail.address || address;
+      loc.city = detail.city;
+      loc.adcode = detail.adcode;
+    } catch { /* 保留地址 */ }
+    useTravelLocationStore.getState().setOrigin(loc);
+    setErrorText('');
+  };
 
   // 语音输入：演示功能（明确标注），识别后仅填入目的地，不自动导航
   const handleVoiceInput = () => {
@@ -73,25 +132,16 @@ const ElderlyHomePage: React.FC = () => {
     const target = (destText ?? dest).trim();
     if (!target || isBusy) return;
     setErrorText('');
-    setStatus('locating');
-    setStatusText('正在获取您的位置…');
-    setSubmitting(true);
-
-    // 1. 定位：优先已有 origin，否则 locate()
-    let origin = useTravelLocationStore.getState().origin;
-    if (!origin.lng || !origin.lat) {
-      await useTravelLocationStore.getState().locate().catch(() => undefined);
-      origin = useTravelLocationStore.getState().origin; // 重新读，避免闭包旧状态
-    }
-    if (!origin.lng || !origin.lat) {
+    // 起点由「从哪里出发」卡片管理；无效则提示先选起点
+    const o = useTravelLocationStore.getState().origin;
+    if (!o.lng || !o.lat) {
       setStatus('error');
-      setErrorText('无法获取您的位置，请允许定位权限后重试');
-      setManualOriginOpen(true);
-      setSubmitting(false);
+      setErrorText('请先选择起点');
+      setOriginPickerOpen(true);
       return;
     }
 
-    // 2. 搜索目的地候选（真实高德 POI，不用固定坐标表）
+    // 搜索目的地候选（真实高德 POI，不用固定坐标表）
     setStatus('resolving');
     setStatusText('正在查找目的地…');
     let list: UnifiedLocation[] = [];
@@ -109,52 +159,35 @@ const ElderlyHomePage: React.FC = () => {
       setSubmitting(false);
       return;
     }
-    await startNavigation(origin, list[0]);
+    await startNavigation(o, list[0]);
   };
 
-  // 用户手动输入起点（定位失败时）：也走真实候选搜索
-  const handleManualOriginConfirm = async () => {
-    const text = manualOrigin.trim();
-    if (!text) return;
-    setStatus('locating');
-    setStatusText('正在确认起点…');
-    let list: UnifiedLocation[] = [];
-    try { list = await searchLocationCandidates(text); } catch { list = []; }
-    if (list.length === 0) {
-      setStatus('error');
-      setErrorText(`没有找到起点「${text}」`);
-      setSubmitting(false);
-      return;
-    }
-    const origin = list[0];
-    useTravelLocationStore.getState().setOrigin(origin);
-    setManualOriginOpen(false);
-    setManualOrigin('');
-    if (candidates.length > 0) {
-      await startNavigation(origin, candidates[0]);
-      setCandidates([]);
-    } else if (pendingDest) {
-      await handleElderlyNavigation(pendingDest);
-    }
-  };
-
-  // 3+4. 规划路线 → 写入 store → 进入长辈导航页
+  // 规划路线 → 写入 store → 进入长辈导航页
   const startNavigation = async (originLoc: UnifiedLocation, destLoc: UnifiedLocation) => {
     setCandidates([]);
     setPendingDest('');
-    // 坐标必须完整：缺坐标不规划，不伪造
+    // 起终点坐标必须完整：缺坐标不规划、不进入导航页
     if (originLoc.lng == null || originLoc.lat == null || destLoc.lng == null || destLoc.lat == null) {
       setStatus('error');
       setErrorText('起点或终点缺少位置信息，请重新选择');
       setSubmitting(false);
       return;
     }
+    // 公交：调用前先判断同城（city/adcode 可用时提前拦截）
+    const option = MODE_OPTIONS.find(m => m.key === displayMode) || MODE_OPTIONS[0];
+    if (option.route === 'bus') {
+      const transitCheck = isTransitSupported(originLoc, destLoc);
+      if (!transitCheck.supported) {
+        setStatus('error');
+        setErrorText(transitCheck.message || '当前起终点不在同一城市，暂不支持跨城市公交/地铁规划。');
+        setSubmitting(false);
+        return;
+      }
+    }
     setStatus('planning');
     setStatusText('正在规划路线…');
     try {
-      const option = MODE_OPTIONS.find(m => m.key === displayMode) || MODE_OPTIONS[0];
       const route = await planAmapRoute(option.route, [originLoc.lng, originLoc.lat], [destLoc.lng, destLoc.lat]);
-      // 路线必须真实有效：无 path 视为失败，不创建模拟路线
       if (!route || !Array.isArray(route.path) || route.path.length < 2) {
         throw new Error('route-empty');
       }
@@ -171,17 +204,17 @@ const ElderlyHomePage: React.FC = () => {
         createdAt: Date.now(),
       });
       navigate('/elderly/navigation');
-    } catch {
-      setStatus('error');
-      setErrorText('路线规划失败，请稍后重试');
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : '';
+      if (option.route === 'bus' && msg.includes('CROSS_CITY_TRANSIT_UNSUPPORTED')) {
+        setStatus('error');
+        setErrorText('当前起终点不在同一城市，暂不支持跨城市公交/地铁规划。');
+      } else {
+        setStatus('error');
+        setErrorText('路线规划失败，请稍后重试');
+      }
       setSubmitting(false);
     }
-  };
-
-  const retryLocate = () => {
-    setManualOriginOpen(false);
-    setSubmitting(false);
-    void handleElderlyNavigation(dest);
   };
 
   return (
@@ -193,7 +226,7 @@ const ElderlyHomePage: React.FC = () => {
         <button className={styles.exitBtn} onClick={() => setExitConfirm(true)} style={{ marginLeft: 'auto' }}>退出长辈模式</button>
       </div>
 
-      {/* 退出长辈模式确认弹窗（应用内弹窗，不用浏览器 confirm） */}
+      {/* 退出长辈模式确认弹窗 */}
       {exitConfirm && (
         <div className={styles.sosOverlay} onClick={() => setExitConfirm(false)}>
           <div className={styles.sosDialog} onClick={e => e.stopPropagation()}>
@@ -230,7 +263,7 @@ const ElderlyHomePage: React.FC = () => {
 
       {/* 3 Big Buttons */}
       <div className={styles.mainButtons}>
-        {/* 1. Where to go — 长辈导航入口 */}
+        {/* 1. 想去哪儿 — 长辈导航入口 */}
         <div className={styles.card}>
           <div className={styles.cardTitle}>1️⃣ 想去哪儿</div>
 
@@ -246,6 +279,64 @@ const ElderlyHomePage: React.FC = () => {
             ))}
           </div>
 
+          {/* 📍 从哪里出发：真实起点选择（默认定位，支持更换/手动/地图选点） */}
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>📍 从哪里出发</div>
+            {originValid ? (
+              <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontSize: 20, fontWeight: 700 }}>📍 {origin.name || '我的位置'}</div>
+                  <div style={{ fontSize: 15, color:'var(--text-secondary)' }}>{origin.address || ''}</div>
+                </div>
+                <button type="button" className={styles.btn} style={{ width:'auto', padding:'10px 18px' }} onClick={() => setOriginPickerOpen(true)}>更换</button>
+              </div>
+            ) : (
+              <div>
+                <div style={{ fontSize: 16, color:'var(--text-secondary)' }}>{originLocating ? '正在获取您的位置…' : '没有获取到您的位置'}</div>
+                <div style={{ display:'flex', gap:10, marginTop:10 }}>
+                  <button type="button" className={styles.btn} style={{ width:'auto', padding:'10px 18px' }} onClick={startLocate}>重新定位</button>
+                  <button type="button" className={styles.btn} style={{ width:'auto', padding:'10px 18px' }} onClick={() => setOriginPickerOpen(true)}>选择起点</button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 手动输入起点（更换弹窗选择「输入其他位置」后显示大字号输入框） */}
+          {manualOriginMode && (
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 16, marginBottom: 8 }}>输入起点位置：</div>
+              <input className={styles.input} placeholder="如：北京市西单" value={manualOriginText} onChange={e=>setManualOriginText(e.target.value)} />
+              <button type="button" className={styles.btn} style={{ marginTop: 8 }} disabled={originLocating} onClick={() => void confirmManualOrigin()}>
+                {originLocating ? '正在查找…' : '确定起点'}
+              </button>
+            </div>
+          )}
+
+          {/* 更换起点弹窗（长辈友好大按钮） */}
+          {originPickerOpen && (
+            <div className={styles.sosOverlay} onClick={() => setOriginPickerOpen(false)}>
+              <div className={styles.sosDialog} onClick={e => e.stopPropagation()}>
+                <div className={styles.sosTitle}>从哪里出发？</div>
+                <div className={styles.sosActions} style={{ display:'flex', flexDirection:'column', gap:10 }}>
+                  <button type="button" className={styles.btn} onClick={() => { setOriginPickerOpen(false); startLocate(); }}>📍 使用我的当前位置</button>
+                  <button type="button" className={styles.btn} onClick={() => { setOriginPickerOpen(false); setManualOriginMode(true); }}>⌨️ 输入其他位置</button>
+                  <button type="button" className={styles.btn} onClick={() => { setOriginPickerOpen(false); setMapPickerOpen(true); }}>🗺️ 地图选择位置</button>
+                  <button type="button" className={styles.sosClose} onClick={() => setOriginPickerOpen(false)}>取消</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 地图选点弹窗（复用 MoveCarPage 组件） */}
+          {mapPickerOpen && (
+            <LocationPickerModal
+              initial={originValid ? { lng: origin.lng!, lat: origin.lat!, address: origin.address, source: 'map' } : null}
+              onConfirm={(loc) => { setMapPickerOpen(false); void applyPickedOrigin(loc.lng, loc.lat, loc.address); }}
+              onCancel={() => setMapPickerOpen(false)}
+            />
+          )}
+
+          {/* 语音输入目的地 */}
           <div className={styles.voiceInput} onClick={handleVoiceInput}>
             <span style={{fontSize:32}}>🎤</span>
             <span>{voiceActive ? '正在聆听...' : '点击语音输入目的地'}</span>
@@ -253,22 +344,13 @@ const ElderlyHomePage: React.FC = () => {
           <div style={{fontSize:13,color:'#ad6800',marginTop:6}}>语音识别为演示功能，点击后示例填入目的地</div>
           <input className={styles.input} placeholder="输入目的地，如：天安门" value={dest} onChange={e=>setDest(e.target.value)} onKeyDown={e=>{ if(e.key==='Enter') void handleElderlyNavigation(); }}/>
           {dest && <button className={styles.btn} disabled={isBusy} onClick={()=>void handleElderlyNavigation()}>
-            {status === 'locating' ? '正在获取您的位置…' : status === 'resolving' ? '正在查找目的地…' : status === 'planning' ? '正在规划路线…' : '🚀 开始导航'}
+            {status === 'resolving' ? '正在查找目的地…' : status === 'planning' ? '正在规划路线…' : '🚀 开始导航'}
           </button>}
 
           {/* 状态提示 */}
           {status === 'error' && (
             <div style={{ marginTop:10, padding:10, background:'#fff1f0', color:'#f5222d', borderRadius:8, fontSize:15 }}>
               ⚠️ {errorText}
-              {manualOriginOpen && (
-                <div style={{ marginTop:8, display:'flex', gap:8 }}>
-                  <input className={styles.input} placeholder="手动输入起点" value={manualOrigin} onChange={e=>setManualOrigin(e.target.value)}/>
-                  <button className={styles.btn} style={{ width:'auto', padding:'0 16px' }} onClick={()=>void handleManualOriginConfirm()}>确定</button>
-                </div>
-              )}
-              {!manualOriginOpen && (
-                <button className={styles.btn} style={{ marginTop:8 }} onClick={retryLocate}>重新定位</button>
-              )}
             </div>
           )}
 
@@ -280,8 +362,8 @@ const ElderlyHomePage: React.FC = () => {
                 <button key={i} type="button" className={styles.btn}
                   style={{ marginBottom:8, textAlign:'left', fontSize:18 }}
                   onClick={() => {
-                    const origin = useTravelLocationStore.getState().origin;
-                    void startNavigation(origin, c);
+                    const o = useTravelLocationStore.getState().origin;
+                    void startNavigation(o, c);
                   }}>
                   {c.name}{c.address ? ` · ${c.address}` : ''}
                 </button>
@@ -290,7 +372,7 @@ const ElderlyHomePage: React.FC = () => {
           )}
         </div>
 
-        {/* 2. Bus arrival */}
+        {/* 2. 公交车到哪了 */}
         <div className={styles.card}>
           <div className={styles.cardTitle}>2️⃣ 公交车到哪了</div>
           <button className={styles.btn} onClick={handleBusQuery}>🚌 查询常用线路</button>
@@ -304,7 +386,7 @@ const ElderlyHomePage: React.FC = () => {
           ))}
         </div>
 
-        {/* 3. Report issue */}
+        {/* 3. 上报问题 */}
         <div className={styles.card}>
           <div className={styles.cardTitle}>3️⃣ 上报问题</div>
           <div style={{fontSize:28,textAlign:'center'}}>📷</div>
