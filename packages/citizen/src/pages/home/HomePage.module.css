@@ -81,13 +81,42 @@
 .featureDesc { font-size: 12px; color: var(--text-hint); line-height: 1.4; }
 .featureArrow { color: #ddd; font-size: 16px; }
 
-/* ===== 底部区块 ===== */
-.bottomSection { margin-top: 32px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.siteCard { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
-.sparkArea { margin-top: 12px; }
-.sparkline { display: flex; align-items: flex-end; gap: 4px; height: 90px; padding: 0 8px; }
+/* ===== 城市交通运行（24h 拥堵趋势 + 交通资讯） ===== */
+.trafficOverviewGrid { margin-top: 32px; display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 20px; align-items: start; }
+.congestionCard, .trafficNewsCard { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); height: auto; }
+
+/* 「模拟数据」Tag（不是链接样式） */
+.dataTag { padding: 4px 10px; border-radius: 999px; font-size: 12px; background: #fff7e6; color: #d46b08; }
+
+/* 拥堵柱状图 */
+.congestionChart { height: 180px; margin-top: 12px; display: flex; flex-direction: column; }
+.sparkline { display: flex; align-items: flex-end; gap: 4px; height: 132px; padding: 0 8px; }
 .sparkBar { flex: 1; border-radius: 3px 3px 0 0; min-width: 6px; transition: height 0.4s; }
 .sparkLabels { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-hint); margin-top: 6px; padding: 0 8px; }
+
+/* 拥堵关键指标（2×2） */
+.trafficSummaryGrid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-top: 20px; }
+.trafficSummaryItem { padding: 14px 16px; background: #f7f9fc; border-radius: 10px; }
+.trafficSummaryItem span { display: block; margin-bottom: 6px; font-size: 13px; color: #8c8c8c; }
+.trafficSummaryItem strong { font-size: 17px; color: #1f2533; }
+
+/* 智能出行建议 */
+.trafficSuggestion { display: flex; gap: 8px; align-items: flex-start; margin-top: 16px; padding: 12px 14px; border-radius: 10px; background: #f0f6ff; color: #4b5563; font-size: 13px; line-height: 1.6; }
+
+/* 右侧：实时路况 */
+.liveTrafficList { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.liveTrafficItem { display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: #fafbfc; border-radius: 10px; }
+.trafficDot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 10px; }
+.trafficDot.severe { background: #f5222d; }
+.trafficDot.congested { background: #fa8c16; }
+.trafficInfo { flex: 1; min-width: 0; }
+.trafficInfo strong { display: block; font-size: 14px; color: #1f2533; }
+.trafficInfo span { display: block; font-size: 12px; color: #8c8c8c; margin-top: 2px; }
+.trafficTime { font-size: 11px; color: var(--text-hint); flex-shrink: 0; }
+
+/* 「最新交通资讯」分隔标题 */
+.newsSectionTitle { display: flex; align-items: center; gap: 10px; margin: 18px 0 4px; font-size: 13px; font-weight: 600; color: #1f2533; }
+.newsSectionTitle div { flex: 1; height: 1px; background: #e5e7eb; }
 
 .newsList { display: flex; flex-direction: column; }
 .newsItem { padding: 12px 0; border-bottom: 1px solid #f5f5f5; cursor: pointer; transition: all 0.2s; }
@@ -102,10 +131,12 @@
   .heroLeft { width: 350px; }
   .alertFloat { width: 260px; }
 }
+@media (max-width: 900px) {
+  .trafficOverviewGrid { grid-template-columns: 1fr; }
+}
 @media (max-width: 768px) {
   .hero { height: 520px; }
   .heroLeft { width: calc(100% - 32px); }
   .alertFloat { display: none; }
-  .bottomSection { grid-template-columns: 1fr; }
   .heroModeSelector { left: 16px; right: 16px; width: auto; transform: none; }
 }

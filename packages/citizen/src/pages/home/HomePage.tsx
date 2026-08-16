@@ -16,6 +16,8 @@ import { useElderly } from '../../App';
 
 interface News { id:string; category:string; title:string; summary:string; source:string; publishTime:number }
 interface Snapshot { cityIndex:number; avgSpeed:number; congestedRoadCount:number; totalRoadCount:number; trend24h:{hour:number;index:number}[] }
+/** 实时路况（模拟数据）：来自 /traffic/congestion 的路段拥堵快照 */
+interface LiveRoad { id:string; name:string; direction:string; speed:number; congestionLevel:'free'|'slow'|'congested'|'blocked' }
 
 const HOME_NEWS_CATEGORY_PRIORITY = ['control', 'construction', 'metro', 'bus', 'holiday'];
 
@@ -44,6 +46,9 @@ const HomePage: React.FC = () => {
   const [newsFailed, setNewsFailed] = useState(false);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [snapshotFailed, setSnapshotFailed] = useState(false);
+  // 实时路况（模拟数据）：右侧顶部突出展示
+  const [liveRoads, setLiveRoads] = useState<LiveRoad[]>([]);
+  const [liveRoadsFailed, setLiveRoadsFailed] = useState(false);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [mapError, setMapError] = useState('');
   // 首页路线规划状态提示（避免「高亮按钮但地图没反应」的无反馈问题）
@@ -226,7 +231,48 @@ const HomePage: React.FC = () => {
         setSnapshotFailed(false);
       })
       .catch(() => { setSnapshot(null); setSnapshotFailed(true); });
+    // 实时路况（模拟数据）：取拥堵路段快照，右侧顶部突出展示前 2 条
+    apiGet<LiveRoad[]>('/traffic/congestion')
+      .then(data => {
+        const sorted = [...data].sort((a, b) => {
+          const rank = { blocked: 0, congested: 1, slow: 2, free: 3 } as Record<string, number>;
+          return (rank[a.congestionLevel] ?? 4) - (rank[b.congestionLevel] ?? 4);
+        });
+        setLiveRoads(sorted.filter(r => r.congestionLevel === 'blocked' || r.congestionLevel === 'congested').slice(0, 2));
+        setLiveRoadsFailed(false);
+      })
+      .catch(() => { setLiveRoads([]); setLiveRoadsFailed(true); });
   }, []);
+
+  // ===== 拥堵关键指标：由 trend24h 真实（模拟）数据推导，不硬编码 =====
+  const trafficSummary = useMemo(() => {
+    const trend = snapshot?.trend24h ?? [];
+    if (trend.length === 0) return null;
+    // 峰值指数
+    const peak = trend.reduce((max, p) => (p.index > max.index ? p : max), trend[0]);
+    // 平均指数
+    const avg = trend.reduce((sum, p) => sum + p.index, 0) / trend.length;
+    // 高峰时段：连续滑动窗口（4 小时）取平均最高的一段
+    const WINDOW = 4;
+    let bestPeak: { start: number; avg: number } | null = null;
+    for (let i = 0; i + WINDOW <= trend.length; i += 1) {
+      const windowAvg = trend.slice(i, i + WINDOW).reduce((s, p) => s + p.index, 0) / WINDOW;
+      if (!bestPeak || windowAvg > bestPeak.avg) bestPeak = { start: trend[i].hour, avg: windowAvg };
+    }
+    // 推荐时段：连续滑动窗口取平均最低的一段
+    let bestFree: { start: number; avg: number } | null = null;
+    for (let i = 0; i + WINDOW <= trend.length; i += 1) {
+      const windowAvg = trend.slice(i, i + WINDOW).reduce((s, p) => s + p.index, 0) / WINDOW;
+      if (!bestFree || windowAvg < bestFree.avg) bestFree = { start: trend[i].hour, avg: windowAvg };
+    }
+    const fmt = (h: number) => `${String(h).padStart(2, '0')}:00`;
+    return {
+      peakHour: `${fmt(bestPeak?.start ?? 0)}-${fmt((bestPeak?.start ?? 0) + WINDOW)}`,
+      peakIndex: peak.index.toFixed(1),
+      freeHour: `${fmt(bestFree?.start ?? 0)}-${fmt((bestFree?.start ?? 0) + WINDOW)}`,
+      avgIndex: avg.toFixed(1),
+    };
+  }, [snapshot]);
 
   // 今日交通资讯：publishTime 属于今天 → 优先首页相关分类（control/construction/metro/bus/holiday）→ 按时间倒序取最新 3 条
   const todayNews = useMemo(() => {
@@ -438,30 +484,64 @@ const HomePage: React.FC = () => {
         </div>
       </section>
 
-      {/* ===== 24h 拥堵趋势 + 交通资讯 ===== */}
-      <section className={styles.bottomSection}>
-        <div className={styles.siteCard}>
+      {/* ===== 城市交通运行：24h 拥堵趋势（42%）+ 交通资讯（58%） ===== */}
+      <section className={styles.trafficOverviewGrid}>
+        {/* 左：24小时拥堵趋势 */}
+        <div className={styles.congestionCard}>
           <div className={styles.sectionHead}>
             <h2 className={styles.sectionTitle}>📊 24小时拥堵趋势</h2>
-            <span className={styles.sectionMore}>模拟数据</span>
+            <span className={styles.dataTag}>模拟数据</span>
           </div>
           {snapshotFailed ? (
             <div className={styles.alertEmpty}>交通运行数据暂不可用</div>
           ) : snapshot ? (
-            <div className={styles.sparkArea}>
-              <div className={styles.sparkline}>
-                {snapshot.trend24h.map((p,i)=>(
-                  <div key={i} className={styles.sparkBar}
-                    style={{ height:`${Math.max(10,p.index*9)}px`, background: p.index>7?'#f5222d':p.index>5?'#ff7a00':p.index>3?'#fadb14':'#52c41a' }}
-                    title={`${p.hour}:00 指数${p.index}`}/>
-                ))}
+            <>
+              <div className={styles.congestionChart}>
+                <div className={styles.sparkline}>
+                  {snapshot.trend24h.map((p,i)=>(
+                    <div key={i} className={styles.sparkBar}
+                      style={{ height:`${Math.max(8,p.index*11)}px`, background: p.index>7?'#f5222d':p.index>5?'#ff7a00':p.index>3?'#fadb14':'#52c41a' }}
+                      title={`${p.hour}:00 指数${p.index}`}/>
+                  ))}
+                </div>
+                <div className={styles.sparkLabels}><span>0:00</span><span>6:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div>
               </div>
-              <div className={styles.sparkLabels}><span>0:00</span><span>6:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div>
-            </div>
+
+              {/* 关键结论（由 trend24h 推导，不硬编码） */}
+              {trafficSummary && (
+                <div className={styles.trafficSummaryGrid}>
+                  <div className={styles.trafficSummaryItem}>
+                    <span>今日高峰</span>
+                    <strong>{trafficSummary.peakHour}</strong>
+                  </div>
+                  <div className={styles.trafficSummaryItem}>
+                    <span>峰值拥堵指数</span>
+                    <strong>{trafficSummary.peakIndex}</strong>
+                  </div>
+                  <div className={styles.trafficSummaryItem}>
+                    <span>推荐出行时段</span>
+                    <strong>{trafficSummary.freeHour}</strong>
+                  </div>
+                  <div className={styles.trafficSummaryItem}>
+                    <span>平均拥堵指数</span>
+                    <strong>{trafficSummary.avgIndex}</strong>
+                  </div>
+                </div>
+              )}
+
+              {/* 智能出行建议 */}
+              <div className={styles.trafficSuggestion}>
+                <span>💡</span>
+                <span>
+                  今日预计存在早晚拥堵高峰，建议优先在 <strong>{trafficSummary?.freeHour ?? '10:00-16:00'}</strong> 出行。
+                </span>
+              </div>
+            </>
           ) : null}
         </div>
 
-        <div className={styles.siteCard}>
+        {/* 右：交通资讯（实时路况 + 最新资讯分层） */}
+        <div className={styles.trafficNewsCard}>
           <div className={styles.sectionHead}>
             <h2 className={styles.sectionTitle}>📰 交通资讯</h2>
             <span className={styles.sectionMore} onClick={()=>navigate('/news')}>更多 →</span>
@@ -469,17 +549,47 @@ const HomePage: React.FC = () => {
           {newsFailed ? (
             <div className={styles.alertEmpty}>交通资讯暂时无法加载</div>
           ) : (
-            <div className={styles.newsList}>
-              {news.map(n => (
-                <div key={n.id} className={styles.newsItem} onClick={()=>navigate(`/news/${n.id}`)}>
-                  <div className={styles.newsTitle}>{n.title}</div>
-                  <div className={styles.newsMeta}>
-                    <span>{n.source}</span>
-                    <span>{formatRelative(n.publishTime)}</span>
-                  </div>
+            <>
+              {/* 实时路况（模拟数据）：突出前 2 条拥堵路段 */}
+              {!liveRoadsFailed && liveRoads.length > 0 && (
+                <div className={styles.liveTrafficList}>
+                  {liveRoads.map(r => (
+                    <div key={r.id} className={styles.liveTrafficItem}>
+                      <span className={`${styles.trafficDot} ${r.congestionLevel === 'blocked' ? styles.severe : styles.congested}`} />
+                      <div className={styles.trafficInfo}>
+                        <strong>{r.name}{r.direction ? `（${r.direction}）` : ''}</strong>
+                        <span>
+                          {r.congestionLevel === 'blocked' ? '严重拥堵' : '拥堵'} · 平均时速 {r.speed}km/h
+                        </span>
+                      </div>
+                      <span className={styles.trafficTime}>模拟数据</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              )}
+
+              {/* 最新交通资讯分隔 */}
+              <div className={styles.newsSectionTitle}>
+                <span>最新交通资讯</span>
+                <div />
+              </div>
+
+              {/* 首页最多展示 5 条，点击进入完整资讯页 */}
+              <div className={styles.newsList}>
+                {news.slice(0, 5).map(n => (
+                  <div key={n.id} className={styles.newsItem} onClick={()=>navigate(`/news/${n.id}`)}>
+                    <div className={styles.newsTitle}>{n.title}</div>
+                    <div className={styles.newsMeta}>
+                      <span>{n.source}</span>
+                      <span>{formatRelative(n.publishTime)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ marginTop: 12, textAlign: 'right' }}>
+                <span className={styles.sectionMore} onClick={()=>navigate('/news')}>查看全部交通资讯 →</span>
+              </div>
+            </>
           )}
         </div>
       </section>
