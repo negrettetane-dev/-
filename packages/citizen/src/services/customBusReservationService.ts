@@ -97,4 +97,18 @@ export const customBusReservationService = {
       return normalizeError(error);
     }
   },
+
+  /** 取消预约（余座 +1）。仅待乘车（pending）状态可取消。 */
+  async cancelReservation(reservationId: string): Promise<CustomBusReservation> {
+    try {
+      const result = await apiPost<CustomBusReservation>(`/custom-bus/reservations/${encodeURIComponent(reservationId)}/cancel`);
+      if (!result?.id) {
+        throw new ReservationServiceError('SERVICE_UNAVAILABLE', '预约服务暂未接入');
+      }
+      return result;
+    } catch (error) {
+      if (error instanceof ReservationServiceError) throw error;
+      return normalizeError(error);
+    }
+  },
 };

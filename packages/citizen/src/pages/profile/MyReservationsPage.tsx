@@ -20,6 +20,10 @@ const MyReservationsPage: React.FC = () => {
   const [reservations, setReservations] = useState<CustomBusReservation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  // 取消预约：确认弹窗 + 提交状态
+  const [cancelTarget, setCancelTarget] = useState<CustomBusReservation | null>(null);
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -40,6 +44,25 @@ const MyReservationsPage: React.FC = () => {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+
+  const confirmCancel = () => {
+    if (!cancelTarget || cancelling) return;
+    setCancelling(true);
+    setCancelError('');
+    customBusReservationService.cancelReservation(cancelTarget.id)
+      .then(() => {
+        // 取消成功：本地更新该条状态 + 关闭弹窗，无需整页刷新
+        setReservations(prev => prev.map(r =>
+          r.id === cancelTarget.id ? { ...r, status: 'cancelled' as const } : r,
+        ));
+        setCancelTarget(null);
+        setCancelling(false);
+      })
+      .catch((e) => {
+        setCancelling(false);
+        setCancelError(e instanceof ReservationServiceError ? e.message : '取消失败，请稍后重试');
+      });
+  };
 
   return (
     <div className={styles.page}>
@@ -66,6 +89,7 @@ const MyReservationsPage: React.FC = () => {
         <div className={styles.list}>
           {reservations.map(r => {
             const status = STATUS_META[r.status] || STATUS_META.pending;
+            const cancellable = r.status === 'pending';
             return (
               <div key={r.id} className={styles.reservationItem}>
                 <span className={styles.modeIcon}><Bus size={22} /></span>
@@ -77,9 +101,39 @@ const MyReservationsPage: React.FC = () => {
                   <span className={styles.resMeta}>🕒 {r.departureTime} · 🚏 {r.boardingPoint} → {r.destination}</span>
                   <span className={styles.resMeta}>班次 {r.scheduleId} · 预约编号 {r.reservationNo}</span>
                 </span>
+                {cancellable && (
+                  <button
+                    type="button"
+                    className={styles.cancelBtn}
+                    onClick={() => { setCancelTarget(r); setCancelError(''); }}
+                  >
+                    取消预约
+                  </button>
+                )}
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* 取消预约确认弹窗 */}
+      {cancelTarget && (
+        <div className={styles.modalMask} role="presentation">
+          <div className={styles.modal} role="dialog" aria-modal="true" aria-labelledby="cancel-title">
+            <h2 id="cancel-title">取消预约</h2>
+            <p>
+              确认取消「{cancelTarget.routeName}」？
+              <br />
+              <span className={styles.resMeta}>班次 {cancelTarget.scheduleId} · {cancelTarget.departureTime}</span>
+            </p>
+            {cancelError && <p className={styles.cancelError}>{cancelError}</p>}
+            <div className={styles.modalActions}>
+              <button type="button" className={styles.secondaryBtn} disabled={cancelling} onClick={() => setCancelTarget(null)}>返回</button>
+              <button type="button" className={styles.dangerBtn} disabled={cancelling} onClick={confirmCancel}>
+                {cancelling ? '取消中...' : '确认取消'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

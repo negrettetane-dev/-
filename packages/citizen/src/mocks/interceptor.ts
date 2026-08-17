@@ -300,6 +300,27 @@ export function fetchInterceptor() {
         createdAt: Date.now(),
       }));
     }
+    if (url.match(/\/api\/custom-bus\/reservations\/[^/]+\/cancel$/) && method === 'POST') {
+      const userId = mockUserId(input, init);
+      if (!userId) return response({ code: 401, message: '请先登录', data: null }, 401);
+      const reservationId = decodeURIComponent(url.split('/').slice(-2, -1)[0]);
+      return response(json({
+        id: reservationId,
+        reservationNo: 'CB' + reservationId,
+        scheduleInstanceId: '',
+        templateId: '',
+        routeName: '定制公交',
+        scheduleId: '',
+        date: new Date().toISOString().slice(0, 10),
+        departureTime: '',
+        boardingPoint: '',
+        destination: '',
+        price: 0,
+        passengerCount: 1,
+        status: 'cancelled',
+        createdAt: Date.now(),
+      }));
+    }
 
     // 停车充电
     if (url === '/api/parking/lots') return new Response(JSON.stringify(json(MOCK_PARKING_LOTS)), { headers:{'Content-Type':'application/json'} });
