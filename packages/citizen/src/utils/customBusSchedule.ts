@@ -1,13 +1,14 @@
 // ===== 智途云枢 · 定制公交班次生成与状态机 =====
 // 数据真实性边界：
 //   - 线路模板（线路/发车/到达/价格/基础座位）为演示数据，可继续使用。
-//   - 班次按「日期 + 模板」生成：同一线路每天一班，座位数按日期确定性生成（演示），
+//   - 页面实例按「日期 + 模板」生成；后端班次 ID 保持「模板 + 发车时间」契约，
+//     同一线路每天一班，座位数按日期确定性生成（演示），
 //     不同日期互相独立，不会因为某天预约而扣掉其他日期座位。
 //   - 每个班次独立计算预约状态：未开放 → 可预约 → 即将截止 → 已满 → 已停止预约 → 已发车。
 //   - 预约截止规则：发车前 CUTOFF_MINUTES 分钟停止预约（默认 30，可配置，不写死在前端硬编码业务语义之外）。
 
 export interface CustomBusTemplate {
-  /** 线路模板 ID（用于预约，scheduleId 由模板+日期拼出） */
+  /** 后端登记的线路 ID。 */
   templateId: string;
   from: string;
   to: string;
@@ -93,13 +94,25 @@ export function seatsFor(template: CustomBusTemplate, date: string): number {
   return Math.max(0, template.baseSeats + delta);
 }
 
+/**
+ * 后端班次使用稳定的「线路 + 发车时间」标识；日期只用于区分页面中的班次实例。
+ * 两者不能混用，否则前端生成的日期实例会被后端判定为不存在。
+ */
+export function scheduleIdFor(template: CustomBusTemplate): string {
+  return `${template.templateId}-${template.departTime.replace(':', '')}`;
+}
+
+export function instanceIdFor(templateId: string, date: string): string {
+  return `${templateId}-${date}`;
+}
+
 /** 生成某一天的班次实例列表 */
 export function instancesForDate(base: Date, date: Date): CustomBusInstance[] {
   const dateStr = toDateStr(date);
   return CUSTOM_BUS_TEMPLATES.map(template => ({
-    id: `${template.templateId}-${dateStr}`,
+    id: instanceIdFor(template.templateId, dateStr),
     templateId: template.templateId,
-    scheduleId: `${template.templateId}-${dateStr.replace(/-/g, '')}`,
+    scheduleId: scheduleIdFor(template),
     from: template.from,
     to: template.to,
     boardingPointId: template.boardingPointId,
