@@ -269,7 +269,8 @@ export function fetchInterceptor() {
           cutoffAt: cutoff.getTime(),
         };
       });
-      return new Response(JSON.stringify(json(schedules)), { headers: { 'Content-Type': 'application/json' } });
+      // 对齐后端真实形状：{ date, schedules }（CustomBusSchedulesResponse）
+      return new Response(JSON.stringify(json({ date: dateStr, schedules })), { headers: { 'Content-Type': 'application/json' } });
     }
     if (url === '/api/custom-bus/reservations' && method === 'GET') {
       const userId = mockUserId(input, init);
