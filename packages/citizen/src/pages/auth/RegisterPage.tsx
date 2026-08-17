@@ -19,6 +19,7 @@ const RegisterPage: React.FC = () => {
   const [password, setPassword] = useState('');
   const [confirmPwd, setConfirmPwd] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [agree, setAgree] = useState(false);
   const [countdown, setCountdown] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -142,7 +143,10 @@ const RegisterPage: React.FC = () => {
             <span className="mb-2 block text-sm font-medium text-slate-700">确认密码 <span className="text-red-500">*</span></span>
             <span className="relative block">
               <LockKeyhole className="pointer-events-none absolute inset-y-0 left-4 z-10 my-auto h-[18px] w-[18px] text-slate-400" />
-              <Input className="pl-11" type="password" autoComplete="new-password" placeholder="再次输入密码" value={confirmPwd} onChange={e => setConfirmPwd(e.target.value)} />
+              <Input className="pl-11 pr-12" type={showConfirmPassword ? 'text' : 'password'} autoComplete="new-password" placeholder="再次输入密码" value={confirmPwd} onChange={e => setConfirmPwd(e.target.value)} />
+              <Button className="absolute right-1 top-1" size="icon" variant="ghost" aria-label={showConfirmPassword ? '隐藏确认密码' : '显示确认密码'} onClick={() => setShowConfirmPassword(!showConfirmPassword)}>
+                {showConfirmPassword ? <EyeOff className="h-[18px] w-[18px]" /> : <Eye className="h-[18px] w-[18px]" />}
+              </Button>
             </span>
           </label>
         </div>
