@@ -54,7 +54,7 @@ const HomePage: React.FC = () => {
   // 首页路线规划状态提示（避免「高亮按钮但地图没反应」的无反馈问题）
   const [routePreviewStatus, setRoutePreviewStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [routePreviewMessage, setRoutePreviewMessage] = useState('');
-  const { origin, setOrigin, locate, status: locationStatus, error: locationError } = useTravelLocationStore();
+  const { origin, setOrigin, locate, clear: clearOrigin, status: locationStatus, error: locationError } = useTravelLocationStore();
   const [destination, setDestination] = useState('');
   const [waypoints, setWaypoints] = useState<string[]>([]);
   const [departure, setDeparture] = useState<DepartureState>(restoreDepartureState);
@@ -79,13 +79,26 @@ const HomePage: React.FC = () => {
 
   const startRoute = () => {
     if (!origin.address.trim() || !destination.trim()) return;
+    const trimmedDestination = destination.trim();
+    const trimmedWaypoints = waypoints.map(point => point.trim()).filter(Boolean);
+    const travelPlan = useTravelPlanStore.getState();
+    travelPlan.setDestination({
+      name: trimmedDestination,
+      address: trimmedDestination,
+      lng: null,
+      lat: null,
+      source: 'manual',
+    });
+    travelPlan.setWaypoints(trimmedWaypoints);
+    travelPlan.setMode(selectedMode);
+    travelPlan.setDeparture(departure);
     const openResult = () => navigate('/travel/result', {
       state: {
         origin: origin.address,
         originCoords: origin.lng != null && origin.lat != null ? { lng: origin.lng, lat: origin.lat } : null,
         originSource: origin.source,
-        destination: destination.trim(),
-        waypoints: waypoints.map(point => point.trim()).filter(Boolean),
+        destination: trimmedDestination,
+        waypoints: trimmedWaypoints,
         mode: selectedMode,
         departTime: departure.departureTimeLabel,
         departureMode: departure.departureMode,
@@ -333,10 +346,23 @@ const HomePage: React.FC = () => {
                   <input
                     className={styles.locationInput}
                     aria-label="出发地"
-                    placeholder="请输入出发地"
+                    placeholder={origin.source === 'geolocation' && origin.lng != null && !origin.address
+                      ? '地址解析失败，可通过地图重新选点'
+                      : '请输入出发地'}
                     value={origin.address}
                     onChange={event => setManualOrigin(event.target.value)}
                   />
+                  {origin.address && (
+                    <button
+                      type="button"
+                      className={styles.locationClearButton}
+                      onClick={clearOrigin}
+                      title="清空出发地"
+                      aria-label="清空出发地"
+                    >
+                      <X size={16} aria-hidden="true" />
+                    </button>
+                  )}
                   <button
                     type="button"
                     className={styles.locationButton}
@@ -375,10 +401,32 @@ const HomePage: React.FC = () => {
                     className={styles.locationInput}
                     aria-label="目的地"
                     placeholder="请输入目的地"
+                    name="home-destination"
+                    autoComplete="on"
                     value={destination}
                     onChange={event => setDestination(event.target.value)}
                     onKeyDown={event => { if (event.key === 'Enter') startRoute(); }}
                   />
+                  {destination && (
+                    <button
+                      type="button"
+                      className={styles.locationClearButton}
+                      onClick={() => {
+                        setDestination('');
+                        useTravelPlanStore.getState().setDestination({
+                          name: '',
+                          address: '',
+                          lng: null,
+                          lat: null,
+                          source: 'manual',
+                        });
+                      }}
+                      title="清空目的地"
+                      aria-label="清空目的地"
+                    >
+                      <X size={16} aria-hidden="true" />
+                    </button>
+                  )}
                 </div>
               </div>
               <div className={styles.routeActions}>
@@ -463,35 +511,6 @@ const HomePage: React.FC = () => {
               </div>
             ) : null}
           </div>
-        </div>
-      </section>
-
-      {/* ===== 功能模块（规整网格） ===== */}
-      <section className={styles.features}>
-        <div className={styles.sectionHead}>
-          <h2 className={styles.sectionTitle}>出行服务</h2>
-          <span className={styles.sectionMore} onClick={()=>navigate('/services')}>全部服务 →</span>
-        </div>
-        <div className={styles.featureGrid}>
-          {[
-            { icon:'🧭', title:'一体化出行规划', desc:'驾车/公交/骑行多模式 · AI拥堵预测', path:'/travel', color:'#1677ff' },
-            { icon:'🅿️', title:'智慧停车诱导', desc:'空位信息 · 收费标准 · 导航直达', path:'/parking', color:'#722ed1' },
-            { icon:'⚡', title:'充电桩查询', desc:'站点信息 · 功率 · 扫码充电', path:'/parking', color:'#13c2c2' },
-            { icon:'📷', title:'事件上报', desc:'拍照上报 · 工单追踪 · 处理反馈', path:'/report', color:'#fa541c' },
-            { icon:'📰', title:'交通资讯', desc:'施工公告 · 管制通知 · 出行提示', path:'/news', color:'#eb2f96' },
-            { icon:'🌳', title:'绿色碳普惠', desc:'绿色出行积累碳积分 · 兑换权益', path:'/carbon', color:'#52c41a' },
-            { icon:'🧰', title:'便民服务', desc:'违章查询 · 车驾管 · 移车求助', path:'/services', color:'#fa8c16' },
-            { icon:'👴', title:'长辈简易模式', desc:'大字体 · 语音交互 · 极简操作', path:'/elderly', color:'#a0d911' },
-          ].map(f => (
-            <div key={f.title} className={styles.featureCard} onClick={()=>navigate(f.path)}>
-              <div className={styles.featureIcon} style={{ background: f.color + '18', color: f.color }}>{f.icon}</div>
-              <div className={styles.featureInfo}>
-                <div className={styles.featureTitle}>{f.title}</div>
-                <div className={styles.featureDesc}>{f.desc}</div>
-              </div>
-              <span className={styles.featureArrow}>→</span>
-            </div>
-          ))}
         </div>
       </section>
 
