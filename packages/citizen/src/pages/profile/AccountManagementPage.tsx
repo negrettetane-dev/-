@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { X } from 'lucide-react';
 import { maskPhone } from '@zhitu/shared';
 import { useAuthStore } from '../../stores/authStore';
 import { apiPost } from '../../services/apiClient';
@@ -101,7 +102,14 @@ const AccountManagementPage: React.FC<{ mode?: 'password' }> = ({ mode }) => {
             {(['current', 'next', 'confirm'] as const).map(field => (
               <label className={styles.fieldGroup} key={field}>
                 <span className={styles.fieldLabel}>{field === 'current' ? '当前密码' : field === 'next' ? '新密码' : '确认新密码'}</span>
-                <input className={styles.fieldInput} type="password" value={password[field]} onChange={event => setPassword(old => ({ ...old, [field]: event.target.value }))} />
+                <span className={styles.fieldInputWrapper}>
+                  <input className={styles.fieldInput} type="password" value={password[field]} onChange={event => setPassword(old => ({ ...old, [field]: event.target.value }))} />
+                  {password[field] && (
+                    <button type="button" className={styles.fieldClearButton} onClick={() => setPassword(old => ({ ...old, [field]: '' }))} aria-label={`清空${field === 'current' ? '当前密码' : field === 'next' ? '新密码' : '确认新密码'}`}>
+                      <X size={16} aria-hidden="true" />
+                    </button>
+                  )}
+                </span>
               </label>
             ))}
             <div className={styles.formActions}>
@@ -163,12 +171,12 @@ const AccountManagementPage: React.FC<{ mode?: 'password' }> = ({ mode }) => {
           <div className={styles.accountModal} role="dialog" aria-modal="true" aria-label={actionTitle(action)} onClick={event => event.stopPropagation()}>
             <div className={styles.accountModalHeader}><span>{actionTitle(action)}</span><button type="button" className={styles.modalClose} onClick={close}>×</button></div>
             <div className={styles.accountModalBody}>
-              {action === 'nickname' && <label className={styles.fieldGroup}><span className={styles.fieldLabel}>昵称（最多 15 个字符）</span><input className={styles.fieldInput} value={nickname} maxLength={15} onChange={event => setNickname(event.target.value)} /></label>}
+              {action === 'nickname' && <label className={styles.fieldGroup}><span className={styles.fieldLabel}>昵称（最多 15 个字符）</span><span className={styles.fieldInputWrapper}><input className={styles.fieldInput} value={nickname} maxLength={15} onChange={event => setNickname(event.target.value)} />{nickname && <button type="button" className={styles.fieldClearButton} onClick={() => setNickname('')} aria-label="清空昵称"><X size={16} aria-hidden="true" /></button>}</span></label>}
               {action === 'phone' && <>
                 <label className={styles.fieldGroup}><span className={styles.fieldLabel}>新手机号</span><input className={styles.fieldInput} inputMode="numeric" value={phone} maxLength={11} onChange={event => { setPhone(event.target.value.replace(/\D/g, '')); setPhoneCodeSent(false); }} /></label>
                 <label className={styles.fieldGroup}><span className={styles.fieldLabel}>短信验证码</span><span className={styles.codeField}><input className={styles.fieldInput} inputMode="numeric" value={phoneCode} maxLength={6} onChange={event => setPhoneCode(event.target.value.replace(/\D/g, ''))} /><button type="button" className={styles.codeButton} onClick={sendPhoneCode} disabled={phoneCountdown > 0}>{phoneCountdown > 0 ? `${phoneCountdown}s 后重试` : '获取验证码'}</button></span></label>
               </>}
-              {action === 'email' && <label className={styles.fieldGroup}><span className={styles.fieldLabel}>邮箱地址</span><input className={styles.fieldInput} type="email" value={email} onChange={event => setEmail(event.target.value)} /></label>}
+              {action === 'email' && <label className={styles.fieldGroup}><span className={styles.fieldLabel}>邮箱地址</span><span className={styles.fieldInputWrapper}><input className={styles.fieldInput} type="email" value={email} onChange={event => setEmail(event.target.value)} />{email && <button type="button" className={styles.fieldClearButton} onClick={() => setEmail('')} aria-label="清空邮箱地址"><X size={16} aria-hidden="true" /></button>}</span></label>}
               {action === 'freeze' && <p>冻结后应立即限制账号登录并使当前会话失效。当前为前端预览，不会实际冻结账号。</p>}
               {action === 'cancel' && <p>注销是不可逆操作，正式操作前需二次验证和明确数据处理策略。当前为前端预览，不会实际注销账号。</p>}
               {action in policyContent && <p>{policyContent[action as keyof typeof policyContent][1]}</p>}

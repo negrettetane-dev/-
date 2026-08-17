@@ -63,6 +63,10 @@
 .fieldLabel { display: block; margin-bottom: 7px; color: var(--text-secondary); font-size: 13px; }
 .fieldInput { box-sizing: border-box; width: 100%; padding: 11px 12px; border: 1px solid #dce5ef; border-radius: 8px; color: var(--text-primary); font-size: 14px; outline: none; }
 .fieldInput:focus { border-color: #7dbcf6; box-shadow: 0 0 0 3px #edf7ff; }
+.fieldInputWrapper { position: relative; display: block; }
+.fieldInputWrapper .fieldInput { padding-right: 42px; }
+.fieldClearButton { position: absolute; top: 50%; right: 8px; display: inline-flex; width: 28px; height: 28px; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 50%; background: transparent; color: #a3a3a3; cursor: pointer; transform: translateY(-50%); }
+.fieldClearButton:hover, .fieldClearButton:focus-visible { background: #f0f0f0; color: var(--text-secondary); outline: none; }
 .codeField { position: relative; display: block; }
 .codeField .fieldInput { padding-right: 118px; }
 .codeButton { position: absolute; top: 5px; right: 5px; padding: 7px 9px; border: 0; border-radius: 6px; background: transparent; color: #4b9fe8; font-size: 12px; cursor: pointer; }

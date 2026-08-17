@@ -229,7 +229,8 @@ export async function getCurrentResolvedLocation(timeout?: number): Promise<Reso
     adcode = detail.adcode;
     district = detail.district;
   } catch {
-    address = '地址解析失败，可通过地图重新选点';
+    // 地址解析失败时保留定位坐标，但不要把错误文案写入可编辑的地址值。
+    address = '';
   }
   return { lng: pos.lng, lat: pos.lat, accuracy: pos.accuracy, address, province, city, cityCode, adcode, district, source: 'geolocation' as const };
 }

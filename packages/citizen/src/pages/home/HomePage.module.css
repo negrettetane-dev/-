@@ -23,6 +23,8 @@
 .locationButton { display: inline-flex; width: 32px; height: 32px; flex: 0 0 32px; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--text-secondary); cursor: pointer; }
 .locationButton:hover, .locationButton:focus-visible { background: var(--primary-light); color: var(--primary); outline: none; }
 .locationButton:disabled { cursor: wait; opacity: 0.45; }
+.locationClearButton { display: inline-flex; width: 28px; height: 28px; flex: 0 0 28px; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 50%; background: transparent; color: #a3a3a3; cursor: pointer; }
+.locationClearButton:hover, .locationClearButton:focus-visible { background: #f0f0f0; color: var(--text-secondary); outline: none; }
 .routeActions { display: flex; flex-direction: column; gap: 8px; }
 .routeActionButton { display: inline-flex; width: 40px; height: 40px; align-items: center; justify-content: center; padding: 0; border: 1px solid var(--border-color); border-radius: 8px; background: #fff; color: var(--text-primary); cursor: pointer; }
 .routeActionButton:hover, .routeActionButton:focus-visible { border-color: var(--primary); background: var(--primary-light); color: var(--primary); outline: none; }
@@ -63,23 +65,9 @@
 .alertFloatTime { font-size: 11px; color: var(--text-hint); }
 
 /* ===== 功能模块 ===== */
-.features { margin-top: 32px; }
 .sectionHead { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .sectionTitle { font-size: 20px; font-weight: 700; }
 .sectionMore { font-size: 13px; color: var(--primary); cursor: pointer; }
-.featureGrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
-.featureCard {
-  display: flex; align-items: center; gap: 14px; background: #fff;
-  border-radius: 12px; padding: 20px; cursor: pointer;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.06); transition: all 0.25s;
-  border: 1px solid transparent;
-}
-.featureCard:hover { box-shadow: 0 6px 20px rgba(0,0,0,0.1); transform: translateY(-2px); border-color: var(--primary-light); }
-.featureIcon { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 24px; flex-shrink: 0; }
-.featureInfo { flex: 1; min-width: 0; }
-.featureTitle { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
-.featureDesc { font-size: 12px; color: var(--text-hint); line-height: 1.4; }
-.featureArrow { color: #ddd; font-size: 16px; }
 
 /* ===== 城市交通运行（24h 拥堵趋势 + 交通资讯） ===== */
 .trafficOverviewGrid { margin-top: 32px; display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 20px; align-items: start; }
@@ -127,7 +115,6 @@
 
 /* ===== 响应式 ===== */
 @media (max-width: 1024px) {
-  .featureGrid { grid-template-columns: repeat(2, 1fr); }
   .heroLeft { width: 350px; }
   .alertFloat { width: 260px; }
 }
