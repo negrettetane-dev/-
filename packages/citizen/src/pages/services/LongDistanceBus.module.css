@@ -21,7 +21,8 @@
 .errorText { margin-top: 10px; padding: 9px 12px; background: #fff1f0; color: #f5222d; border-radius: 8px; font-size: 13px; }
 .demoTag { margin-top: 10px; font-size: 11px; color: var(--text-hint); text-align: center; }
 
-.sectionTitle { font-size: 16px; font-weight: 700; }
+.sectionTitle { font-size: 16px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+.sourceTag { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 8px; background: #fff7e6; color: #d46b08; }
 .sectionHead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
 .refreshBtn { padding: 7px 14px; border: 1px solid var(--primary); border-radius: 8px; background: #fff; color: var(--primary); font-size: 13px; font-weight: 600; cursor: pointer; }
 .refreshBtn:disabled { opacity: 0.5; cursor: not-allowed; }

@@ -1,12 +1,12 @@
 // ===== 智途云枢 · 长途客运班次查询服务 =====
 // 数据真实性边界：
-//   - 班次基础信息（线路/站/时刻/票价区间）为演示数据（source: demo），可查询。
-//   - 余票/价格/停售状态：查询时按班次「刷新」（模拟合作平台库存同步），
-//     不长期固定——避免「页面余 32 张，跳转后无票」。
-//   - 购票链接（purchaseUrl）不固定长期保存：点击购买时由「合作平台」即时生成
-//     （带班次+日期+库存校验），跳转前展示同步信息。
+//   - 后端优先：调 /api/long-distance/* 获取真实班次/库存/购票深链。
+//   - 后端不可用（未接入/网络异常）时降级本地演示班次，并明确标注 source: 'demo'。
+//   - 余票/价格/停售状态：查询时按班次「刷新」，不长期固定——避免「页面余 32 张，跳转后无票」。
+//   - 购票链接不固定长期保存：点击购买时由后端即时生成（带班次+日期+库存校验）。
 //   - 智能推荐可解释、可降级：缺实时交通/天气时退化为按距离+发车时间+余票排序。
 
+import { apiGet, apiPost } from './apiClient';
 import { isValidCoord } from './locationService';
 
 export interface BusSchedule {
@@ -44,13 +44,65 @@ export interface QueryResult {
   distanceKm?: number;
 }
 
-/** 智能推荐依据（可解释） */
 export interface Recommendation {
   schedule: BusSchedule;
   inventory: ScheduleInventory;
   reasons: string[];
 }
 
+/** 购票深链（后端即时生成） */
+export interface PurchaseLink {
+  purchaseUrl: string;
+  expiresIn: number;
+  providerName?: string;
+}
+
+/** 数据来源标注 */
+export type DataSource = 'backend' | 'demo';
+
+// ===== 后端接口契约（对齐后端：/api/long-distance/*） =====
+interface ApiSchedule {
+  id: string;
+  provider?: string;
+  providerName?: string;
+  originCity?: string;
+  originStation?: string;
+  destinationCity?: string;
+  destinationStation?: string;
+  departureTime?: string;
+  arrivalTime?: string;
+  runDays?: number[];
+  inventory?: Partial<ScheduleInventory>;
+}
+
+/** 后端返回的班次字段可能缺失 → 归一化到前端模型 */
+function normalizeApiSchedule(raw: ApiSchedule): BusSchedule {
+  return {
+    id: String(raw.id || ''),
+    provider: (raw.provider as BusSchedule['provider']) || 'e2go',
+    providerName: String(raw.providerName || raw.provider || '合作平台'),
+    originCity: String(raw.originCity || ''),
+    originStation: String(raw.originStation || ''),
+    destinationCity: String(raw.destinationCity || ''),
+    destinationStation: String(raw.destinationStation || ''),
+    departureTime: String(raw.departureTime || ''),
+    arrivalTime: String(raw.arrivalTime || ''),
+    basePrice: Number(raw.inventory?.price ?? 0),
+    baseTickets: Number(raw.inventory?.remainingTickets ?? 0),
+    runDays: Array.isArray(raw.runDays) ? raw.runDays : [],
+  };
+}
+
+function normalizeInventory(raw?: Partial<ScheduleInventory>): ScheduleInventory {
+  return {
+    price: Number(raw?.price ?? 0),
+    remainingTickets: Number(raw?.remainingTickets ?? 0),
+    saleStatus: raw?.saleStatus || (Number(raw?.remainingTickets ?? 0) <= 0 ? 'sold_out' : 'on_sale'),
+    refreshedAt: String(raw?.refreshedAt || new Date().toISOString()),
+  };
+}
+
+// ===== 本地演示数据（降级用） =====
 const SCHEDULES: BusSchedule[] = [
   { id: 'cs-wh-0830', provider: 'e2go', providerName: 'e2Go', originCity: '长沙', originStation: '长沙汽车西站', destinationCity: '武汉', destinationStation: '武汉宏基客运站', departureTime: '08:30', arrivalTime: '11:50', basePrice: 120, baseTickets: 32, runDays: [0, 1, 2, 3, 4, 5, 6] },
   { id: 'cs-wh-1320', provider: 'ctrip', providerName: '携程汽车票', originCity: '长沙', originStation: '长沙汽车南站', destinationCity: '武汉', destinationStation: '武汉宏基客运站', departureTime: '13:20', arrivalTime: '16:35', basePrice: 118, baseTickets: 5, runDays: [0, 1, 2, 3, 4, 5, 6] },
@@ -85,7 +137,6 @@ function haversineKm(a: { lng: number; lat: number }, b: { lng: number; lat: num
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
-/** 确定性 hash（djb2）：余票/价格随「班次+日期+查询次数」变化，避免长期固定 */
 function hashStr(input: string): number {
   let h = 5381;
   for (let i = 0; i < input.length; i += 1) {
@@ -94,19 +145,17 @@ function hashStr(input: string): number {
   return h;
 }
 
-/** 刷新班次库存（模拟合作平台实时库存） */
-export function refreshInventory(schedule: BusSchedule, date: string, querySeq: number): ScheduleInventory {
+/** 本地降级库存刷新（模拟合作平台实时库存） */
+export function refreshInventoryLocal(schedule: BusSchedule, date: string, querySeq: number): ScheduleInventory {
   const seed = `${schedule.id}:${date}:${querySeq}`;
-  // 余票：基础票数随查询浮动（演示"实时库存"），偶发售罄
   const variation = (hashStr(seed) % 7) - 3; // -3 ~ +3
   const remaining = Math.max(0, schedule.baseTickets + variation);
-  const priceJitter = (hashStr(`${seed}:price`) % 3) - 1; // -1 ~ +1 元
+  const priceJitter = (hashStr(`${seed}:price`) % 3) - 1;
   const price = Math.max(1, schedule.basePrice + priceJitter);
   const saleStatus = remaining <= 0 ? 'sold_out' : remaining <= 5 ? 'almost_sold' : 'on_sale';
   return { price, remainingTickets: remaining, saleStatus, refreshedAt: new Date().toISOString() };
 }
 
-/** 站到用户位置距离（km）；无坐标或站未收录返回 undefined（智能推荐降级依据） */
 function stationDistance(station: string, userLng?: number, userLat?: number): number | undefined {
   if (userLng == null || userLat == null) return undefined;
   if (!isValidCoord(userLng, userLat)) return undefined;
@@ -115,11 +164,17 @@ function stationDistance(station: string, userLng?: number, userLat?: number): n
   return haversineKm(coord, { lng: userLng, lat: userLat });
 }
 
-/**
- * 查询班次：按出发城市+到达城市（模糊匹配）。返回班次 + 刷新后库存 + 距离。
- * 结果按：发车时间优先；用户坐标可用时按「距出发站近」排前。
- */
-export function querySchedules(
+function sortResults(results: QueryResult[]): QueryResult[] {
+  return [...results].sort((a, b) => {
+    if (a.distanceKm != null && b.distanceKm != null && Math.abs(a.distanceKm - b.distanceKm) > 0.5) {
+      return a.distanceKm - b.distanceKm;
+    }
+    return a.schedule.departureTime.localeCompare(b.schedule.departureTime);
+  });
+}
+
+/** 本地降级查询（演示数据） */
+export function querySchedulesLocal(
   origin: string,
   destination: string,
   date: string,
@@ -135,26 +190,14 @@ export function querySchedules(
     (s.destinationCity.includes(d) || d.includes(s.destinationCity) || s.destinationStation.includes(d)),
   );
   const results = matches.map(schedule => {
-    const inventory = refreshInventory(schedule, date, querySeq);
+    const inventory = refreshInventoryLocal(schedule, date, querySeq);
     const distanceKm = stationDistance(schedule.originStation, userLng, userLat);
     return { schedule, inventory, distanceKm };
   });
-  // 排序：距离近优先（有坐标时），否则按发车时间
-  results.sort((a, b) => {
-    if (a.distanceKm != null && b.distanceKm != null && Math.abs(a.distanceKm - b.distanceKm) > 0.5) {
-      return a.distanceKm - b.distanceKm;
-    }
-    return a.schedule.departureTime.localeCompare(b.schedule.departureTime);
-  });
-  return results;
+  return sortResults(results);
 }
 
-/**
- * 智能推荐班次（可解释、可降级）：
- *   - 有坐标：优先距用户最近的出发站班次 + 发车时间 + 余票充足
- *   - 缺坐标/缺实时数据：退化为「按距离(无则跳过)、发车时间、余票」排序
- * 推荐理由明确列出依据，不伪装成实时班次事实。
- */
+/** 智能推荐（本地降级：可解释、可降级，不伪装实时事实） */
 export function recommendSchedules(
   results: QueryResult[],
   userLng?: number,
@@ -162,13 +205,10 @@ export function recommendSchedules(
 ): Recommendation[] {
   if (results.length === 0) return [];
   const sorted = [...results].sort((a, b) => {
-    // 1) 余票充足优先（排除售罄）
     const aSold = a.inventory.saleStatus === 'sold_out' ? 1 : 0;
     const bSold = b.inventory.saleStatus === 'sold_out' ? 1 : 0;
     if (aSold !== bSold) return aSold - bSold;
-    // 2) 有坐标：距出发站近优先
     if (a.distanceKm != null && b.distanceKm != null) return a.distanceKm - b.distanceKm;
-    // 3) 发车时间早优先
     return a.schedule.departureTime.localeCompare(b.schedule.departureTime);
   });
   return sorted.slice(0, 3).map(item => {
@@ -182,5 +222,84 @@ export function recommendSchedules(
   });
 }
 
-/** 常见城市快捷入口 */
 export const COMMON_CITIES = ['长沙', '武汉', '岳阳', '株洲', '合肥', '襄阳'];
+
+// ===== 后端优先 + 本地降级：统一入口 =====
+
+/**
+ * 查询班次：后端优先；失败降级本地演示数据。
+ * 返回 { results, source }，source 标注数据来源（backend/demo）。
+ */
+export async function querySchedules(
+  origin: string,
+  destination: string,
+  date: string,
+  querySeq: number,
+  userLng?: number,
+  userLat?: number,
+): Promise<{ results: QueryResult[]; source: DataSource }> {
+  try {
+    const data = await apiGet<ApiSchedule[]>('/long-distance/schedules', { origin, destination, date });
+    const list = Array.isArray(data) ? data : [];
+    if (list.length > 0) {
+      const results: QueryResult[] = list
+        .map(raw => {
+          const schedule = normalizeApiSchedule(raw);
+          const inventory = normalizeInventory(raw.inventory);
+          const distanceKm = stationDistance(schedule.originStation, userLng, userLat);
+          return { schedule, inventory, distanceKm };
+        })
+        .filter(r => r.schedule.id && r.schedule.originStation);
+      return { results: sortResults(results), source: 'backend' };
+    }
+    // 后端返回空：降级本地（避免空白）
+    return { results: querySchedulesLocal(origin, destination, date, querySeq, userLng, userLat), source: 'demo' };
+  } catch {
+    // 后端不可用：降级本地演示
+    return { results: querySchedulesLocal(origin, destination, date, querySeq, userLng, userLat), source: 'demo' };
+  }
+}
+
+/** 刷新单班次库存：后端优先；失败降级本地 */
+export async function refreshInventory(
+  schedule: BusSchedule,
+  date: string,
+  querySeq: number,
+): Promise<{ inventory: ScheduleInventory; source: DataSource }> {
+  try {
+    const data = await apiGet<Partial<ScheduleInventory>>(`/long-distance/schedules/${encodeURIComponent(schedule.id)}/inventory`, { date });
+    if (data && (Number(data.remainingTickets) >= 0 || data.saleStatus)) {
+      return { inventory: normalizeInventory(data), source: 'backend' };
+    }
+  } catch { /* 降级 */ }
+  return { inventory: refreshInventoryLocal(schedule, date, querySeq), source: 'demo' };
+}
+
+/**
+ * 生成购票深链：后端即时生成；后端不可用时返回演示占位（标注 demo，不伪装真实链接）。
+ */
+export async function getPurchaseUrl(
+  schedule: BusSchedule,
+  date: string,
+  passengerCount: number,
+): Promise<{ link: PurchaseLink; source: DataSource }> {
+  try {
+    const data = await apiPost<Partial<PurchaseLink>>('/long-distance/purchase-url', {
+      scheduleId: schedule.id,
+      date,
+      passengerCount,
+    });
+    if (data?.purchaseUrl) {
+      return { link: { purchaseUrl: data.purchaseUrl, expiresIn: Number(data.expiresIn ?? 300), providerName: data.providerName }, source: 'backend' };
+    }
+  } catch { /* 降级 */ }
+  return {
+    link: {
+      // 演示占位：不伪装真实购票链接，仅示意跳转合作平台
+      purchaseUrl: `https://www.e2go.com.cn?schedule=${encodeURIComponent(schedule.id)}&date=${encodeURIComponent(date)}&pax=${passengerCount}`,
+      expiresIn: 300,
+      providerName: schedule.providerName,
+    },
+    source: 'demo',
+  };
+}

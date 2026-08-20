@@ -1,12 +1,14 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getCurrentLocation } from '../../services/locationService';
 import {
   querySchedules,
   recommendSchedules,
+  getPurchaseUrl,
   COMMON_CITIES,
   type QueryResult,
   type Recommendation,
+  type DataSource,
 } from '../../services/longDistanceBusService';
 import styles from './LongDistanceBus.module.css';
 
@@ -34,6 +36,7 @@ const LongDistanceBusPage: React.FC = () => {
   const [date, setDate] = useState(todayStr());
   const [results, setResults] = useState<QueryResult[]>([]);
   const [recommendation, setRecommendation] = useState<Recommendation[]>([]);
+  const [dataSource, setDataSource] = useState<DataSource>('demo');
   const [searched, setSearched] = useState(false);
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState('');
@@ -41,15 +44,21 @@ const LongDistanceBusPage: React.FC = () => {
   const [userLat, setUserLat] = useState<number | undefined>();
   const [querySeq, setQuerySeq] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
-  // 购票跳转确认（不直接打开第三方）
+  // 购票跳转确认
   const [purchaseTarget, setPurchaseTarget] = useState<QueryResult | null>(null);
+  const [purchaseLink, setPurchaseLink] = useState<{ url: string; source: DataSource } | null>(null);
+  const mountedRef = useRef(true);
 
   // 进入页面尝试定位（用于距离推荐；失败降级，不影响查询）
-  useMemo(() => {
+  useEffect(() => {
+    mountedRef.current = true;
     getCurrentLocation()
-      .then(pos => { setUserLng(pos.lng); setUserLat(pos.lat); })
+      .then(pos => {
+        if (!mountedRef.current) return;
+        setUserLng(pos.lng); setUserLat(pos.lat);
+      })
       .catch(() => { /* 定位失败：智能推荐退化为按时间/余票排序 */ });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => { mountedRef.current = false; };
   }, []);
 
   const swap = () => {
@@ -57,7 +66,7 @@ const LongDistanceBusPage: React.FC = () => {
     setDestination(origin);
   };
 
-  const doSearch = () => {
+  const doSearch = async () => {
     if (!origin.trim() || !destination.trim()) {
       setError('请填写出发地和目的地');
       return;
@@ -65,35 +74,42 @@ const LongDistanceBusPage: React.FC = () => {
     setError('');
     setSearching(true);
     setQuerySeq(seq => seq + 1);
-    // 模拟网络延迟，让「库存刷新」可见
-    setTimeout(() => {
-      const seq = querySeq + 1;
-      const found = querySchedules(origin, destination, date, seq, userLng, userLat);
+    const seq = querySeq + 1;
+    try {
+      const { results: found, source } = await querySchedules(origin, destination, date, seq, userLng, userLat);
+      if (!mountedRef.current) return;
       setResults(found);
       setRecommendation(recommendSchedules(found, userLng, userLat));
+      setDataSource(source);
       setSearched(true);
-      setSearching(false);
-      if (found.length === 0) {
-        // 无直达班次：给出替代方案提示
-      }
-    }, 500);
+    } finally {
+      if (mountedRef.current) setSearching(false);
+    }
   };
 
-  const refreshPrices = () => {
+  const refreshPrices = async () => {
+    if (results.length === 0) return;
     setRefreshing(true);
     setQuerySeq(seq => seq + 1);
-    setTimeout(() => {
-      const seq = querySeq + 1;
-      const found = querySchedules(origin, destination, date, seq, userLng, userLat);
+    const seq = querySeq + 1;
+    try {
+      const { results: found, source } = await querySchedules(origin, destination, date, seq, userLng, userLat);
+      if (!mountedRef.current) return;
       setResults(found);
       setRecommendation(recommendSchedules(found, userLng, userLat));
-      setRefreshing(false);
-    }, 400);
+      setDataSource(source);
+    } finally {
+      if (mountedRef.current) setRefreshing(false);
+    }
   };
 
-  const openPurchase = (item: QueryResult) => {
+  const openPurchase = async (item: QueryResult) => {
     if (item.inventory.saleStatus === 'sold_out') return;
     setPurchaseTarget(item);
+    setPurchaseLink(null);
+    const { link, source } = await getPurchaseUrl(item.schedule, date, 1);
+    if (!mountedRef.current) return;
+    setPurchaseLink({ url: link.purchaseUrl, source });
   };
 
   return (
@@ -107,37 +123,20 @@ const LongDistanceBusPage: React.FC = () => {
       <div className={styles.formCard}>
         <div className={styles.fieldRow}>
           <span className={styles.fieldLabel}>🚩 出发地</span>
-          <input
-            className={styles.fieldInput}
-            placeholder="请输入出发城市/车站"
-            value={origin}
-            onChange={e => setOrigin(e.target.value)}
-          />
+          <input className={styles.fieldInput} placeholder="请输入出发城市/车站" value={origin} onChange={e => setOrigin(e.target.value)} />
         </div>
         <div className={styles.swapRow}>
           <button type="button" className={styles.swapBtn} onClick={swap} title="交换出发地/目的地" aria-label="交换出发地和目的地">⇄</button>
         </div>
         <div className={styles.fieldRow}>
           <span className={styles.fieldLabel}>📍 到达地</span>
-          <input
-            className={styles.fieldInput}
-            placeholder="请输入目的城市/车站"
-            value={destination}
-            onChange={e => setDestination(e.target.value)}
-          />
+          <input className={styles.fieldInput} placeholder="请输入目的城市/车站" value={destination} onChange={e => setDestination(e.target.value)} />
         </div>
         <div className={styles.fieldRow}>
           <span className={styles.fieldLabel}>📅 出发日期</span>
-          <input
-            type="date"
-            className={styles.fieldInput}
-            value={date}
-            min={todayStr()}
-            onChange={e => e.target.value && setDate(e.target.value)}
-          />
+          <input type="date" className={styles.fieldInput} value={date} min={todayStr()} onChange={e => e.target.value && setDate(e.target.value)} />
         </div>
 
-        {/* 常用城市快捷 */}
         <div className={styles.cityRow}>
           {COMMON_CITIES.map(c => (
             <button key={c} type="button" className={styles.cityChip}
@@ -147,14 +146,14 @@ const LongDistanceBusPage: React.FC = () => {
           ))}
         </div>
 
-        <button type="button" className={styles.searchBtn} onClick={doSearch} disabled={searching}>
+        <button type="button" className={styles.searchBtn} onClick={() => void doSearch()} disabled={searching}>
           {searching ? '查询中...' : '🔍 查询班次'}
         </button>
         {error && <div className={styles.errorText}>⚠️ {error}</div>}
-        <div className={styles.demoTag}>演示数据 · 班次与库存为模拟，仅供功能展示</div>
+        <div className={styles.demoTag}>班次与库存以合作平台实时数据为准；后端未接入时显示演示数据</div>
       </div>
 
-      {/* 智能推荐（可解释、可降级） */}
+      {/* 智能推荐 */}
       {searched && recommendation.length > 0 && (
         <div className={styles.recoSection}>
           <div className={styles.sectionTitle}>🧠 智能推荐</div>
@@ -183,9 +182,10 @@ const LongDistanceBusPage: React.FC = () => {
               {results.length > 0
                 ? `${origin.trim()} → ${destination.trim()} · ${date}`
                 : `「${origin.trim()} → ${destination.trim()}」`}
+              {dataSource === 'demo' && <span className={styles.sourceTag}>演示数据</span>}
             </span>
             {results.length > 0 && (
-              <button type="button" className={styles.refreshBtn} onClick={refreshPrices} disabled={refreshing}>
+              <button type="button" className={styles.refreshBtn} onClick={() => void refreshPrices()} disabled={refreshing}>
                 {refreshing ? '刷新中...' : '🔄 刷新余票/价格'}
               </button>
             )}
@@ -196,7 +196,7 @@ const LongDistanceBusPage: React.FC = () => {
               <div className={styles.emptyTitle}>今日暂无合适班次</div>
               <div className={styles.emptyHint}>
                 可尝试：<br />
-                • 查看附近汽车站（如长沙汽车南站）<br />
+                • 查看附近汽车站<br />
                 • 选择换乘方案（先到临近城市再中转）<br />
                 • 改期到明天
               </div>
@@ -232,12 +232,7 @@ const LongDistanceBusPage: React.FC = () => {
                     {item.distanceKm != null && (
                       <div className={styles.scheduleDist}>距出发站 {item.distanceKm.toFixed(1)}km</div>
                     )}
-                    <button
-                      type="button"
-                      className={styles.buyBtn}
-                      disabled={soldOut}
-                      onClick={() => openPurchase(item)}
-                    >
+                    <button type="button" className={styles.buyBtn} disabled={soldOut} onClick={() => void openPurchase(item)}>
                       {soldOut ? '已售罄' : '立即购买'}
                     </button>
                   </div>
@@ -248,9 +243,9 @@ const LongDistanceBusPage: React.FC = () => {
         </div>
       )}
 
-      {/* 购票跳转确认（不直接打开第三方） */}
+      {/* 购票跳转确认（不直接外链，等后端深链就绪） */}
       {purchaseTarget && (
-        <div className={styles.overlay} onClick={() => setPurchaseTarget(null)}>
+        <div className={styles.overlay} onClick={() => { setPurchaseTarget(null); setPurchaseLink(null); }}>
           <div className={styles.modal} onClick={e => e.stopPropagation()}>
             <div className={styles.modalTitle}>正在跳转合作购票平台</div>
             <div className={styles.modalInfo}>
@@ -264,19 +259,22 @@ const LongDistanceBusPage: React.FC = () => {
                 <span>票价 ¥{purchaseTarget.inventory.price}</span>
                 <span>平台 {purchaseTarget.schedule.providerName}</span>
               </div>
+              {purchaseLink?.source === 'demo' && (
+                <div className={styles.modalHint}>当前为演示购票链接，接入合作平台后由后端即时生成。</div>
+              )}
             </div>
             <div className={styles.modalActions}>
-              <button type="button" className={styles.modalCancel} onClick={() => setPurchaseTarget(null)}>取消</button>
+              <button type="button" className={styles.modalCancel} onClick={() => { setPurchaseTarget(null); setPurchaseLink(null); }}>取消</button>
               <button type="button" className={styles.modalConfirm}
+                disabled={!purchaseLink}
                 onClick={() => {
-                  // 演示：跳转合作平台（真实环境由后端即时生成购票深链）
-                  window.open('https://www.e2go.com.cn', '_blank', 'noopener');
+                  if (purchaseLink) window.open(purchaseLink.url, '_blank', 'noopener');
                   setPurchaseTarget(null);
+                  setPurchaseLink(null);
                 }}>
-                前往购票 →
+                {purchaseLink ? '前往购票 →' : '正在生成购票链接...'}
               </button>
             </div>
-            <div className={styles.modalHint}>演示环境仅展示跳转示意，真实购票由合作平台完成。</div>
           </div>
         </div>
       )}
