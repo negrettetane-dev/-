@@ -345,7 +345,21 @@ export function fetchInterceptor() {
       if (!userId) return response({ code: 401, message: '请先登录', data: null }, 401);
       const body = await requestBody(input, init);
       const now = Date.now();
-      const report = { id: `report_${now.toString(36)}`, workOrderNo: `ZT${now.toString(36).toUpperCase()}`, category: body.category || '其他问题', description: body.description || '', location: body.address || '', status: 'pending' as const, createdAt: now };
+      // 事件位置（eventLocation）与设备定位（deviceLocation）分离保存
+      const report = {
+        id: `report_${now.toString(36)}`,
+        workOrderNo: `ZT${now.toString(36).toUpperCase()}`,
+        category: body.category || '其他问题',
+        description: body.description || '',
+        location: body.address || '',
+        // 新契约：事件发生位置 + 定位方式 + 定位状态
+        eventLocation: body.eventLocation || null,
+        deviceLocation: body.deviceLocation || null,
+        locationType: body.locationType || (body.eventLocation?.locationType) || 'auto',
+        locationStatus: body.locationStatus || (body.eventLocation?.locationStatus) || 'failed',
+        status: 'pending' as const,
+        createdAt: now,
+      };
       addReport(report, userId);
       return response(json({ ...report, createTime: now }));
     }

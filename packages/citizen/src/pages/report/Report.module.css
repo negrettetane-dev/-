@@ -58,6 +58,9 @@
 .photoRemove:hover { background: #ff4d4f; }
 .descInput { width: 100%; min-height: 80px; border: 1px solid #eee; border-radius: 8px; padding: 12px; font-size: 14px; resize: vertical; }
 .descInput:focus { border-color: var(--primary); outline: none; }
+.locationBtn { flex: 1; padding: 10px 0; border: 1px solid var(--primary); border-radius: 8px; background: #fff; color: var(--primary); font-size: 14px; font-weight: 600; cursor: pointer; }
+.locationBtn:hover:not(:disabled) { background: var(--primary-light); }
+.locationBtn:disabled { opacity: 0.5; cursor: not-allowed; }
 .submitBtn { width: 100%; padding: 14px; background: var(--primary); color: #fff; border: none; border-radius: 10px; font-size: 16px; font-weight: 600; cursor: pointer; margin-top: 8px; transition: opacity 0.2s; }
 .submitBtn:hover { opacity: 0.9; }
 
