@@ -14,6 +14,7 @@ import ReportQueryPage from './pages/report/ReportQueryPage';
 import NewsListPage from './pages/news/NewsListPage';
 import NewsDetailPage from './pages/news/NewsDetailPage';
 import ServicesPage from './pages/services/ServicesPage';
+import LongDistanceBusPage from './pages/services/LongDistanceBusPage';
 import CarbonPage from './pages/carbon/CarbonPage';
 import ProfilePage from './pages/profile/ProfilePage';
 import MyReportsPage from './pages/profile/MyReportsPage';
@@ -123,6 +124,7 @@ const App: React.FC = () => {
             <Route path="/news" element={<NewsListPage />} />
             <Route path="/news/:id" element={<NewsDetailPage />} />
             <Route path="/services" element={<ServicesPage />} />
+            <Route path="/services/bus" element={<LongDistanceBusPage />} />
             <Route path="/carbon" element={<CarbonPage />} />
             <Route path="/qrcode" element={<RequireAuth><QRCodePage /></RequireAuth>} />
             <Route path="/charging/scan" element={<ChargingScanPage />} />
