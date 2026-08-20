@@ -47,6 +47,8 @@ const LongDistanceBusPage: React.FC = () => {
   // 购票跳转确认
   const [purchaseTarget, setPurchaseTarget] = useState<QueryResult | null>(null);
   const [purchaseLink, setPurchaseLink] = useState<{ url: string; source: DataSource } | null>(null);
+  // 是否已确认「购票信息已同步」（确认后不再直接打开外部深链，避免 404）
+  const [purchaseSynced, setPurchaseSynced] = useState(false);
   const mountedRef = useRef(true);
 
   // 进入页面尝试定位（用于距离推荐；失败降级，不影响查询）
@@ -107,6 +109,7 @@ const LongDistanceBusPage: React.FC = () => {
     if (item.inventory.saleStatus === 'sold_out') return;
     setPurchaseTarget(item);
     setPurchaseLink(null);
+    setPurchaseSynced(false);
     const { link, source } = await getPurchaseUrl(item.schedule, date, 1);
     if (!mountedRef.current) return;
     setPurchaseLink({ url: link.purchaseUrl, source });
@@ -243,13 +246,12 @@ const LongDistanceBusPage: React.FC = () => {
         </div>
       )}
 
-      {/* 购票跳转确认（不直接外链，等后端深链就绪） */}
+      {/* 购票流程：确认购票信息 → 购票信息已同步（不直接打开外部深链，避免 404） */}
       {purchaseTarget && (
-        <div className={styles.overlay} onClick={() => { setPurchaseTarget(null); setPurchaseLink(null); }}>
+        <div className={styles.overlay} onClick={() => { setPurchaseTarget(null); setPurchaseLink(null); setPurchaseSynced(false); }}>
           <div className={styles.modal} onClick={e => e.stopPropagation()}>
-            <div className={styles.modalTitle}>正在跳转合作购票平台</div>
+            <div className={styles.modalTitle}>{purchaseSynced ? '✅ 购票信息已同步' : '确认购票信息'}</div>
             <div className={styles.modalInfo}>
-              <div>查询信息已同步</div>
               <div className={styles.modalRoute}>{purchaseTarget.schedule.originStation} → {purchaseTarget.schedule.destinationStation}</div>
               <div className={styles.modalMeta}>
                 <span>日期 {date}</span>
@@ -259,22 +261,43 @@ const LongDistanceBusPage: React.FC = () => {
                 <span>票价 ¥{purchaseTarget.inventory.price}</span>
                 <span>平台 {purchaseTarget.schedule.providerName}</span>
               </div>
-              {purchaseLink?.source === 'demo' && (
-                <div className={styles.modalHint}>当前为演示购票链接，接入合作平台后由后端即时生成。</div>
-              )}
             </div>
-            <div className={styles.modalActions}>
-              <button type="button" className={styles.modalCancel} onClick={() => { setPurchaseTarget(null); setPurchaseLink(null); }}>取消</button>
-              <button type="button" className={styles.modalConfirm}
-                disabled={!purchaseLink}
-                onClick={() => {
-                  if (purchaseLink) window.open(purchaseLink.url, '_blank', 'noopener');
-                  setPurchaseTarget(null);
-                  setPurchaseLink(null);
-                }}>
-                {purchaseLink ? '前往购票 →' : '正在生成购票链接...'}
-              </button>
-            </div>
+
+            {purchaseSynced ? (
+              <>
+                <div className={styles.syncNote}>购票信息已同步至合作平台，可前往官网完成出票。</div>
+                <div className={styles.demoHint}>
+                  当前演示环境未接入真实购票平台，以下为合作平台官网入口，具体班次购票请以官网为准。
+                </div>
+                <div className={styles.modalActions}>
+                  <button type="button" className={styles.modalCancel} onClick={() => { setPurchaseTarget(null); setPurchaseLink(null); setPurchaseSynced(false); }}>关闭</button>
+                  <button type="button" className={styles.modalConfirm}
+                    onClick={() => {
+                      // 打开合作平台官网（根路径可达），不再直接打开后端拼的深链（可能 404）
+                      window.open('https://www.e2go.com.cn/', '_blank', 'noopener');
+                      setPurchaseTarget(null);
+                      setPurchaseLink(null);
+                      setPurchaseSynced(false);
+                    }}>
+                    前往 e2Go 官网 →
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                {purchaseLink?.source === 'demo' && (
+                  <div className={styles.demoHint}>当前为演示购票链接，接入合作平台后由后端即时生成。</div>
+                )}
+                <div className={styles.modalActions}>
+                  <button type="button" className={styles.modalCancel} onClick={() => { setPurchaseTarget(null); setPurchaseLink(null); setPurchaseSynced(false); }}>取消</button>
+                  <button type="button" className={styles.modalConfirm}
+                    disabled={!purchaseLink}
+                    onClick={() => setPurchaseSynced(true)}>
+                    {purchaseLink ? '确认购票信息 →' : '正在生成购票链接...'}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
