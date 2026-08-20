@@ -50,24 +50,6 @@ const CarbonPage: React.FC = () => {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  const simulateGreenTrip = useCallback(async () => {
-    setRedeemMsg('');
-    try {
-      const result = await apiPost<{ earnedPoints: number; totalPoints: number }>('/travel/complete', {
-        mode: 'walk',
-        distance: 3000,
-        duration: 1800,
-        route: '演示步行：西单 → 王府井',
-      });
-      setMsgType('success');
-      setRedeemMsg(`✅ 出行记录已提交，获得 ${result.earnedPoints} 积分，当前共 ${result.totalPoints} 积分`);
-      loadData();
-    } catch (error) {
-      setMsgType('error');
-      setRedeemMsg(`❌ ${error instanceof Error ? error.message : '提交出行记录失败'}`);
-    }
-  }, [loadData]);
-
   // 兑换逻辑 — 前端只调 API，积分扣减由"后端"完成
   const handleRedeem = async () => {
     if (!confirmId) return;
@@ -178,9 +160,14 @@ const CarbonPage: React.FC = () => {
         </div>
       )}
 
-      {/* Demo */}
-      <div className={styles.demoBtn} onClick={simulateGreenTrip}>
-        🚶 提交一次演示步行记录（由后端计算积分）
+      {/* 碳积分计算规则 */}
+      <div style={{ background: '#f0f5ff', borderRadius: 12, padding: 14, marginBottom: 14, fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.9 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: '#1677ff', marginBottom: 6 }}>📐 碳积分计算规则</div>
+        <div>完成导航后按出行方式与距离结算：</div>
+        <div>• 🚶 步行 / 🚲 骑行：减碳较多，积分系数最高</div>
+        <div>• 🚌 公交地铁：减碳中等，积分系数较低</div>
+        <div>• 🚗 驾车：不获得绿色积分</div>
+        <div style={{ marginTop: 4, color: 'var(--text-hint)' }}>积分由后端按真实出行记录结算，前端仅展示，不可修改余额。</div>
       </div>
 
       {/* Green Forest */}
