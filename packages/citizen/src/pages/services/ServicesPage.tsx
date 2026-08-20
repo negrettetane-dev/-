@@ -30,6 +30,12 @@ const SERVICES = [
     path: '/services/bus',
   },
   {
+    icon: '🚇', title: '定制公交',
+    desc: '一人一座 · 直达通勤 · 可预约',
+    action: '预约班次',
+    path: '/travel/custom-bus',
+  },
+  {
     icon: '📞', title: '移车求助',
     desc: '一键发起挪车通知，保护双方手机号隐私',
     action: '发起挪车',
