@@ -8,6 +8,7 @@
 
 import { apiGet, apiPost } from './apiClient';
 import { isValidCoord } from './locationService';
+import type { LongDistancePurchase, CreateLongDistancePurchaseRequest } from '@zhitu/shared';
 
 export interface BusSchedule {
   id: string;
@@ -302,4 +303,67 @@ export async function getPurchaseUrl(
     },
     source: 'demo',
   };
+}
+
+// ===== 购票记录（后端存储；后端未接入时降级本地演示） =====
+
+const PURCHASE_KEY = 'zhitu_long_distance_purchases';
+
+function readLocalPurchases(): LongDistancePurchase[] {
+  try {
+    const raw = localStorage.getItem(PURCHASE_KEY);
+    return raw ? JSON.parse(raw) as LongDistancePurchase[] : [];
+  } catch { return []; }
+}
+
+function writeLocalPurchases(list: LongDistancePurchase[]): void {
+  try { localStorage.setItem(PURCHASE_KEY, JSON.stringify(list)); } catch { /* ignore */ }
+}
+
+/**
+ * 创建购票记录：点击「确认购票信息」时调用，后端存储；后端未接入时降级本地。
+ * 返回记录 + 数据来源。
+ */
+export async function createPurchase(
+  schedule: BusSchedule,
+  date: string,
+  passengerCount: number,
+  price: number,
+): Promise<{ purchase: LongDistancePurchase; source: DataSource }> {
+  const now = Date.now();
+  const demoPurchase: LongDistancePurchase = {
+    id: `ldp_${now.toString(36)}`,
+    purchaseNo: `LD${now.toString(36).toUpperCase()}`,
+    kind: 'purchase',
+    scheduleId: schedule.id,
+    routeName: `${schedule.originStation} → ${schedule.destinationStation}`,
+    provider: schedule.providerName,
+    date,
+    departureTime: schedule.departureTime,
+    originStation: schedule.originStation,
+    destinationStation: schedule.destinationStation,
+    price,
+    passengerCount,
+    status: 'pending',
+    createdAt: now,
+  };
+  try {
+    const req: CreateLongDistancePurchaseRequest = { scheduleId: schedule.id, date, passengerCount };
+    const data = await apiPost<LongDistancePurchase>('/long-distance/purchases', req);
+    if (data?.id) return { purchase: { ...data, kind: 'purchase' }, source: 'backend' };
+  } catch { /* 降级本地 */ }
+  // 本地降级：写入 localStorage（演示，跨设备不可见）
+  writeLocalPurchases([demoPurchase, ...readLocalPurchases()]);
+  return { purchase: demoPurchase, source: 'demo' };
+}
+
+/** 我的购票记录：后端优先；后端未接入时读本地降级 */
+export async function getMyPurchases(): Promise<{ purchases: LongDistancePurchase[]; source: DataSource }> {
+  try {
+    const data = await apiGet<LongDistancePurchase[]>('/long-distance/purchases');
+    if (Array.isArray(data)) {
+      return { purchases: data.map(p => ({ ...p, kind: 'purchase' as const })), source: 'backend' };
+    }
+  } catch { /* 降级 */ }
+  return { purchases: readLocalPurchases(), source: 'demo' };
 }

@@ -19,6 +19,8 @@
 .statusCancelled { background: #f5f5f5; color: #777; }
 .statusExpired { background: #fff7e6; color: #d46b08; }
 
+.orderTagReservation { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 8px; background: #e6f4ff; color: #1677ff; }
+.orderTagPurchase { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 8px; background: #f9f0ff; color: #722ed1; }
 .cancelBtn { flex: 0 0 auto; align-self: center; padding: 7px 13px; border: 1px solid #ffa39e; border-radius: 7px; background: #fff; color: #cf1322; font-size: 13px; font-weight: 600; cursor: pointer; }
 .cancelBtn:hover { background: #fff1f0; }
 

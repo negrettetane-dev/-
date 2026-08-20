@@ -5,6 +5,7 @@ import {
   querySchedules,
   recommendSchedules,
   getPurchaseUrl,
+  createPurchase,
   COMMON_CITIES,
   type QueryResult,
   type Recommendation,
@@ -49,6 +50,7 @@ const LongDistanceBusPage: React.FC = () => {
   const [purchaseLink, setPurchaseLink] = useState<{ url: string; source: DataSource } | null>(null);
   // 是否已确认「购票信息已同步」（确认后不再直接打开外部深链，避免 404）
   const [purchaseSynced, setPurchaseSynced] = useState(false);
+  const [purchaseNo, setPurchaseNo] = useState('');
   const mountedRef = useRef(true);
 
   // 进入页面尝试定位（用于距离推荐；失败降级，不影响查询）
@@ -113,6 +115,22 @@ const LongDistanceBusPage: React.FC = () => {
     const { link, source } = await getPurchaseUrl(item.schedule, date, 1);
     if (!mountedRef.current) return;
     setPurchaseLink({ url: link.purchaseUrl, source });
+  };
+
+  // 点击「确认购票信息」：创建购票记录（后端存储），再进入已同步态
+  const confirmPurchase = async () => {
+    if (!purchaseTarget) return;
+    const { purchase, source } = await createPurchase(
+      purchaseTarget.schedule,
+      date,
+      1,
+      purchaseTarget.inventory.price,
+    );
+    if (!mountedRef.current) return;
+    // 保存本次购票号，用于已同步态展示
+    setPurchaseSynced(true);
+    setPurchaseLink(prev => ({ ...(prev || { url: '', source }), url: prev?.url || '' }));
+    setPurchaseNo(purchase.purchaseNo);
   };
 
   return (
@@ -265,19 +283,20 @@ const LongDistanceBusPage: React.FC = () => {
 
             {purchaseSynced ? (
               <>
-                <div className={styles.syncNote}>购票信息已同步至合作平台，可前往官网完成出票。</div>
+                <div className={styles.syncNote}>✅ 购票信息已同步至合作平台，可前往官网完成出票。</div>
+                {purchaseNo && <div className={styles.purchaseNo}>购票记录号：{purchaseNo}</div>}
                 <div className={styles.demoHint}>
                   当前演示环境未接入真实购票平台，以下为合作平台官网入口，具体班次购票请以官网为准。
                 </div>
                 <div className={styles.modalActions}>
-                  <button type="button" className={styles.modalCancel} onClick={() => { setPurchaseTarget(null); setPurchaseLink(null); setPurchaseSynced(false); }}>关闭</button>
+                  <button type="button" className={styles.modalCancel} onClick={() => navigate('/profile/reservations')}>查看我的预约/购票</button>
                   <button type="button" className={styles.modalConfirm}
                     onClick={() => {
-                      // 打开合作平台官网（根路径可达），不再直接打开后端拼的深链（可能 404）
                       window.open('https://www.e2go.com.cn/', '_blank', 'noopener');
                       setPurchaseTarget(null);
                       setPurchaseLink(null);
                       setPurchaseSynced(false);
+                      setPurchaseNo('');
                     }}>
                     前往 e2Go 官网 →
                   </button>
@@ -292,7 +311,7 @@ const LongDistanceBusPage: React.FC = () => {
                   <button type="button" className={styles.modalCancel} onClick={() => { setPurchaseTarget(null); setPurchaseLink(null); setPurchaseSynced(false); }}>取消</button>
                   <button type="button" className={styles.modalConfirm}
                     disabled={!purchaseLink}
-                    onClick={() => setPurchaseSynced(true)}>
+                    onClick={() => void confirmPurchase()}>
                     {purchaseLink ? '确认购票信息 →' : '正在生成购票链接...'}
                   </button>
                 </div>

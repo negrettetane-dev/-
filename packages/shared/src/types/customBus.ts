@@ -90,6 +90,39 @@ export interface CreateCustomBusReservationRequest {
   passengerCount: number;
 }
 
+// ===== 长途客运购票记录（与定制公交预约合并展示，用 kind 区分） =====
+
+/** 出行记录类型：reservation=定制公交预约，purchase=长途客运购票 */
+export type TravelOrderKind = 'reservation' | 'purchase';
+
+/** 长途客运购票记录 */
+export interface LongDistancePurchase {
+  id: string;
+  purchaseNo: string;
+  /** 购票记录类型（合并展示区分用） */
+  kind: 'purchase';
+  scheduleId: string;
+  routeName: string;
+  provider: string;
+  /** 日期 YYYY-MM-DD */
+  date: string;
+  /** HH:mm */
+  departureTime: string;
+  originStation: string;
+  destinationStation: string;
+  price: number;
+  passengerCount: number;
+  status: 'pending' | 'paid' | 'cancelled' | 'expired';
+  createdAt: number;
+}
+
+/** 创建购票记录请求 */
+export interface CreateLongDistancePurchaseRequest {
+  scheduleId: string;
+  date: string;
+  passengerCount: number;
+}
+
 /** 按日期查班次实例的响应 */
 export interface CustomBusSchedulesResponse {
   date: string;

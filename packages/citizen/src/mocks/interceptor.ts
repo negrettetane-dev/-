@@ -322,6 +322,35 @@ export function fetchInterceptor() {
       }));
     }
 
+    // 长途客运购票记录（mock 模拟后端：创建 / 列表）。真实后端实现后前端零改动。
+    if (url === '/api/long-distance/purchases' && method === 'GET') {
+      const userId = mockUserId(input, init);
+      if (!userId) return response({ code: 401, message: '请先登录', data: null }, 401);
+      return response(json([]));
+    }
+    if (url === '/api/long-distance/purchases' && method === 'POST') {
+      const userId = mockUserId(input, init);
+      if (!userId) return response({ code: 401, message: '请先登录', data: null }, 401);
+      const body = await requestBody(input, init);
+      const now = Date.now();
+      return response(json({
+        id: `ldp_${now.toString(36)}`,
+        purchaseNo: 'LD' + now.toString(36).toUpperCase(),
+        kind: 'purchase',
+        scheduleId: body.scheduleId || '',
+        routeName: '长途客运',
+        provider: 'e2Go',
+        date: body.date || new Date().toISOString().slice(0, 10),
+        departureTime: '',
+        originStation: '',
+        destinationStation: '',
+        price: Number(body.passengerCount || 1) * 100,
+        passengerCount: Number(body.passengerCount || 1),
+        status: 'pending',
+        createdAt: now,
+      }));
+    }
+
     // 停车充电
     if (url === '/api/parking/lots') return new Response(JSON.stringify(json(MOCK_PARKING_LOTS)), { headers:{'Content-Type':'application/json'} });
     if (url === '/api/parking/charging') return new Response(JSON.stringify(json(MOCK_CHARGING_STATIONS)), { headers:{'Content-Type':'application/json'} });

@@ -76,4 +76,5 @@
 .modalConfirm { border: 1px solid var(--primary); background: var(--primary); color: #fff; }
 .modalHint { margin-top: 12px; font-size: 12px; color: var(--text-hint); }
 .syncNote { margin: 12px 0 6px; padding: 10px 12px; background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 8px; color: #389e0d; font-size: 13px; font-weight: 600; }
+.purchaseNo { margin: 6px 0; font-size: 13px; color: var(--text-primary); font-weight: 600; }
 .demoHint { margin: 8px 0 4px; font-size: 12px; color: #ad6800; line-height: 1.7; }
