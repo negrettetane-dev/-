@@ -6,6 +6,8 @@ const apiClient = axios.create({
   baseURL: '/api/admin',
   timeout: 15000,
   headers: { 'Content-Type': 'application/json' },
+  // VITE_ENABLE_MOCK=true 时用 fetch adapter，让 mock handlers 能拦截 axios 请求
+  adapter: import.meta.env.VITE_ENABLE_MOCK === 'true' ? 'fetch' : undefined,
 });
 
 // Request interceptor

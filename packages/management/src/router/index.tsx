@@ -21,6 +21,7 @@ const DeviceDetailPage = lazy(() => import('../pages/devices/DeviceDetailPage'))
 const SimulationPage = lazy(() => import('../pages/simulation/SimulationPage'));
 const WorkOrderListPage = lazy(() => import('../pages/workorders/WorkOrderListPage'));
 const WorkOrderDetailPage = lazy(() => import('../pages/workorders/WorkOrderDetailPage'));
+const AccessibilityManagePage = lazy(() => import('../pages/accessibility/AccessibilityManagePage'));
 
 const PageLoader = () => (
   <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', minHeight: 300 }}>
@@ -48,6 +49,7 @@ export default function AppRouter() {
           <Route path="simulation" element={<SimulationPage />} />
           <Route path="workorders" element={<WorkOrderListPage />} />
           <Route path="workorders/:id" element={<WorkOrderDetailPage />} />
+          <Route path="accessibility" element={<AccessibilityManagePage />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/admin" replace />} />

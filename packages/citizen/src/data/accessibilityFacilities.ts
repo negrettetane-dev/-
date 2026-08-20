@@ -6,32 +6,9 @@
 //   - 系统不会在数据不足时伪造「全程无障碍」——未收录站点在评分中计为「设施信息待确认」。
 
 import { apiGet } from '../services/apiClient';
+import type { FacilityStatus, FacilityEntrance, StationFacility } from '@zhitu/shared';
 
-export type FacilityStatus = 'verified' | 'unknown' | 'obstacle';
-
-export interface FacilityEntrance {
-  /** 入口标识，如 A口 / B口 */
-  name: string;
-  elevator: boolean;
-  ramp: boolean;
-  /** 该入口是否只能走楼梯（轮椅无法通过） */
-  stairsOnly: boolean;
-  wheelchairAccessible: boolean;
-  status: FacilityStatus;
-}
-
-export interface StationFacility {
-  stationId: string;
-  stationName: string;
-  /** 站台坐标（GCJ-02），用于地图 ♿/🛗 标记 */
-  lng: number;
-  lat: number;
-  entrances: FacilityEntrance[];
-  /** 无障碍卫生间 */
-  accessibleRestroom: boolean;
-  /** demo = 前端演示数据；backend = 后端真实数据 */
-  source: 'demo' | 'backend';
-}
+export type { FacilityStatus, FacilityEntrance, StationFacility };
 
 const station = (
   stationId: string,

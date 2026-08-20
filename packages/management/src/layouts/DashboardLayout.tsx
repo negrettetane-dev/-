@@ -38,6 +38,7 @@ const menuItems: MenuProps['items'] = [
   { key: '/admin/devices', icon: <ToolOutlined />, label: '设备管理' },
   { key: '/admin/simulation', icon: <ExperimentOutlined />, label: '仿真推演' },
   { key: '/admin/workorders', icon: <FileTextOutlined />, label: '工单处置' },
+  { key: '/admin/accessibility', icon: <DeploymentUnitOutlined />, label: '无障碍设施管理' },
   { key: '/admin/settings', icon: <SettingOutlined />, label: '系统设置' },
 ];
 
@@ -52,6 +53,7 @@ const breadcrumbNameMap: Record<string, string> = {
   '/admin/devices': '设备管理',
   '/admin/simulation': '仿真推演',
   '/admin/workorders': '工单处置',
+  '/admin/accessibility': '无障碍设施管理',
   '/admin/settings': '系统设置',
 };
 

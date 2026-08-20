@@ -207,13 +207,17 @@ export function setupMockHandlers() {
     const delay = 300 + Math.random() * 500;
     await new Promise((resolve) => setTimeout(resolve, delay));
 
+    // 管理端 apiClient baseURL=/api/admin，请求形如 /api/admin/devices。
+    // mock handlers 的 key 是 /api/devices，这里规整掉 /admin 前缀后再匹配。
+    const normalizedUrl = url.replace(/\/api\/admin\//, '/api/');
+
     // Try to match handler
     // First try exact method+path match (strip query)
-    const pathOnly = url.split('?')[0];
+    const pathOnly = normalizedUrl.split('?')[0];
     let handlerKey = `${method} ${pathOnly}`;
 
     // Don't use the path with query for matching
-    let handler = API_HANDLERS[url.includes('?') ? `${method} ${url.split('?')[0]}` : `${method} ${url}`];
+    let handler = API_HANDLERS[normalizedUrl.includes('?') ? `${method} ${normalizedUrl.split('?')[0]}` : `${method} ${normalizedUrl}`];
 
     // Try with parameterized paths
     if (!handler) {
