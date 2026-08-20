@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import type { RedemptionRecord } from '../../stores/persistence';
 import { apiGet, apiPost } from '../../services/apiClient';
 import { useAuthStore } from '../../stores/authStore';
-import { resolveRedemptionStatus, REDEMPTION_STATUS_META, formatDateSafe, formatExpiryDate } from '@zhitu/shared';
+import { resolveRedemptionStatus, REDEMPTION_STATUS_META, formatDateSafe, formatExpiryDate, normalizeCarbonType, carbonTypeMeta } from '@zhitu/shared';
 import styles from './Carbon.module.css';
 
 interface CarbonRecord { id:string; type:string; date:string; distance:number; duration:number; carbonSaved:number; points:number; route?:string }
@@ -96,8 +96,6 @@ const CarbonPage: React.FC = () => {
     }
     setConfirmId(null);
   };
-
-  const typeEmoji: { [key: string]: string } = { bus:'🚌', metro:'🚇', bike:'🚲', walk:'🚶' };
 
   // 未登录：不展示个人积分，引导登录
   if (!isLoggedIn) {
@@ -199,18 +197,22 @@ const CarbonPage: React.FC = () => {
       {/* Recent Records */}
       <div className={styles.records}>
         <div className={styles.sectionTitle}>📋 近期绿色出行</div>
-        {stats.records.map(r=>(
-          <div key={r.id} className={styles.record}>
-            <span className={styles.recordIcon}>{typeEmoji[r.type]}</span>
-            <div className={styles.recordBody}>
-              <div className={styles.recordType}>{r.type==='bus'?'公交':r.type==='metro'?'地铁':r.type==='bike'?'骑行':'步行'}</div>
-              <div className={styles.recordDetail}>
-                {r.route} · {(r.distance/1000).toFixed(1)}km · {Math.floor(r.duration/60)}min
+        {stats.records.map(r=>{
+          const type = normalizeCarbonType(r.type);
+          const meta = carbonTypeMeta(type);
+          return (
+            <div key={r.id} className={styles.record}>
+              <span className={styles.recordIcon}>{meta.icon}</span>
+              <div className={styles.recordBody}>
+                <div className={styles.recordType}>{meta.label}</div>
+                <div className={styles.recordDetail}>
+                  {r.route} · {(r.distance/1000).toFixed(1)}km · {Math.floor(r.duration/60)}min
+                </div>
               </div>
+              <div className={styles.recordPoints}>+{r.points}</div>
             </div>
-            <div className={styles.recordPoints}>+{r.points}</div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Rewards */}
