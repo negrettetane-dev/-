@@ -1,336 +1,96 @@
-import React, { useEffect, useMemo } from 'react';
-import {
-  Card,
-  Row,
-  Col,
-  Statistic,
-  DatePicker,
-  Button,
-  Space,
-  Table,
-} from 'antd';
-import {
-  DownloadOutlined,
-  BarChartOutlined,
-  ReloadOutlined,
-} from '@ant-design/icons';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Button, Card, Col, DatePicker, Empty, message, Row, Spin, Statistic } from 'antd';
+import { BarChartOutlined, DownloadOutlined, ReloadOutlined } from '@ant-design/icons';
 import ReactEChartsCore from 'echarts-for-react/lib/core';
 import * as echarts from 'echarts/core';
-import { LineChart, BarChart, PieChart } from 'echarts/charts';
-import {
-  GridComponent,
-  TooltipComponent,
-  LegendComponent,
-} from 'echarts/components';
+import { BarChart, LineChart, PieChart } from 'echarts/charts';
+import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
+import { analyticsService, type AnalyticsDistributionItem, type AnalyticsSummary, type AnalyticsTrendPoint } from '../../services/analyticsService';
+import { dashboardService, type DistrictCongestionData } from '../../services/dashboardService';
 
 echarts.use([LineChart, BarChart, PieChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer]);
 
 const { RangePicker } = DatePicker;
 
-// Mock data
-const generateDailyTrend = () =>
-  Array.from({ length: 30 }, (_, i) => ({
-    date: new Date(Date.now() - (29 - i) * 86400000).toISOString().slice(5, 10),
-    total: Math.floor(Math.random() * 30 + 10),
-    resolved: Math.floor(Math.random() * 25 + 5),
-  }));
-
-const categoryData = [
-  { name: '交通事故', value: 85 },
-  { name: '道路施工', value: 42 },
-  { name: '信号灯故障', value: 38 },
-  { name: '交通拥堵', value: 65 },
-  { name: '车辆故障', value: 30 },
-  { name: '临时管制', value: 25 },
-  { name: '路面塌陷', value: 12 },
-  { name: '其他', value: 45 },
-];
-
-const districtHeatData = [
-  { name: '朝阳区', value: 95 },
-  { name: '海淀区', value: 83 },
-  { name: '东城区', value: 78 },
-  { name: '西城区', value: 72 },
-  { name: '丰台区', value: 70 },
-  { name: '石景山区', value: 62 },
-  { name: '通州区', value: 55 },
-  { name: '大兴区', value: 48 },
-  { name: '昌平区', value: 38 },
-  { name: '顺义区', value: 32 },
-];
+function downloadCsv(rows: AnalyticsTrendPoint[]) {
+  const escape = (value: string | number) => `"${String(value).replace(/"/g, '""')}"`;
+  const content = ['日期,事件总数,已解决', ...rows.map(row => [row.date, row.total, row.resolved].map(escape).join(','))].join('\r\n');
+  const url = URL.createObjectURL(new Blob(['\uFEFF' + content], { type: 'text/csv;charset=utf-8' }));
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = `交通事件趋势-${new Date().toISOString().slice(0, 10)}.csv`;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
 
 export default function AnalyticsPage() {
-  const dailyTrend = useMemo(() => generateDailyTrend(), []);
+  const [dateRange, setDateRange] = useState<[string, string] | null>(null);
+  const [trend, setTrend] = useState<AnalyticsTrendPoint[]>([]);
+  const [categories, setCategories] = useState<AnalyticsDistributionItem[]>([]);
+  const [districts, setDistricts] = useState<DistrictCongestionData[]>([]);
+  const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  // Incident trend chart (line + bar combo)
+  const loadAnalytics = useCallback(async () => {
+    setLoading(true);
+    const params = dateRange ? { startDate: dateRange[0], endDate: dateRange[1] } : undefined;
+    try {
+      const [nextTrend, nextCategories, nextSummary, nextDistricts] = await Promise.all([
+        analyticsService.getTrend(params), analyticsService.getCategoryDistribution(params), analyticsService.getSummary(params), dashboardService.getDistrictCongestion(),
+      ]);
+      setTrend(Array.isArray(nextTrend) ? nextTrend : []);
+      setCategories(Array.isArray(nextCategories) ? nextCategories : []);
+      setSummary(nextSummary || null);
+      setDistricts(Array.isArray(nextDistricts) ? nextDistricts : []);
+    } catch (error) {
+      setTrend([]); setCategories([]); setDistricts([]); setSummary(null);
+      message.error(error instanceof Error ? error.message : '统计数据加载失败');
+    } finally { setLoading(false); }
+  }, [dateRange]);
+
+  useEffect(() => { void loadAnalytics(); }, [loadAnalytics]);
+
   const trendChartOption = useMemo(() => ({
-    backgroundColor: 'transparent',
-    legend: {
-      data: ['事件总数', '已解决'],
-      textStyle: { color: 'rgba(0,0,0,0.65)', fontSize: 12 },
-    },
-    grid: { left: 10, right: 10, top: 30, bottom: 10, containLabel: true },
-    tooltip: { trigger: 'axis' },
-    xAxis: {
-      type: 'category',
-      data: dailyTrend.map((d) => d.date),
-      axisLabel: { fontSize: 10, interval: 4 },
-    },
-    yAxis: {
-      type: 'value',
-      axisLabel: { fontSize: 10 },
-    },
+    backgroundColor: 'transparent', legend: { data: ['事件总数', '已解决'], textStyle: { color: 'rgba(0,0,0,0.65)', fontSize: 12 } },
+    grid: { left: 10, right: 10, top: 30, bottom: 10, containLabel: true }, tooltip: { trigger: 'axis' },
+    xAxis: { type: 'category', data: trend.map(item => item.date), axisLabel: { fontSize: 10, interval: 4 } }, yAxis: { type: 'value', axisLabel: { fontSize: 10 } },
     series: [
-      {
-        name: '事件总数',
-        type: 'bar',
-        data: dailyTrend.map((d) => d.total),
-        itemStyle: {
-          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: '#69b1ff' },
-            { offset: 1, color: '#1677ff' },
-          ]),
-          borderRadius: [4, 4, 0, 0],
-        },
-        barWidth: 12,
-      },
-      {
-        name: '已解决',
-        type: 'line',
-        data: dailyTrend.map((d) => d.resolved),
-        smooth: true,
-        symbol: 'circle',
-        symbolSize: 4,
-        lineStyle: { width: 2, color: '#52c41a' },
-        itemStyle: { color: '#52c41a' },
-      },
+      { name: '事件总数', type: 'bar', data: trend.map(item => item.total), itemStyle: { color: '#1677ff', borderRadius: [4, 4, 0, 0] }, barWidth: 12 },
+      { name: '已解决', type: 'line', data: trend.map(item => item.resolved), smooth: true, symbol: 'circle', symbolSize: 4, lineStyle: { width: 2, color: '#52c41a' }, itemStyle: { color: '#52c41a' } },
     ],
-  }), [dailyTrend]);
+  }), [trend]);
 
-  // Category pie chart
   const pieChartOption = useMemo(() => ({
-    backgroundColor: 'transparent',
-    tooltip: {
-      trigger: 'item',
-      formatter: '{b}: {c} 件 ({d}%)',
-    },
-    legend: {
-      orient: 'vertical',
-      right: 10,
-      top: 'center',
-      textStyle: { fontSize: 11 },
-      itemWidth: 10,
-      itemHeight: 10,
-    },
-    series: [
-      {
-        type: 'pie',
-        radius: ['45%', '75%'],
-        center: ['35%', '50%'],
-        avoidLabelOverlap: false,
-        itemStyle: {
-          borderRadius: 3,
-          borderColor: '#fff',
-          borderWidth: 2,
-        },
-        label: { show: false },
-        emphasis: {
-          label: { show: true, fontSize: 14, fontWeight: 'bold' },
-        },
-        data: categoryData,
-        color: ['#1677ff', '#52c41a', '#faad14', '#f5222d', '#722ed1', '#13c2c2', '#eb2f96', '#bfbfbf'],
-      },
-    ],
-  }), []);
+    backgroundColor: 'transparent', tooltip: { trigger: 'item', formatter: '{b}: {c} 件 ({d}%)' },
+    legend: { orient: 'vertical', right: 10, top: 'center', textStyle: { fontSize: 11 }, itemWidth: 10, itemHeight: 10 },
+    series: [{ type: 'pie', radius: ['45%', '75%'], center: ['35%', '50%'], avoidLabelOverlap: false, itemStyle: { borderRadius: 3, borderColor: '#fff', borderWidth: 2 }, label: { show: false }, emphasis: { label: { show: true, fontSize: 14, fontWeight: 'bold' } }, data: categories, color: ['#1677ff', '#52c41a', '#faad14', '#f5222d', '#722ed1', '#13c2c2', '#eb2f96', '#bfbfbf'] }],
+  }), [categories]);
 
-  // District ranking horizontal bar
   const districtChartOption = useMemo(() => {
-    const sorted = [...districtHeatData].sort((a, b) => b.value - a.value);
+    const sorted = [...districts].sort((a, b) => b.index - a.index);
     return {
-      backgroundColor: 'transparent',
-      grid: { left: 70, right: 30, top: 5, bottom: 5, containLabel: false },
-      tooltip: { trigger: 'axis' },
-      xAxis: {
-        type: 'value',
-        axisLabel: { fontSize: 10 },
-        splitLine: { lineStyle: { color: '#f0f0f0' } },
-      },
-      yAxis: {
-        type: 'category',
-        data: sorted.map((d) => d.name),
-        axisLabel: { fontSize: 11 },
-        inverse: true,
-      },
-      series: [
-        {
-          type: 'bar',
-          data: sorted.map((d) => ({
-            value: d.value,
-            itemStyle: {
-              color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
-                { offset: 0, color: '#69b1ff' },
-                { offset: 1, color: '#0958d9' },
-              ]),
-              borderRadius: [0, 4, 4, 0],
-            },
-          })),
-          barWidth: 16,
-          label: {
-            show: true,
-            position: 'right',
-            fontSize: 11,
-            color: 'rgba(0,0,0,0.65)',
-          },
-        },
-      ],
+      backgroundColor: 'transparent', grid: { left: 70, right: 30, top: 5, bottom: 5, containLabel: false }, tooltip: { trigger: 'axis' },
+      xAxis: { type: 'value', axisLabel: { fontSize: 10 }, splitLine: { lineStyle: { color: '#f0f0f0' } } }, yAxis: { type: 'category', data: sorted.map(item => item.district), axisLabel: { fontSize: 11 }, inverse: true },
+      series: [{ type: 'bar', data: sorted.map(item => ({ value: item.index, itemStyle: { color: '#1677ff', borderRadius: [0, 4, 4, 0] } })), barWidth: 16, label: { show: true, position: 'right', fontSize: 11, color: 'rgba(0,0,0,0.65)' } }],
     };
-  }, []);
+  }, [districts]);
 
-  return (
-    <div className="content-page">
-      <div className="page-header">
-        <h2>
-          <BarChartOutlined style={{ marginRight: 8 }} />
-          数据分析
-        </h2>
-        <p className="page-desc">城市交通运行数据分析，支持趋势查看、分类统计和报表导出</p>
-      </div>
-
-      {/* Metric cards */}
+  return <div className="content-page">
+    <div className="page-header"><h2><BarChartOutlined style={{ marginRight: 8 }} />数据分析</h2><p className="page-desc">统计结果由管理端 API 返回，可按时间范围筛选并导出趋势明细。</p></div>
+    <Row gutter={16} style={{ marginBottom: 16 }}>
+      <Col span={6}><Card><Statistic title="事件总数" value={summary?.totalIncidents ?? '-'} suffix="件" valueStyle={{ color: '#1677ff' }} prefix="📊" /></Card></Col>
+      <Col span={6}><Card><Statistic title="平均响应时间" value={summary?.avgResponseTime ?? '-'} suffix="分钟" precision={1} valueStyle={{ color: '#52c41a' }} prefix="⏱" /></Card></Col>
+      <Col span={6}><Card><Statistic title="事件解决率" value={summary?.resolutionRate ?? '-'} suffix="%" precision={1} valueStyle={{ color: '#52c41a' }} prefix="✓" /></Card></Col>
+      <Col span={6}><Card><Statistic title="市民满意度" value={summary?.citizenSatisfaction ?? '-'} suffix="/5" precision={1} valueStyle={{ color: '#faad14' }} prefix="★" /></Card></Col>
+    </Row>
+    <div className="filter-bar"><RangePicker onChange={dates => setDateRange(dates ? [dates[0]!.format('YYYY-MM-DD'), dates[1]!.format('YYYY-MM-DD')] : null)} /><Button icon={<ReloadOutlined />} loading={loading} onClick={() => void loadAnalytics()}>刷新</Button><Button type="primary" icon={<DownloadOutlined />} style={{ marginLeft: 'auto' }} disabled={!trend.length} onClick={() => downloadCsv(trend)}>导出 CSV</Button></div>
+    <Spin spinning={loading}>
       <Row gutter={16} style={{ marginBottom: 16 }}>
-        <Col span={6}>
-          <Card>
-            <Statistic
-              title="本月事件总数"
-              value={342}
-              suffix="件"
-              valueStyle={{ color: '#1677ff' }}
-              prefix="📊"
-            />
-          </Card>
-        </Col>
-        <Col span={6}>
-          <Card>
-            <Statistic
-              title="平均响应时间"
-              value={12.5}
-              suffix="分钟"
-              precision={1}
-              valueStyle={{ color: '#52c41a' }}
-              prefix="⏱️"
-            />
-          </Card>
-        </Col>
-        <Col span={6}>
-          <Card>
-            <Statistic
-              title="事件解决率"
-              value={87.3}
-              suffix="%"
-              precision={1}
-              valueStyle={{ color: '#52c41a' }}
-              prefix="✅"
-            />
-          </Card>
-        </Col>
-        <Col span={6}>
-          <Card>
-            <Statistic
-              title="市民满意度"
-              value={4.2}
-              suffix="/5"
-              precision={1}
-              valueStyle={{ color: '#faad14' }}
-              prefix="⭐"
-            />
-          </Card>
-        </Col>
+        <Col span={14}><Card title="事件趋势"><ReactEChartsCore echarts={echarts} option={trendChartOption} style={{ height: 320 }} notMerge lazyUpdate /></Card></Col>
+        <Col span={10}><Card title="事件分类分布">{categories.length ? <ReactEChartsCore echarts={echarts} option={pieChartOption} style={{ height: 320 }} notMerge lazyUpdate /> : <Empty style={{ height: 320, display: 'grid', placeItems: 'center' }} description="暂无分类数据" />}</Card></Col>
       </Row>
-
-      {/* Filter bar */}
-      <div className="filter-bar">
-        <RangePicker />
-        <Button icon={<ReloadOutlined />}>刷新</Button>
-        <Button
-          type="primary"
-          icon={<DownloadOutlined />}
-          style={{ marginLeft: 'auto' }}
-          onClick={() => alert('导出CSV（演示功能）')}
-        >
-          导出报表
-        </Button>
-      </div>
-
-      {/* Charts row 1 */}
-      <Row gutter={16} style={{ marginBottom: 16 }}>
-        <Col span={14}>
-          <Card title="事件趋势 (近30天)">
-            <ReactEChartsCore
-              echarts={echarts}
-              option={trendChartOption}
-              style={{ height: 320 }}
-              notMerge
-              lazyUpdate
-            />
-          </Card>
-        </Col>
-        <Col span={10}>
-          <Card title="事件分类分布">
-            <ReactEChartsCore
-              echarts={echarts}
-              option={pieChartOption}
-              style={{ height: 320 }}
-              notMerge
-              lazyUpdate
-            />
-          </Card>
-        </Col>
-      </Row>
-
-      {/* Charts row 2 */}
-      <Row gutter={16}>
-        <Col span={14}>
-          <Card title="各城区事件分布">
-            <ReactEChartsCore
-              echarts={echarts}
-              option={districtChartOption}
-              style={{ height: 300 }}
-              notMerge
-              lazyUpdate
-            />
-          </Card>
-        </Col>
-        <Col span={10}>
-          <Card title="响应时间分布">
-            <Table
-              dataSource={[
-                { range: '≤5分钟', count: 45, pct: '13.2%', key: 1 },
-                { range: '5-15分钟', count: 128, pct: '37.4%', key: 2 },
-                { range: '15-30分钟', count: 98, pct: '28.7%', key: 3 },
-                { range: '30-60分钟', count: 45, pct: '13.2%', key: 4 },
-                { range: '>60分钟', count: 26, pct: '7.6%', key: 5 },
-              ]}
-              columns={[
-                { title: '响应区间', dataIndex: 'range', key: 'range' },
-                { title: '事件数', dataIndex: 'count', key: 'count' },
-                { title: '占比', dataIndex: 'pct', key: 'pct',
-                  render: (pct: string, _record: any, idx: number) => {
-                    const colors = ['#52c41a', '#1677ff', '#faad14', '#ff7a00', '#f5222d'];
-                    return <span style={{ color: colors[idx], fontWeight: 600 }}>{pct}</span>;
-                  },
-                },
-              ]}
-              pagination={false}
-              size="small"
-              rowKey="range"
-            />
-            <div style={{ marginTop: 16, textAlign: 'center', color: 'rgba(0,0,0,0.45)', fontSize: 12 }}>
-              平均响应时间: <b style={{ color: '#1677ff' }}>12.5 分钟</b>
-            </div>
-          </Card>
-        </Col>
-      </Row>
-    </div>
-  );
+      <Row gutter={16}><Col span={14}><Card title="各城区拥堵指数">{districts.length ? <ReactEChartsCore echarts={echarts} option={districtChartOption} style={{ height: 300 }} notMerge lazyUpdate /> : <Empty style={{ height: 300, display: 'grid', placeItems: 'center' }} description="暂无城区数据" />}</Card></Col></Row>
+    </Spin>
+  </div>;
 }

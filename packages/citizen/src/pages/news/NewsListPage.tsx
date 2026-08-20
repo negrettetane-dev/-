@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import DataSourceBadge from '../../components/DataSourceBadge';
 import styles from './News.module.css';
 import { apiGet } from '../../services/apiClient';
+import { getManagedNewsFallback } from '../../services/adminContentFallback';
 
 interface News { id:string; category:string; title:string; summary:string; coverImage?:string; source:string; publishTime:number; tags:string[] }
 
@@ -27,7 +28,9 @@ const NewsListPage: React.FC = () => {
   const [news, setNews] = useState<News[]>([]);
 
   useEffect(() => {
-    apiGet<News[]>('/news/list').then(setNews).catch(() => setNews([]));
+    apiGet<News[]>('/news/list')
+      .then(data => setNews(Array.isArray(data) ? data : []))
+      .catch(() => setNews(getManagedNewsFallback()));
   }, []);
 
   // 动态生成 tab：已知分类按 CAT_META 顺序，未知分类追加在后（后端新增分类自动出 tab）
