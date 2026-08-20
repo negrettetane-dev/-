@@ -6,7 +6,7 @@
 //   - 购票链接不固定长期保存：点击购买时由后端即时生成（带班次+日期+库存校验）。
 //   - 智能推荐可解释、可降级：缺实时交通/天气时退化为按距离+发车时间+余票排序。
 
-import { apiGet, apiPost } from './apiClient';
+import { apiGet, apiPost, ApiError } from './apiClient';
 import { isValidCoord } from './locationService';
 import type { LongDistancePurchase, CreateLongDistancePurchaseRequest } from '@zhitu/shared';
 
@@ -351,7 +351,13 @@ export async function createPurchase(
     const req: CreateLongDistancePurchaseRequest = { scheduleId: schedule.id, date, passengerCount };
     const data = await apiPost<LongDistancePurchase>('/long-distance/purchases', req);
     if (data?.id) return { purchase: { ...data, kind: 'purchase' }, source: 'backend' };
-  } catch { /* 降级本地 */ }
+  } catch (error) {
+    // 未登录（401）：抛 UNAUTHORIZED，由页面提示登录，不静默降级本地
+    if (error instanceof ApiError && error.status === 401) {
+      throw new Error('UNAUTHORIZED');
+    }
+    // 其他错误（后端未接入/网络）：降级本地
+  }
   // 本地降级：写入 localStorage（演示，跨设备不可见）
   writeLocalPurchases([demoPurchase, ...readLocalPurchases()]);
   return { purchase: demoPurchase, source: 'demo' };

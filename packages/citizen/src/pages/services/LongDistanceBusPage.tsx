@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { useAuthStore } from '../../stores/authStore';
 import { getCurrentLocation } from '../../services/locationService';
 import {
   querySchedules,
@@ -32,6 +33,7 @@ function fmtDuration(from: string, to: string): string {
 
 const LongDistanceBusPage: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [origin, setOrigin] = useState('');
   const [destination, setDestination] = useState('');
   const [date, setDate] = useState(todayStr());
@@ -120,17 +122,34 @@ const LongDistanceBusPage: React.FC = () => {
   // 点击「确认购票信息」：创建购票记录（后端存储），再进入已同步态
   const confirmPurchase = async () => {
     if (!purchaseTarget) return;
-    const { purchase, source } = await createPurchase(
-      purchaseTarget.schedule,
-      date,
-      1,
-      purchaseTarget.inventory.price,
-    );
-    if (!mountedRef.current) return;
-    // 保存本次购票号，用于已同步态展示
-    setPurchaseSynced(true);
-    setPurchaseLink(prev => ({ ...(prev || { url: '', source }), url: prev?.url || '' }));
-    setPurchaseNo(purchase.purchaseNo);
+    // 未登录：跳登录（带 redirect 回来继续购票）
+    if (!useAuthStore.getState().isAuthenticated) {
+      setPurchaseTarget(null);
+      setPurchaseLink(null);
+      setPurchaseSynced(false);
+      navigate('/login', { state: { from: location.pathname, notice: '购买长途客运票需要登录' } });
+      return;
+    }
+    try {
+      const { purchase, source } = await createPurchase(
+        purchaseTarget.schedule,
+        date,
+        1,
+        purchaseTarget.inventory.price,
+      );
+      if (!mountedRef.current) return;
+      setPurchaseSynced(true);
+      setPurchaseLink(prev => ({ ...(prev || { url: '', source }), url: prev?.url || '' }));
+      setPurchaseNo(purchase.purchaseNo);
+    } catch (e) {
+      // 401：登录已过期或未登录，提示登录
+      if (e instanceof Error && e.message === 'UNAUTHORIZED') {
+        setPurchaseTarget(null);
+        setPurchaseLink(null);
+        setPurchaseSynced(false);
+        navigate('/login', { state: { from: location.pathname, notice: '登录状态已过期，请重新登录后购票' } });
+      }
+    }
   };
 
   return (
