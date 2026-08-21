@@ -12,6 +12,8 @@ export default defineConfig({
   },
   server: {
     port: 3000,
+    // 监听所有地址（含 IPv4 127.0.0.1 与 IPv6 ::1），避免只绑定 ::1 导致 127.0.0.1 打不开
+    host: '0.0.0.0',
     proxy: {
       '/api': {
         target: process.env.VITE_API_PROXY_TARGET || 'https://frp-six.com:32356',
