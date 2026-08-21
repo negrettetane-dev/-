@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { AMAP_KEY, loadAMap } from '../../lib/amap';
 import { formatDistance } from '@zhitu/shared';
 import { getRouteForecast } from '../../services/routeForecastService';
-import { hasSegmentContent, resolveRouteLocations, planAmapRoute, planTransitCandidates, type PlannedRoute, type SegmentData } from '../../services/routePlanningService';
+import { hasSegmentContent, resolveRouteLocations, resolveWaypointCoords, planAmapRoute, planTransitCandidates, type PlannedRoute, type SegmentData } from '../../services/routePlanningService';
 import type { RouteForecastPoint, TravelMode as ForecastMode } from '../../types/routeForecast';
 import { calculateRouteScore, recommendBestRoute, generateRecommendationReason, generateDepartureAdvice } from '../../utils/routeRecommendation';
 import { isValidDepartureAt, labelForDepartureAt, computeDepartureState, saveDepartureState } from '../../utils/departureTime';
@@ -275,7 +275,17 @@ const RouteResultPage: React.FC = () => {
         setAccessibleSelectedId(accessible[0].id);
         return accessible[0].route;
       }
-      return planAmapRoute(selectedMode, s, e, transitCity);
+      // 途经点：解析成坐标（驾车/骑行/步行支持；公交不支持，忽略并提示）
+      const waypointCoords = waypoints.length
+        ? (await resolveWaypointCoords(waypoints, transitCity)).map(w => w.coord)
+        : [];
+      if (selectedMode === 'bus' && waypointCoords.length) {
+        // 公交无原生途经点：忽略途经点，提示已忽略
+        setUnavailableNote('🚌 公交/地铁模式不支持途经点，已忽略途经点规划。');
+      } else {
+        setUnavailableNote('');
+      }
+      return planAmapRoute(selectedMode, s, e, transitCity, waypointCoords);
     };
 
     planSelected()

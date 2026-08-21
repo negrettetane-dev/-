@@ -191,6 +191,29 @@ function extractRoutePath(route: any): [number, number][] {
   return ridePath;
 }
 
+/**
+ * 把途经点名称列表逐个地理编码成坐标。
+ * 返回 [name, coord][]，坐标无效的途经点跳过（不阻塞整体规划）。
+ * 调用方只把有效坐标传给 planAmapRoute 的 waypoints。
+ */
+export async function resolveWaypointCoords(
+  waypoints: string[],
+  city?: string | null,
+): Promise<Array<{ name: string; coord: [number, number] }>> {
+  const results: Array<{ name: string; coord: [number, number] }> = [];
+  for (const name of waypoints) {
+    const trimmed = (name || '').trim();
+    if (!trimmed) continue;
+    try {
+      const g = await geocodeLocation(trimmed, city || '北京');
+      if (isValidCoord(g.lng, g.lat)) {
+        results.push({ name: trimmed, coord: [g.lng, g.lat] });
+      }
+    } catch { /* 单个途经点解析失败跳过，不阻塞 */ }
+  }
+  return results;
+}
+
 export async function resolveRouteLocations(
   origin: string,
   destination: string,
@@ -392,15 +415,48 @@ export async function planAmapRoute(
   start: [number, number],
   end: [number, number],
   city?: string | null,
+  waypoints?: [number, number][],
 ): Promise<PlannedRoute> {
   const AMap = await withTimeout(loadAMap(), 'AMap load');
   const startLngLat = new AMap.LngLat(start[0], start[1]);
   const endLngLat = new AMap.LngLat(end[0], end[1]);
+  // 有效途经点（过滤无效坐标）
+  const validWaypoints = (waypoints || []).filter(wp => Array.isArray(wp) && wp.length === 2 && Number.isFinite(wp[0]) && Number.isFinite(wp[1]));
+
+  // 骑行/步行：分段规划拼接（高德原生不支持途经点，拆成「起点→途经1→…→终点」逐段真实规划后拼接）
+  if (mode === 'bike' || mode === 'walk') {
+    // 组装所有必经点：起点 → 途经1 → ... → 途经N → 终点
+    const points: [number, number][] = [start, ...validWaypoints, end];
+    const segments: PlannedRoute[] = [];
+    const longDistCheck = (a: [number, number], b: [number, number]) => {
+      const limitKm = mode === 'bike' ? LONG_DISTANCE_LIMITS.bike : LONG_DISTANCE_LIMITS.walk;
+      if (haversineKm(a, b) > limitKm) throw new Error('LONG_DISTANCE');
+    };
+    for (let i = 0; i < points.length - 1; i += 1) {
+      longDistCheck(points[i], points[i + 1]);
+      segments.push(await planSingleSegment(mode, points[i], points[i + 1], AMap));
+    }
+    // 拼接：总距离/耗时 = 各段之和，路径 = 各段 path 首尾相连
+    const totalDistance = segments.reduce((sum, s) => sum + s.distance, 0);
+    const totalDuration = segments.reduce((sum, s) => sum + s.duration, 0);
+    const mergedPath: [number, number][] = segments.flatMap((s, idx) =>
+      idx === 0 ? s.path : s.path.slice(1), // 段间共享途经点坐标，去重
+    );
+    return {
+      mode, distance: totalDistance, duration: totalDuration, path: mergedPath, polyline: mergedPath,
+      calories: Math.round(totalDistance / 1000 * (mode === 'bike' ? 30 : 45)),
+    };
+  }
 
   if (mode === 'drive') {
     return withTimeout(new Promise((resolve, reject) => {
       AMap.plugin(['AMap.Driving'], () => {
-        const driving = new AMap.Driving({ policy: AMap.DrivingPolicy.LEAST_TIME });
+        const drivingOptions: any = { policy: AMap.DrivingPolicy.LEAST_TIME };
+        // 驾车途经点：高德原生支持（最多 16 个）
+        if (validWaypoints.length) {
+          drivingOptions.waypoints = validWaypoints.map(wp => new AMap.LngLat(wp[0], wp[1]));
+        }
+        const driving = new AMap.Driving(drivingOptions);
         driving.search(startLngLat, endLngLat, (status: string, result: any) => {
           if (status === 'complete' && result.routes?.length) {
             const route = result.routes[0];
@@ -426,12 +482,28 @@ export async function planAmapRoute(
     return candidates[0].route;
   }
 
+  // 理论上不会到达（bike/walk 已在前面分段处理），兜底防御
+  return planSingleSegment(mode, start, end, AMap);
+}
+
+/**
+ * 单个骑行/步行段规划（高德 Riding/Walking）。
+ * 供分段途经点拼接使用；无途经点时 points=[start,end] 直接走这一段。
+ */
+async function planSingleSegment(
+  mode: 'bike' | 'walk',
+  start: [number, number],
+  end: [number, number],
+  AMap: any,
+): Promise<PlannedRoute> {
   const isBike = mode === 'bike';
-  // 骑行/步行超长距离保护：直线距离超过阈值直接拒绝（不调高德），避免超长路线无意义
   const limitKm = isBike ? LONG_DISTANCE_LIMITS.bike : LONG_DISTANCE_LIMITS.walk;
+  // 超长距离保护：单段直线距离超过阈值直接拒绝
   if (haversineKm(start, end) > limitKm) {
     return Promise.reject(new Error('LONG_DISTANCE'));
   }
+  const startLngLat = new AMap.LngLat(start[0], start[1]);
+  const endLngLat = new AMap.LngLat(end[0], end[1]);
   return withTimeout(new Promise((resolve, reject) => {
     const plugin = isBike ? 'AMap.Riding' : 'AMap.Walking';
     AMap.plugin([plugin], () => {
