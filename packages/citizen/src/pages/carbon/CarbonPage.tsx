@@ -184,22 +184,32 @@ const CarbonPage: React.FC = () => {
       {/* Recent Records */}
       <div className={styles.records}>
         <div className={styles.sectionTitle}>📋 近期绿色出行</div>
-        {stats.records.map(r=>{
-          const type = normalizeCarbonType(r.type);
-          const meta = carbonTypeMeta(type);
-          return (
-            <div key={r.id} className={styles.record}>
-              <span className={styles.recordIcon}>{meta.icon}</span>
-              <div className={styles.recordBody}>
-                <div className={styles.recordType}>{meta.label}</div>
-                <div className={styles.recordDetail}>
-                  {r.route} · {(r.distance/1000).toFixed(1)}km · {Math.floor(r.duration/60)}min
-                </div>
-              </div>
-              <div className={styles.recordPoints}>+{r.points}</div>
+        {stats.records.length === 0 ? (
+          <div style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--text-hint)', fontSize: 13, lineHeight: 1.7 }}>
+            <div style={{ fontSize: 30, marginBottom: 8 }}>🌱</div>
+            暂无绿色出行记录
+            <div style={{ fontSize: 12, color: 'var(--text-hint)', marginTop: 4 }}>
+              完成一次公交/骑行/步行导航后，将自动生成积分记录
             </div>
-          );
-        })}
+          </div>
+        ) : (
+          stats.records.map(r=>{
+            const type = normalizeCarbonType(r.type);
+            const meta = carbonTypeMeta(type);
+            return (
+              <div key={r.id} className={styles.record}>
+                <span className={styles.recordIcon}>{meta.icon}</span>
+                <div className={styles.recordBody}>
+                  <div className={styles.recordType}>{meta.label}</div>
+                  <div className={styles.recordDetail}>
+                    {r.route} · {(r.distance/1000).toFixed(1)}km · {Math.floor(r.duration/60)}min
+                  </div>
+                </div>
+                <div className={styles.recordPoints}>+{r.points}</div>
+              </div>
+            );
+          })
+        )}
       </div>
 
       {/* Rewards */}
