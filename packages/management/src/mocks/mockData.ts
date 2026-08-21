@@ -587,3 +587,65 @@ export function generateSystemLogs(): MockSystemLog[] {
     ip: randomElement(ips),
   }));
 }
+
+// ---- 无障碍设施（管理端 mock）----
+export interface MockFacilityEntrance {
+  id: string;
+  name: string;
+  elevator: boolean;
+  ramp: boolean;
+  stairsOnly: boolean;
+  wheelchairAccessible: boolean;
+  status: 'verified' | 'unknown' | 'obstacle';
+}
+
+export interface MockStationFacility {
+  stationId: string;
+  stationName: string;
+  lng: number;
+  lat: number;
+  entrances: MockFacilityEntrance[];
+  accessibleRestroom: boolean;
+  source: 'backend' | 'demo';
+}
+
+export const MOCK_ACCESSIBILITY_STATIONS: MockStationFacility[] = [
+  {
+    stationId: 'bj_tiananmen_east', stationName: '天安门东', lng: 116.404, lat: 39.909, accessibleRestroom: true, source: 'backend',
+    entrances: [
+      { id: 'ent-1', name: 'A口', elevator: true, ramp: true, stairsOnly: false, wheelchairAccessible: true, status: 'verified' },
+      { id: 'ent-2', name: 'B口', elevator: false, ramp: true, stairsOnly: false, wheelchairAccessible: true, status: 'verified' },
+      { id: 'ent-3', name: 'C口', elevator: false, ramp: false, stairsOnly: true, wheelchairAccessible: false, status: 'obstacle' },
+    ],
+  },
+  {
+    stationId: 'bj_wangfujing', stationName: '王府井', lng: 116.410, lat: 39.914, accessibleRestroom: true, source: 'backend',
+    entrances: [
+      { id: 'ent-4', name: 'A口', elevator: true, ramp: true, stairsOnly: false, wheelchairAccessible: true, status: 'verified' },
+      { id: 'ent-5', name: 'B口', elevator: true, ramp: false, stairsOnly: false, wheelchairAccessible: true, status: 'verified' },
+      { id: 'ent-6', name: 'C口', elevator: false, ramp: false, stairsOnly: true, wheelchairAccessible: false, status: 'verified' },
+    ],
+  },
+  {
+    stationId: 'bj_xidan', stationName: '西单', lng: 116.380, lat: 39.913, accessibleRestroom: false, source: 'backend',
+    entrances: [
+      { id: 'ent-7', name: 'A口', elevator: true, ramp: true, stairsOnly: false, wheelchairAccessible: true, status: 'verified' },
+      { id: 'ent-8', name: 'B口', elevator: false, ramp: false, stairsOnly: false, wheelchairAccessible: true, status: 'unknown' },
+      { id: 'ent-9', name: 'C口', elevator: false, ramp: false, stairsOnly: true, wheelchairAccessible: false, status: 'obstacle' },
+    ],
+  },
+  {
+    stationId: 'bj_guomao', stationName: '国贸', lng: 116.461, lat: 39.909, accessibleRestroom: true, source: 'backend',
+    entrances: [
+      { id: 'ent-10', name: 'A口', elevator: true, ramp: true, stairsOnly: false, wheelchairAccessible: true, status: 'verified' },
+      { id: 'ent-11', name: 'D口', elevator: false, ramp: false, stairsOnly: true, wheelchairAccessible: false, status: 'obstacle' },
+    ],
+  },
+  {
+    stationId: 'bj_beijing_station', stationName: '北京站', lng: 116.433, lat: 39.903, accessibleRestroom: true, source: 'backend',
+    entrances: [
+      { id: 'ent-12', name: '北广场入口', elevator: true, ramp: true, stairsOnly: false, wheelchairAccessible: true, status: 'verified' },
+      { id: 'ent-13', name: '南侧通道', elevator: false, ramp: true, stairsOnly: false, wheelchairAccessible: true, status: 'verified' },
+    ],
+  },
+];

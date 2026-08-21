@@ -15,6 +15,8 @@ import {
   generateRealTimeMetrics,
   MOCK_USERS,
   generateSystemLogs,
+  MOCK_ACCESSIBILITY_STATIONS,
+  type MockStationFacility,
 } from './mockData';
 
 type Handler = (url: string, options?: RequestInit) => unknown;
@@ -189,6 +191,79 @@ const API_HANDLERS: Record<string, Handler> = {
   'GET /api/settings/logs': () => ({
     code: 0, data: generateSystemLogs(), message: 'ok', timestamp: Date.now(),
   }),
+
+  // Accessibility（无障碍设施管理）
+  'GET /api/accessibility/stations': (url: string) => {
+    const params = new URLSearchParams(url.split('?')[1] || '');
+    const search = params.get('search');
+    let list = MOCK_ACCESSIBILITY_STATIONS;
+    if (search) list = list.filter(s => s.stationName.includes(search) || s.stationId.includes(search));
+    const page = parseInt(params.get('page') || '1');
+    const pageSize = parseInt(params.get('page_size') || '10');
+    const start = (page - 1) * pageSize;
+    return { code: 0, data: { list: list.slice(start, start + pageSize), total: list.length }, message: 'ok', timestamp: Date.now() };
+  },
+  'POST /api/accessibility/stations': (url: string, options?: RequestInit) => {
+    const body = options?.body ? JSON.parse(String(options.body)) : {};
+    const now = Date.now();
+    const station = {
+      stationId: `bj_${now.toString(36)}`,
+      stationName: body.stationName || '新站点',
+      lng: Number(body.lng || 116.40),
+      lat: Number(body.lat || 39.90),
+      entrances: Array.isArray(body.entrances) ? body.entrances : [],
+      accessibleRestroom: Boolean(body.accessibleRestroom),
+      source: 'backend',
+    };
+    (MOCK_ACCESSIBILITY_STATIONS as { stationId: string }[]).push(station);
+    return { code: 0, data: station, message: 'ok', timestamp: now };
+  },
+  'PUT /api/accessibility/stations/:id': (url: string, options?: RequestInit) => {
+    const id = url.split('/').pop();
+    const body = options?.body ? JSON.parse(String(options.body)) : {};
+    const station = MOCK_ACCESSIBILITY_STATIONS.find(s => s.stationId === id);
+    if (!station) return { code: 404, data: null, message: '站点不存在', timestamp: Date.now() };
+    if (body.stationName !== undefined) station.stationName = body.stationName;
+    if (body.lng !== undefined) station.lng = Number(body.lng);
+    if (body.lat !== undefined) station.lat = Number(body.lat);
+    if (body.accessibleRestroom !== undefined) station.accessibleRestroom = Boolean(body.accessibleRestroom);
+    return { code: 0, data: station, message: 'ok', timestamp: Date.now() };
+  },
+  'DELETE /api/accessibility/stations/:id': (url: string) => {
+    const id = url.split('/').pop();
+    const idx = MOCK_ACCESSIBILITY_STATIONS.findIndex(s => s.stationId === id);
+    if (idx === -1) return { code: 404, data: null, message: '站点不存在', timestamp: Date.now() };
+    MOCK_ACCESSIBILITY_STATIONS.splice(idx, 1);
+    return { code: 0, data: { success: true }, message: 'ok', timestamp: Date.now() };
+  },
+  'POST /api/accessibility/stations/:id/entrances': (url: string, options?: RequestInit) => {
+    const id = url.split('/').slice(-2, -1)[0];
+    const body = options?.body ? JSON.parse(String(options.body)) : {};
+    const station = MOCK_ACCESSIBILITY_STATIONS.find(s => s.stationId === id);
+    if (!station) return { code: 404, data: null, message: '站点不存在', timestamp: Date.now() };
+    const entrance = { id: `ent-${Date.now().toString(36)}`, ...body };
+    station.entrances.push(entrance);
+    return { code: 0, data: station, message: 'ok', timestamp: Date.now() };
+  },
+  'PUT /api/accessibility/entrances/:id': (url: string, options?: RequestInit) => {
+    const entranceId = url.split('/').pop();
+    const body = options?.body ? JSON.parse(String(options.body)) : {};
+    let updated: MockStationFacility | null = null;
+    for (const s of MOCK_ACCESSIBILITY_STATIONS) {
+      const e = s.entrances.find(en => en.id === entranceId);
+      if (e) { Object.assign(e, body); updated = s; break; }
+    }
+    return updated ? { code: 0, data: updated, message: 'ok', timestamp: Date.now() } : { code: 404, data: null, message: '入口不存在', timestamp: Date.now() };
+  },
+  'DELETE /api/accessibility/entrances/:id': (url: string) => {
+    const entranceId = url.split('/').pop();
+    let deleted = false;
+    for (const s of MOCK_ACCESSIBILITY_STATIONS) {
+      const idx = s.entrances.findIndex(en => en.id === entranceId);
+      if (idx !== -1) { s.entrances.splice(idx, 1); deleted = true; break; }
+    }
+    return deleted ? { code: 0, data: { success: true }, message: 'ok', timestamp: Date.now() } : { code: 404, data: null, message: '入口不存在', timestamp: Date.now() };
+  },
 };
 
 export function setupMockHandlers() {
@@ -235,6 +310,25 @@ export function setupMockHandlers() {
         const pattern = `${method} /api/simulation/results/:id`;
         if (API_HANDLERS[pattern]) {
           handler = API_HANDLERS[pattern];
+        }
+      }
+      // Try /api/accessibility/*（无障碍设施管理，参数化路径较特殊）
+      // 注：pathSegments 首段为空（''），所以 /api/accessibility/stations/{id} 实际 5 段
+      if (pathSegments.length >= 5 && pathSegments[2] === 'accessibility') {
+        // /api/accessibility/stations/:id（5 段）
+        if (pathSegments[3] === 'stations' && pathSegments.length === 5) {
+          const pattern = `${method} /api/accessibility/stations/:id`;
+          if (API_HANDLERS[pattern]) { handler = API_HANDLERS[pattern]; }
+        }
+        // /api/accessibility/stations/:id/entrances（6 段）
+        if (pathSegments[3] === 'stations' && pathSegments.length === 6 && pathSegments[5] === 'entrances') {
+          const pattern = `${method} /api/accessibility/stations/:id/entrances`;
+          if (API_HANDLERS[pattern]) { handler = API_HANDLERS[pattern]; }
+        }
+        // /api/accessibility/entrances/:id（5 段）
+        if (pathSegments[3] === 'entrances' && pathSegments.length === 5) {
+          const pattern = `${method} /api/accessibility/entrances/:id`;
+          if (API_HANDLERS[pattern]) { handler = API_HANDLERS[pattern]; }
         }
       }
     }
