@@ -478,8 +478,16 @@ export async function planAmapRoute(
   }
 
   if (mode === 'bus') {
-    const candidates = await planTransitCandidates(start, end, city);
-    return candidates[0].route;
+    try {
+      const candidates = await planTransitCandidates(start, end, city);
+      return candidates[0].route;
+    } catch (error) {
+      // 高德 Transfer 失败（开发隧道/白名单未生效、服务限流、或该起终点无公交方案）。
+      // 绝不能把驾车路径 + 假站点伪装成「公交方案」——用户会误以为公交沿驾车路走、还不停公交站。
+      // 直接抛错，由结果页显示明确提示「公交服务暂不可用」。
+      console.warn('Transit route unavailable:', error);
+      throw error;
+    }
   }
 
   // 理论上不会到达（bike/walk 已在前面分段处理），兜底防御
