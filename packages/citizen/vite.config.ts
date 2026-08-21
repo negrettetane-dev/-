@@ -16,7 +16,7 @@ export default defineConfig({
     host: '0.0.0.0',
     proxy: {
       '/api': {
-        target: process.env.VITE_API_PROXY_TARGET || 'https://frp-six.com:32356',
+        target: process.env.VITE_API_PROXY_TARGET || 'https://9tr30463os14.vicp.fun',
         changeOrigin: true,
         secure: false,
       },

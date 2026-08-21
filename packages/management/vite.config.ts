@@ -17,7 +17,7 @@ export default defineConfig(({ mode }) => {
       port: 3001,
       proxy: {
         '/api': {
-          target: env.VITE_API_PROXY_TARGET || 'https://frp-six.com:32356',
+          target: env.VITE_API_PROXY_TARGET || 'https://9tr30463os14.vicp.fun',
           changeOrigin: true,
           secure: false,
         },
