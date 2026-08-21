@@ -981,6 +981,9 @@ const RouteResultPage: React.FC = () => {
             const distance = realRoute.distance;
             const duration = realRoute.duration;
             const badge = mode === 'drive' ? '推荐' : mode === 'bus' ? '便捷' : mode === 'bike' ? '绿色' : '健康';
+            // 高德未返回真实值时显示「未知」，不伪造 0.0km/0分钟
+            const showDuration = duration > 0 ? formatDuration(duration) : '—';
+            const showDistance = distance > 0 ? `${(distance / 1000).toFixed(1)}km` : '—';
 
             return (
               <div
@@ -991,13 +994,13 @@ const RouteResultPage: React.FC = () => {
                 <div className={styles.routeCardHeader}>
                   <span style={{ fontSize: 18 }}>{MODE_META[mode].icon}</span>
                   <div>
-                    <span className={styles.routeDuration}>{formatDuration(duration)}</span>
+                    <span className={styles.routeDuration}>{showDuration}</span>
                     <span style={{ fontSize: 12, color: '#52c41a', marginLeft: 4 }}>
                       {badge}
                     </span>
                   </div>
                   <span style={{ color: 'var(--text-secondary)', fontSize: 13 }}>
-                    {(distance / 1000).toFixed(1)}km
+                    {showDistance}
                   </span>
                 </div>
 

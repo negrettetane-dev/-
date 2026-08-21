@@ -1,6 +1,6 @@
 import { formatDistance } from '@zhitu/shared';
 import { loadAMap } from '../lib/amap';
-import { geocodeLocation, isValidCoord } from './locationService';
+import { geocodeLocation, isValidCoord, reverseGeocodeDetail } from './locationService';
 import type { RouteTravelMode } from '../components/travel/TravelModeSelector';
 
 export interface SegmentData {
@@ -364,20 +364,42 @@ export async function planTransitCandidates(
   const startLngLat = new AMap.LngLat(start[0], start[1]);
   const endLngLat = new AMap.LngLat(end[0], end[1]);
 
-  // 高德 Transfer 的 city 应使用真实起点城市；未知时不传（由高德按坐标推断）
+  // 高德 Transfer 的 city 是必填项：优先用调用方传入的真实城市；
+  // 缺失时按起点坐标逆地理取城市（避免手动起点无 city 导致 Transfer 失败）。
+  let transferCity = (city || '').trim().replace(/市$/, '');
+  if (!transferCity) {
+    try {
+      const detail = await reverseGeocodeDetail(start[0], start[1]);
+      transferCity = (detail.city || detail.province || '').replace(/市$/, '');
+    } catch { /* 逆地理失败则保持空，Transfer 可能失败但会有明确报错 */ }
+  }
   const transferOptions: any = { policy: AMap.TransferPolicy.LEAST_TIME, nightflag: false };
-  if (city && city.trim()) transferOptions.city = city.trim().replace(/市$/, '');
+  if (transferCity) transferOptions.city = transferCity;
+
+  // 消除静默失败：插件回调内任何异常都同步 reject（否则 15s 超时掩盖真实原因）
   const result = await withTimeout(new Promise<any>((resolve, reject) => {
-    AMap.plugin(['AMap.Transfer'], () => {
-      const transfer = new AMap.Transfer(transferOptions);
-      transfer.search(startLngLat, endLngLat, (status: string, data: any) => {
-        if (status !== 'complete' || !data?.plans?.length) {
-          reject(new Error(data?.info || '公交路线规划失败'));
-          return;
+    try {
+      AMap.plugin(['AMap.Transfer'], () => {
+        try {
+          if (typeof AMap.Transfer === 'undefined') {
+            reject(new Error('AMap.Transfer 插件未加载，请检查高德 key/安全密钥配置'));
+            return;
+          }
+          const transfer = new AMap.Transfer(transferOptions);
+          transfer.search(startLngLat, endLngLat, (status: string, data: any) => {
+            if (status !== 'complete' || !data?.plans?.length) {
+              reject(new Error(data?.info || '公交路线规划失败'));
+              return;
+            }
+            resolve(data);
+          });
+        } catch (e) {
+          reject(e instanceof Error ? e : new Error(String(e)));
         }
-        resolve(data);
       });
-    });
+    } catch (e) {
+      reject(e instanceof Error ? e : new Error(String(e)));
+    }
   }), 'Transit route');
 
   const candidates: TransitCandidate[] = [];
@@ -396,12 +418,13 @@ export async function planTransitCandidates(
       transferCount: parsed.transferCount,
       route: {
         mode: 'bus',
-        distance: Number(plan.distance) || 9200,
+        // 只用高德真实值；缺失时用 0（前端显示「距离/票价未知」，不伪造 9200m/¥5）
+        distance: Number(plan.distance) || 0,
         duration: Number(plan.time) || 0,
         path: parsed.path,
         polyline: parsed.path,
         segments: parsed.segments,
-        cost: Number(plan.cost) || 5,
+        cost: Number(plan.cost) || 0,
       },
     });
   });
