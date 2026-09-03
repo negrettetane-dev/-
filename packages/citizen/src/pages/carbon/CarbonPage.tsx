@@ -3,12 +3,24 @@ import { useNavigate } from 'react-router-dom';
 import type { RedemptionRecord } from '../../stores/persistence';
 import { apiGet, apiPost } from '../../services/apiClient';
 import { useAuthStore } from '../../stores/authStore';
-import { resolveRedemptionStatus, REDEMPTION_STATUS_META, formatDateSafe, formatExpiryDate, normalizeCarbonType, carbonTypeMeta } from '@zhitu/shared';
+import { resolveRedemptionStatus, REDEMPTION_STATUS_META, formatDateSafe, formatExpiryDate } from '@zhitu/shared';
 import styles from './Carbon.module.css';
 
 interface CarbonRecord { id:string; type:string; date:string; distance:number; duration:number; carbonSaved:number; points:number; route?:string }
 interface Stats { totalPoints:number; totalCarbonSaved:number; treeEquivalent:number; carDistanceSaved:number; rankPercent:number; records:CarbonRecord[] }
 interface Reward { id:string; name:string; description:string; cost:number; type:string; stock:number }
+
+function normalizeCarbonType(raw: unknown): 'bus' | 'metro' | 'bike' | 'walk' {
+  const value = String(raw || '').toLowerCase();
+  if (value.includes('metro') || value.includes('subway') || value.includes('地铁')) return 'metro';
+  if (value.includes('bus') || value.includes('公交')) return 'bus';
+  if (value.includes('bike') || value.includes('骑')) return 'bike';
+  return 'walk';
+}
+
+function carbonTypeMeta(type: ReturnType<typeof normalizeCarbonType>): { label: string; icon: string } {
+  return ({ bus: { label: '公交', icon: '🚌' }, metro: { label: '地铁', icon: '🚇' }, bike: { label: '骑行', icon: '🚲' }, walk: { label: '步行', icon: '🚶' } })[type];
+}
 
 const CarbonPage: React.FC = () => {
   const navigate = useNavigate();
