@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { AMAP_KEY, loadAMap } from '../../lib/amap';
 import { formatDistance } from '@zhitu/shared';
 import { getRouteForecast } from '../../services/routeForecastService';
-import { hasSegmentContent, resolveRouteLocations, resolveWaypointCoords, planAmapRoute, planTransitCandidates, type PlannedRoute, type SegmentData } from '../../services/routePlanningService';
+import { hasSegmentContent, resolveRouteLocations, resolveWaypointCoords, planAmapRoute, planRouteCandidates, planTransitCandidates, type PlannedRoute, type SegmentData, type RouteCandidate } from '../../services/routePlanningService';
 import type { RouteForecastPoint, TravelMode as ForecastMode } from '../../types/routeForecast';
 import { calculateRouteScore, recommendBestRoute, generateRecommendationReason, generateDepartureAdvice } from '../../utils/routeRecommendation';
 import { isValidDepartureAt, labelForDepartureAt, computeDepartureState, saveDepartureState } from '../../utils/departureTime';
@@ -148,6 +148,15 @@ const RouteResultPage: React.FC = () => {
   const accessibleActive = selectedDisplayMode === 'accessible';
   const accessibleSelected = accessibleOptions.find(o => o.id === accessibleSelectedId) || accessibleOptions[0] || null;
 
+  // 多候选路线（驾车/骑行/步行：时间最短 + 距离最短；去重后可能 1 条）
+  const [routeCandidates, setRouteCandidates] = useState<Partial<Record<TravelMode, RouteCandidate[]>>>({});
+  const [selectedCandidateIdx, setSelectedCandidateIdx] = useState<Partial<Record<TravelMode, number>>>({});
+  const selectedCandidate = (mode: TravelMode) => {
+    const list = routeCandidates[mode] || [];
+    const idx = selectedCandidateIdx[mode] ?? 0;
+    return list[idx] || null;
+  };
+
   // 导航状态
   const [navActive, setNavActive] = useState(false);
   const [navMode, setNavMode] = useState<TravelMode | null>(null);
@@ -265,30 +274,54 @@ const RouteResultPage: React.FC = () => {
     // 真实起点城市：从 origin store 读取（高德 Transfer 不再写死「北京」）
     const originLoc = useTravelLocationStore.getState().origin;
     const transitCity = originLoc?.city || originLoc?.province || null;
-    const planSelected = async (): Promise<PlannedRoute> => {
-      if (selectedMode === 'bus' && selectedDisplayMode === 'accessible') {
-        const candidates = await planTransitCandidates(s, e, transitCity);
-        const accessible = buildAccessibleOptions(candidates);
-        setAccessibleOptions(accessible);
-        setAccessibleUnavailableNote(accessible.length ? '' : '');
-        if (accessible.length === 0) throw new Error('transit-no-valid-segment');
-        setAccessibleSelectedId(accessible[0].id);
-        return accessible[0].route;
-      }
-      // 途经点：解析成坐标（驾车/骑行/步行支持；公交不支持，忽略并提示）
-      const waypointCoords = waypoints.length
+    // 途经点：解析成坐标（驾车/骑行/步行支持；公交不支持，忽略并提示）
+    const resolveWp = async () => {
+      const coords = waypoints.length
         ? (await resolveWaypointCoords(waypoints, transitCity)).map(w => w.coord)
         : [];
-      if (selectedMode === 'bus' && waypointCoords.length) {
-        // 公交无原生途经点：忽略途经点，提示已忽略
+      if (selectedMode === 'bus' && coords.length) {
         setUnavailableNote('🚌 公交/地铁模式不支持途经点，已忽略途经点规划。');
       } else {
         setUnavailableNote('');
       }
-      return planAmapRoute(selectedMode, s, e, transitCity, waypointCoords);
+      return coords;
     };
 
-    planSelected()
+    // 无障碍：走无障碍候选
+    const planAccessible = async (): Promise<PlannedRoute> => {
+      const candidates = await planTransitCandidates(s, e, transitCity);
+      const accessible = buildAccessibleOptions(candidates);
+      setAccessibleOptions(accessible);
+      setAccessibleUnavailableNote(accessible.length ? '' : '');
+      if (accessible.length === 0) throw new Error('transit-no-valid-segment');
+      setAccessibleSelectedId(accessible[0].id);
+      return accessible[0].route;
+    };
+
+    // 驾车/骑行/步行：多候选（时间最短 + 距离最短，去重后可能 1 条）
+    const planCandidates = async (): Promise<PlannedRoute> => {
+      const wp = await resolveWp();
+      const candidates = await planRouteCandidates(selectedMode, s, e, transitCity, wp);
+      if (candidates.length) {
+        setRouteCandidates(prev => ({ ...prev, [selectedMode]: candidates }));
+        setSelectedCandidateIdx(prev => ({ ...prev, [selectedMode]: 0 }));
+        return candidates[0].route;
+      }
+      // 无候选（理论上不该到）→ 回退单条
+      return planAmapRoute(selectedMode, s, e, transitCity, wp);
+    };
+
+    // 公交：单条（Transfer 已内部处理多方案，取最优第一条）
+    const planBus = async (): Promise<PlannedRoute> => {
+      await resolveWp();
+      return planAmapRoute(selectedMode, s, e, transitCity);
+    };
+
+    const planTask = selectedMode === 'bus'
+      ? (selectedDisplayMode === 'accessible' ? planAccessible() : planBus())
+      : planCandidates();
+
+    planTask
       .then((route) => {
         if (requestId !== routeRequestIdRef.current) return;
         setRouteResults({ [route.mode]: route });
@@ -299,6 +332,7 @@ const RouteResultPage: React.FC = () => {
         if (requestId !== routeRequestIdRef.current) return;
         console.error(`${selectedMode} 规划失败（不展示该方案）:`, error);
         setRouteResults({});
+        setRouteCandidates(prev => ({ ...prev, [selectedMode]: [] }));
         const msg = error instanceof Error ? error.message : '';
         if (selectedMode === 'bus' && msg.includes('CROSS_CITY_TRANSIT_UNSUPPORTED')) {
           setUnavailableNote('🚌 当前起终点不在同一城市，暂不支持跨城市公交/地铁规划。');
@@ -756,6 +790,15 @@ const RouteResultPage: React.FC = () => {
     setRouteResults(prev => ({ ...prev, bus: option.route }));
   };
 
+  // 驾车/骑行/步行：切换候选（时间最短/距离最短）→ 写回 routeResults[mode] 供地图/导航复用
+  const selectCandidate = (mode: TravelMode, idx: number) => {
+    const list = routeCandidates[mode];
+    const candidate = list?.[idx];
+    if (!candidate) return;
+    setSelectedCandidateIdx(prev => ({ ...prev, [mode]: idx }));
+    setRouteResults(prev => ({ ...prev, [mode]: candidate.route }));
+  };
+
   // ===== 无障碍模式开始导航（复用现有 bus 导航逻辑，仅改文案/设施提示） =====
   const startAccessibleNavigation = (option: AccessibleRouteOption) => {
     // 防重复进入：导航中/已到达/已结束时不允许再次启动导航
@@ -991,6 +1034,35 @@ const RouteResultPage: React.FC = () => {
                 className={`${styles.routeCard} ${selectedMode === mode ? styles.routeCardActive : ''}`}
                 onClick={() => setSelectedMode(mode)}
               >
+                {/* 多候选切换条：驾车/骑行/步行的时间最短/距离最短（去重后可能仅 1 条） */}
+                {(routeCandidates[mode]?.length || 0) > 1 && (
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+                    {(routeCandidates[mode] || []).map((cand, idx) => {
+                      const active = (selectedCandidateIdx[mode] ?? 0) === idx;
+                      const candRoute = cand.route;
+                      return (
+                        <button
+                          key={cand.tag}
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); selectCandidate(mode, idx); }}
+                          style={{
+                            flex: 1, minWidth: 110, padding: '8px 12px', borderRadius: 10,
+                            border: active ? '2px solid #1677ff' : '1px solid #e5e9ef',
+                            background: active ? '#f0f5ff' : '#fff',
+                            color: active ? '#1677ff' : 'var(--text-secondary)',
+                            cursor: 'pointer', fontSize: 13, textAlign: 'left', lineHeight: 1.5,
+                          }}
+                        >
+                          <div style={{ fontWeight: 700 }}>{cand.icon} {cand.label}</div>
+                          <div style={{ fontSize: 12, opacity: 0.8 }}>
+                            {candRoute.duration > 0 ? formatDuration(candRoute.duration) : '—'}
+                            {candRoute.distance > 0 ? ` · ${(candRoute.distance / 1000).toFixed(1)}km` : ''}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
                 <div className={styles.routeCardHeader}>
                   <span style={{ fontSize: 18 }}>{MODE_META[mode].icon}</span>
                   <div>

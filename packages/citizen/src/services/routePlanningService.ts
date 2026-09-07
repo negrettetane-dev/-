@@ -557,3 +557,128 @@ async function planSingleSegment(
     });
   }), isBike ? 'Riding route' : 'Walking route');
 }
+
+// ===== 多候选路线（时间最短 / 距离最短 / 低碳） =====
+
+/** 候选路线标签：fastest=时间最短，shortest=距离最短 */
+export type RouteCandidateTag = 'fastest' | 'shortest';
+
+export interface RouteCandidate {
+  tag: RouteCandidateTag;
+  label: string;
+  icon: string;
+  route: PlannedRoute;
+}
+
+const CANDIDATE_ICONS: Record<RouteCandidateTag, string> = { fastest: '🚀', shortest: '📍' };
+
+/** 把高德单条路线对象解析为 PlannedRoute（复用 extractRoutePath + 真实值校验） */
+function routeFromAmapRoute(mode: 'drive' | 'bike' | 'walk', route: any): PlannedRoute | null {
+  const path = extractRoutePath(route);
+  if (path.length < 2 || !Number(route.distance) || !Number(route.time)) return null;
+  const isBike = mode === 'bike';
+  return {
+    mode, distance: route.distance, duration: route.time, path, polyline: path,
+    ...(mode === 'drive'
+      ? { congestionSegments: [{ level: 'slow', ratio: 0.3 }, { level: 'free', ratio: 0.7 }], aiAdvice: '建议避开拥堵路段' }
+      : { calories: Math.round(route.distance / 1000 * (isBike ? 30 : 45)) }),
+  };
+}
+
+/** 按用户确认阈值去重：距离差<max(3%,200m) 且 耗时差<max(3%,60s) 视为同一路线，保留第一条 */
+function dedupeCandidates(candidates: RouteCandidate[]): RouteCandidate[] {
+  const result: RouteCandidate[] = [];
+  for (const candidate of candidates) {
+    const dup = result.find(existing =>
+      Math.abs(existing.route.distance - candidate.route.distance) < Math.max(existing.route.distance * 0.03, 200)
+      && Math.abs(existing.route.duration - candidate.route.duration) < Math.max(existing.route.duration * 0.03, 60)
+    );
+    if (!dup) result.push(candidate);
+  }
+  return result;
+}
+
+/**
+ * 多候选路线规划：驾车/骑行/步行返回「时间最短 + 距离最短」（去重后可能只有 1 条）。
+ * 驾车：高德原生 LEAST_TIME / LEAST_DISTANCE 两次真实规划。
+ * 骑行/步行：高德 Riding/Walking 从一次返回的多条备选里取时间最短与距离最短两条。
+ * 所有路线均为高德真实返回，不伪造。返回 [] 表示无可用路线（调用方展示空态）。
+ */
+export async function planRouteCandidates(
+  mode: RouteTravelMode,
+  start: [number, number],
+  end: [number, number],
+  city?: string | null,
+  waypoints?: [number, number][],
+): Promise<RouteCandidate[]> {
+  const AMap = await withTimeout(loadAMap(), 'AMap load');
+  const startLngLat = new AMap.LngLat(start[0], start[1]);
+  const endLngLat = new AMap.LngLat(end[0], end[1]);
+  const validWaypoints = (waypoints || []).filter(wp => Array.isArray(wp) && wp.length === 2 && Number.isFinite(wp[0]) && Number.isFinite(wp[1]));
+
+  // —— 驾车：两次真实策略规划 ——
+  if (mode === 'drive') {
+    const driveOnce = (policy: string): Promise<PlannedRoute | null> => withTimeout(new Promise((resolve) => {
+      try {
+        AMap.plugin(['AMap.Driving'], () => {
+          try {
+            const drivingOptions: any = { policy };
+            if (validWaypoints.length) drivingOptions.waypoints = validWaypoints.map(wp => new AMap.LngLat(wp[0], wp[1]));
+            const driving = new AMap.Driving(drivingOptions);
+            driving.search(startLngLat, endLngLat, (status: string, result: any) => {
+              if (status === 'complete' && result.routes?.length) {
+                resolve(routeFromAmapRoute('drive', result.routes[0]));
+              } else resolve(null);
+            });
+          } catch { resolve(null); }
+        });
+      } catch { resolve(null); }
+    }), 'Driving policy route');
+
+    const [fastestRoute, shortestRoute] = await Promise.all([
+      driveOnce(AMap.DrivingPolicy.LEAST_TIME),
+      driveOnce(AMap.DrivingPolicy.LEAST_DISTANCE),
+    ]);
+    const candidates: RouteCandidate[] = [];
+    if (fastestRoute) candidates.push({ tag: 'fastest', label: '时间最短', icon: CANDIDATE_ICONS.fastest, route: fastestRoute });
+    if (shortestRoute) candidates.push({ tag: 'shortest', label: '距离最短', icon: CANDIDATE_ICONS.shortest, route: shortestRoute });
+    return dedupeCandidates(candidates);
+  }
+
+  // —— 骑行 / 步行：从一次返回的多条备选取时间/距离最短路 ——
+  if (mode === 'bike' || mode === 'walk') {
+    const isBike = mode === 'bike';
+    const limitKm = isBike ? LONG_DISTANCE_LIMITS.bike : LONG_DISTANCE_LIMITS.walk;
+    if (haversineKm(start, end) > limitKm) throw new Error('LONG_DISTANCE');
+    const result = await withTimeout(new Promise<any>((resolve, reject) => {
+      const plugin = isBike ? 'AMap.Riding' : 'AMap.Walking';
+      AMap.plugin([plugin], () => {
+        const planner = isBike ? new AMap.Riding({}) : new AMap.Walking({});
+        planner.search(startLngLat, endLngLat, (status: string, data: any) => {
+          if (status === 'complete' && data?.routes?.length) resolve(data);
+          else reject(new Error(data?.info || `${isBike ? '骑行' : '步行'}路线规划失败`));
+        });
+      });
+    }), isBike ? 'Riding route' : 'Walking route');
+
+    const parsedRoutes = (result.routes as any[])
+      .map((r: any) => routeFromAmapRoute(mode, r))
+      .filter((r: PlannedRoute | null): r is PlannedRoute => r !== null);
+    if (!parsedRoutes.length) throw new Error('EMPTY_ROUTE');
+
+    // 时间最短 = duration 最小；距离最短 = distance 最小
+    const fastest = [...parsedRoutes].sort((a, b) => a.duration - b.duration)[0];
+    const shortest = [...parsedRoutes].sort((a, b) => a.distance - b.distance)[0];
+    const candidates: RouteCandidate[] = [];
+    candidates.push({ tag: 'fastest', label: '时间最短', icon: CANDIDATE_ICONS.fastest, route: fastest });
+    // 距离最短与时间最短不是同一对象才追加（去重由 dedupeCandidates 兜底）
+    if (shortest !== fastest) {
+      candidates.push({ tag: 'shortest', label: '距离最短', icon: CANDIDATE_ICONS.shortest, route: shortest });
+    }
+    return dedupeCandidates(candidates);
+  }
+
+  // 公交/其他：不在第一步范围，返回空（调用方走原有逻辑）
+  return [];
+}
+
