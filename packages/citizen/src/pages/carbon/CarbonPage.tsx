@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { RedemptionRecord } from '../../stores/persistence';
+import { getCarbonConfig, getPointRules, type RedemptionRecord, type CitizenCarbonConfig, type CitizenPointRule } from '../../stores/persistence';
 import { apiGet, apiPost } from '../../services/apiClient';
 import { useAuthStore } from '../../stores/authStore';
 import { resolveRedemptionStatus, REDEMPTION_STATUS_META, formatDateSafe, formatExpiryDate } from '@zhitu/shared';
@@ -31,6 +31,8 @@ const CarbonPage: React.FC = () => {
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [redeemMsg, setRedeemMsg] = useState('');
   const [msgType, setMsgType] = useState<'success' | 'error'>('success');
+  const [carbonConfig, setCarbonConfig] = useState<CitizenCarbonConfig>(getCarbonConfig());
+  const [pointRules, setPointRules] = useState<CitizenPointRule[]>(getPointRules());
 
   const loadData = useCallback(() => {
     // 未登录：只加载公共商品列表，不调用个人接口（/points /carbon/stats /redemptions）
@@ -61,6 +63,11 @@ const CarbonPage: React.FC = () => {
   }, [isLoggedIn]);
 
   useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => {
+    const refreshConfig = () => { setCarbonConfig(getCarbonConfig()); setPointRules(getPointRules()); };
+    window.addEventListener('storage', refreshConfig);
+    return () => window.removeEventListener('storage', refreshConfig);
+  }, []);
 
   // 兑换逻辑 — 前端只调 API，积分扣减由"后端"完成
   const handleRedeem = async () => {
@@ -172,14 +179,13 @@ const CarbonPage: React.FC = () => {
         </div>
       )}
 
-      {/* 碳积分计算规则 */}
       <div style={{ background: '#f0f5ff', borderRadius: 12, padding: 14, marginBottom: 14, fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.9 }}>
         <div style={{ fontSize: 13, fontWeight: 700, color: '#1677ff', marginBottom: 6 }}>📐 碳积分计算规则</div>
-        <div>完成导航后按出行方式与距离结算：</div>
-        <div>• 🚶 步行 / 🚲 骑行：减碳较多，积分系数最高</div>
-        <div>• 🚌 公交地铁：减碳中等，积分系数较低</div>
-        <div>• 🚗 驾车：不获得绿色积分</div>
-        <div style={{ marginTop: 4, color: 'var(--text-hint)' }}>积分由后端按真实出行记录结算，前端仅展示，不可修改余额。</div>
+        <div style={{ fontWeight: 600, color: '#101828' }}>实际轨迹距离（km）× 减碳系数 × 固定积分 = 碳积分</div>
+        <div>仅完成步行、骑行、公交、地铁或新能源汽车出行后计分；路线预览、未完成或异常行程不计分。</div>
+        <div>当前系数：步行 {carbonConfig.carbonFactors.walk ?? 1} · 骑行 {carbonConfig.carbonFactors.bike ?? 0.8} · 地铁 {carbonConfig.carbonFactors.metro ?? 0.6} · 公交 {carbonConfig.carbonFactors.bus ?? 0.5} · 新能源汽车 {carbonConfig.carbonFactors.new_energy_vehicle ?? 0.2}</div>
+        <div>固定积分：公交 {pointRules.find(r => r.action === 'bus_ride')?.points ?? 5} · 地铁 {pointRules.find(r => r.action === 'metro_ride')?.points ?? 5} · 骑行 {pointRules.find(r => r.action === 'bike_ride')?.points ?? 10} · 步行 {pointRules.find(r => r.action === 'walk')?.points ?? 10} · 新能源汽车 {pointRules.find(r => r.action === 'new_energy_vehicle_ride')?.points ?? 1}。</div>
+        <div>单次最多计入 {carbonConfig.maxTripDistanceKm} km；积分由后端最终结算，管理端调整后本页会同步更新。</div>
       </div>
 
       {/* Green Forest */}

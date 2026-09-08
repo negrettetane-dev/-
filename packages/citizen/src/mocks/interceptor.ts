@@ -9,7 +9,7 @@ import {
   getUserPoints, deductPoints, addPoints,
   addRedemption, getRedemptions,
   findAccount, findAccountById, registerAccount, hashPassword,
-  addReport, getReports,
+  addReport, getReports, getCarbonRewards, redeemCarbonReward,
 } from '../stores/persistence';
 import { DEMO_ACCESSIBLE_FACILITIES } from '../data/accessibilityFacilities';
 import {
@@ -409,7 +409,7 @@ export function fetchInterceptor() {
 
     // GET /api/rewards — 兑换商品列表（可扩展，从"后端"定义积分配额）
     if (url === '/api/rewards') {
-      return new Response(JSON.stringify(json(MOCK_CARBON_REWARDS)), { headers:{'Content-Type':'application/json'} });
+      return new Response(JSON.stringify(json(getCarbonRewards())), { headers:{'Content-Type':'application/json'} });
     }
 
     // POST /api/rewards/redeem — 执行兑换（积分不足由"后端"判断，前端无法篡改）
@@ -418,7 +418,7 @@ export function fetchInterceptor() {
       if (!userId) return response({ code: 401, message: '请先登录', data: null }, 401);
       const body = await requestBody(input, init);
       const rewardId = body.rewardId;
-      const reward = MOCK_CARBON_REWARDS.find(r => r.id === rewardId);
+      const reward = getCarbonRewards().find(r => r.id === rewardId);
       if (!reward) return new Response(JSON.stringify({ code: 404, message: '商品不存在', data: null }), { headers:{'Content-Type':'application/json'} });
 
       const userPoints = getUserPoints(userId);
@@ -428,6 +428,9 @@ export function fetchInterceptor() {
           data: { required: reward.cost, current: userPoints }
         }), { headers:{'Content-Type':'application/json'} });
       }
+
+      const redeemedReward = redeemCarbonReward(rewardId);
+      if (!redeemedReward) return new Response(JSON.stringify({ code: 400, message: '商品已下架或库存不足', data: null }), { headers:{'Content-Type':'application/json'} });
 
       // 事务模拟：扣积分 + 建兑换记录（两步都成功才返回成功）
       const deducted = deductPoints(reward.cost, userId);

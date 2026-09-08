@@ -44,7 +44,15 @@ export interface OperationLog {
 }
 
 export interface PointRule {
-  id: string; name: string; action: string; points: number; enabled: boolean;
+  id: string; name: string; action: string; points: number; enabled: boolean; distanceKm?: number; maxDaily?: number;
+}
+
+export interface CarbonConfig {
+  carbonFactors: Record<string, number>;
+  pointsPerKm?: Record<string, number>;
+  maxTripDistanceKm: number;
+  distanceSource: 'gps_track';
+  riskRules: { speedAnomaly: boolean; gpsJump: boolean; duplicateTrip: boolean; cancelledTrip: boolean; crossDayToStartDate: boolean };
 }
 
 // ====== 事件/工单（共享公民端 localStorage key） ======
@@ -120,10 +128,27 @@ export function getPointRules(): PointRule[] {
     { id:'pr4', name:'步行', action:'walk', points:10, enabled:true },
     { id:'pr5', name:'有效事件上报', action:'valid_report', points:20, enabled:true },
     { id:'pr6', name:'每日签到', action:'daily_checkin', points:3, enabled:true },
+    { id:'pr7', name:'新能源汽车出行', action:'new_energy_vehicle_ride', points:1, enabled:true },
   ]);
 }
 
 export function setPointRules(rules: PointRule[]): void { set('point_rules', rules); }
+
+export function getCarbonConfig(): CarbonConfig {
+  const fallback: CarbonConfig = { carbonFactors: { walk: 1.0, bike: 0.8, metro: 0.6, bus: 0.5, new_energy_vehicle: 0.2 }, pointsPerKm: { walk: 1, bike: 1, metro: 1, bus: 1, new_energy_vehicle: 1 }, maxTripDistanceKm: 100, distanceSource: 'gps_track', riskRules: { speedAnomaly: true, gpsJump: true, duplicateTrip: true, cancelledTrip: true, crossDayToStartDate: true } };
+  const saved = get<Partial<CarbonConfig>>('carbon_config', {});
+  return { ...fallback, ...saved, carbonFactors: { ...fallback.carbonFactors, ...(saved.carbonFactors || {}) }, pointsPerKm: { ...fallback.pointsPerKm, ...(saved.pointsPerKm || {}) }, riskRules: { ...fallback.riskRules, ...(saved.riskRules || {}) } };
+}
+export function setCarbonConfig(config: CarbonConfig): void { set('carbon_config', config); }
+
+export interface CarbonReward { id: string; name: string; cost: number; stock: number; enabled: boolean; description?: string; }
+export function getCarbonRewards(): CarbonReward[] { return get<CarbonReward[]>('carbon_rewards', [
+  { id: 'rw1', name: '公交9折优惠券', cost: 200, stock: 999, enabled: true, description: '乘坐公交享9折优惠，有效期30天' },
+  { id: 'rw2', name: '地铁5次免费卡', cost: 500, stock: 500, enabled: true, description: '地铁免费乘坐5次' },
+  { id: 'rw3', name: '共享单车月卡', cost: 800, stock: 200, enabled: true, description: '美团单车月卡，30天无限次' },
+  { id: 'rw4', name: '停车费抵扣券', cost: 150, stock: 1000, enabled: true, description: '合作停车场5元抵扣券' },
+]); }
+export function setCarbonRewards(rewards: CarbonReward[]): void { set('carbon_rewards', rewards); }
 
 export function getRedemptionRecords(): any[] { return get<any[]>('redemptions', []); }
 
