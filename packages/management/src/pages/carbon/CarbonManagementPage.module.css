@@ -1,0 +1,35 @@
+.page { --surface: #fff; --muted: #667085; --line: #eaecf0; --ink: #101828; --brand: #1677ff; }
+.hero { display:flex; align-items:flex-end; justify-content:space-between; padding:24px 28px; margin-bottom:18px; border-radius:16px; color:#fff; background:linear-gradient(118deg,#12355f 0%,#1677ff 58%,#57a6ff 100%); box-shadow:0 12px 30px rgba(22,119,255,.2); }
+.eyebrow { margin:0 0 8px; color:rgba(255,255,255,.76); font-size:13px; letter-spacing:.08em; }
+.hero h2 { margin:0; font-size:26px; line-height:1.3; color:#fff; }
+.hero p { max-width:560px; margin:9px 0 0; color:rgba(255,255,255,.86); line-height:1.6; }
+.heroBadge { display:flex; gap:8px; align-items:center; padding:8px 12px; border:1px solid rgba(255,255,255,.25); border-radius:999px; background:rgba(255,255,255,.13); font-size:13px; white-space:nowrap; }
+.stats { margin-bottom:20px; }
+.statCard { border:1px solid var(--line); border-radius:14px; box-shadow:0 2px 6px rgba(16,24,40,.03); }
+.tabs :global(.ant-tabs-nav) { margin-bottom:18px; }
+.tabs :global(.ant-tabs-tab) { padding:10px 16px; font-weight:600; }
+.panel { border:1px solid var(--line); border-radius:16px; box-shadow:0 2px 8px rgba(16,24,40,.03); }
+.sectionHead { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; margin-bottom:20px; }
+.sectionHead h3 { margin:0; color:var(--ink); font-size:18px; }
+.sectionHead p { margin:6px 0 0; color:var(--muted); font-size:13px; line-height:1.6; }
+.configGrid { padding:18px; margin-bottom:20px; border:1px solid #dbeafe; border-radius:12px; background:#f8fbff; }
+.fieldLabel { display:block; margin-bottom:8px; color:#344054; font-size:13px; font-weight:600; }
+.subTitle { margin:22px 0 12px; color:#101828; font-size:15px; font-weight:700; }
+.formula { display:flex; flex-wrap:wrap; align-items:center; gap:10px; padding:16px; margin-bottom:20px; border:1px solid #b9e6fe; border-radius:12px; background:linear-gradient(135deg,#f0f9ff,#f8fbff); color:#075985; font-size:15px; font-weight:700; }
+.formulaChip { padding:6px 10px; border-radius:8px; background:#fff; box-shadow:0 1px 2px rgba(7,89,133,.1); }
+.formulaSymbol { color:#1677ff; font-size:18px; }
+.riskGrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; }
+.riskItem { display:flex; gap:10px; align-items:flex-start; padding:14px; border:1px solid var(--line); border-radius:12px; background:#fff; }
+.riskItem strong { display:block; margin-bottom:3px; color:#344054; font-size:14px; }
+.riskItem span { color:var(--muted); font-size:12px; line-height:1.5; }
+.notice { margin-top:18px; padding:12px 14px; border-left:3px solid #f59e0b; border-radius:0 8px 8px 0; background:#fffbeb; color:#92400e; font-size:13px; line-height:1.6; }
+.productGrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:16px; }
+.productCard { min-height:262px; border:1px solid var(--line); border-radius:14px; overflow:hidden; background:linear-gradient(145deg,#fff,#f8fbff); transition:box-shadow .2s ease,transform .2s ease; }
+.productCard:hover { box-shadow:0 10px 24px rgba(16,24,40,.1); transform:translateY(-2px); }
+.productTop { display:flex; justify-content:space-between; gap:12px; align-items:center; padding:14px 16px; border-bottom:1px solid var(--line); background:rgba(255,255,255,.8); }
+.productIndex { color:#475467; font-size:12px; font-weight:700; }
+.productBody { display:grid; gap:12px; padding:16px; }
+.productMeta { display:flex; align-items:center; justify-content:space-between; color:#475467; font-size:13px; }
+.points { color:#d97706; font-size:16px; font-weight:700; font-variant-numeric:tabular-nums; }
+.saveBar { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-top:20px; padding-top:16px; border-top:1px solid var(--line); color:var(--muted); font-size:13px; }
+@media (max-width: 900px) { .hero { align-items:flex-start; flex-direction:column; gap:16px; } .heroBadge { white-space:normal; } }

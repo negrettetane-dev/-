@@ -96,6 +96,55 @@ export function addCarbonActivity(activity: CarbonActivity): void {
   set(CARBON_KEY, stats);
 }
 
+export interface CarbonReward {
+  id: string; name: string; description: string; cost: number; stock: number; enabled?: boolean;
+}
+
+const DEFAULT_CARBON_REWARDS: CarbonReward[] = [
+  { id: 'rw1', name: '公交9折优惠券', description: '乘坐公交享9折优惠，有效期30天', cost: 200, stock: 999, enabled: true },
+  { id: 'rw2', name: '地铁5次免费卡', description: '地铁免费乘坐5次', cost: 500, stock: 500, enabled: true },
+  { id: 'rw3', name: '共享单车月卡', description: '美团单车月卡，30天无限次', cost: 800, stock: 200, enabled: true },
+  { id: 'rw4', name: '停车费抵扣券', description: '合作停车场5元抵扣券', cost: 150, stock: 1000, enabled: true },
+];
+
+export function getCarbonRewards(): CarbonReward[] {
+  return get<CarbonReward[]>('carbon_rewards', DEFAULT_CARBON_REWARDS).filter(reward => reward.enabled !== false && reward.stock > 0);
+}
+
+export function redeemCarbonReward(rewardId: string): CarbonReward | null {
+  const rewards = get<CarbonReward[]>('carbon_rewards', DEFAULT_CARBON_REWARDS);
+  const reward = rewards.find(item => item.id === rewardId && item.enabled !== false && item.stock > 0);
+  if (!reward) return null;
+  reward.stock -= 1;
+  set('carbon_rewards', rewards);
+  return reward;
+}
+
+export interface CitizenCarbonConfig {
+  carbonFactors: Record<string, number>;
+  maxTripDistanceKm: number;
+}
+
+const DEFAULT_CARBON_CONFIG: CitizenCarbonConfig = {
+  carbonFactors: { walk: 1, bike: 0.8, metro: 0.6, bus: 0.5, new_energy_vehicle: 0.2 },
+  maxTripDistanceKm: 100,
+};
+
+export function getCarbonConfig(): CitizenCarbonConfig {
+  const saved = get<Partial<CitizenCarbonConfig>>('carbon_config', {});
+  return { ...DEFAULT_CARBON_CONFIG, ...saved, carbonFactors: { ...DEFAULT_CARBON_CONFIG.carbonFactors, ...(saved.carbonFactors || {}) } };
+}
+
+export interface CitizenPointRule { id: string; name: string; action: string; points: number; }
+export function getPointRules(): CitizenPointRule[] {
+  return get<CitizenPointRule[]>('point_rules', [
+    { id: 'pr1', name: '公交出行', action: 'bus_ride', points: 5 }, { id: 'pr2', name: '地铁出行', action: 'metro_ride', points: 5 },
+    { id: 'pr3', name: '骑行', action: 'bike_ride', points: 10 }, { id: 'pr4', name: '步行', action: 'walk', points: 10 },
+    { id: 'pr5', name: '有效事件上报', action: 'valid_report', points: 20 }, { id: 'pr6', name: '每日签到', action: 'daily_checkin', points: 3 },
+    { id: 'pr7', name: '新能源汽车出行', action: 'new_energy_vehicle_ride', points: 1 },
+  ]);
+}
+
 // ====== 用户信息 ======
 
 const USER_KEY = 'user_profile';

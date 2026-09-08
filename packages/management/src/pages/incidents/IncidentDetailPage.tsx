@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeftOutlined } from '@ant-design/icons';
-import { Button, Card, Descriptions, message, Select, Space, Tag } from 'antd';
+import { Button, Card, Descriptions, message, Select, Space, Tag, Input } from 'antd';
 import { apiGet, apiPut } from '../../services/apiClient';
 
 interface IncidentDetail {
@@ -22,6 +22,7 @@ export default function IncidentDetailPage() {
   const [incident, setIncident] = useState<IncidentDetail | null>(null);
   const [status, setStatus] = useState('');
   const [loading, setLoading] = useState(false);
+  const [feedback, setFeedback] = useState('');
 
   const load = async () => {
     setLoading(true);
@@ -29,6 +30,7 @@ export default function IncidentDetailPage() {
       const result = await apiGet<IncidentDetail>(`/incidents/${id}`);
       setIncident(result);
       setStatus(String(result.status || ''));
+      setFeedback(String(result.platformFeedback || result.feedback || ''));
     } catch (error) {
       message.error(error instanceof Error ? error.message : '事件详情加载失败');
     } finally { setLoading(false); }
@@ -39,7 +41,7 @@ export default function IncidentDetailPage() {
   const update = async () => {
     setLoading(true);
     try {
-      await apiPut(`/incidents/${id}`, { status });
+      await apiPut(`/incidents/${id}`, { status, platformFeedback: feedback });
       message.success('状态已更新');
       await load();
     } catch (error) {
@@ -68,6 +70,7 @@ export default function IncidentDetailPage() {
         <Select value={status} onChange={setStatus} style={{ width: 180 }} options={['pending','processing','resolved','closed'].map(value => ({ value, label: value }))} />
         <Button type="primary" loading={loading} onClick={() => void update()}>保存状态</Button>
       </Space>
+      <div style={{ marginTop: 16 }}><div style={{ marginBottom: 8 }}>平台反馈（市民端可见）</div><Input.TextArea rows={3} value={feedback} onChange={e => setFeedback(e.target.value)} placeholder="填写处理结果、预计恢复时间或注意事项" /></div>
       <div style={{ marginTop: 12, color: '#999' }}>当前后端接口只支持更新状态，尚未提供分派、处理备注和积分发放接口。</div>
     </Card>
   </div>;

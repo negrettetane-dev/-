@@ -1,75 +1,15 @@
 import React, { useState } from 'react';
-import { Card, Tabs, Table, Tag, Button, Switch, InputNumber, message, Space, Statistic, Row, Col } from 'antd';
-import { getPointRules, setPointRules, getPointTransactions, getRedemptionRecords, type PointRule, type PointTransaction } from '../../stores/adminPersistence';
-import { resolveRedemptionStatus, REDEMPTION_STATUS_META, formatDateSafe, formatExpiryDate } from '@zhitu/shared';
+import { Button, Card, Input, InputNumber, message, Select, Switch, Table, Tabs } from 'antd';
+import { getCarbonConfig, getCarbonRewards, getPointRules, setCarbonConfig, setCarbonRewards, setPointRules, type CarbonReward, type PointRule } from '../../stores/adminPersistence';
+import styles from './CarbonManagementPage.module.css';
 
+const names: Record<string, string> = { walk: '步行', bike: '骑行', metro: '地铁', bus: '公交', new_energy_vehicle: '新能源汽车' };
+const modeByAction: Record<string, string> = { walk: 'walk', walk_ride: 'walk', bike_ride: 'bike', metro_ride: 'metro', bus_ride: 'bus', new_energy_vehicle_ride: 'new_energy_vehicle' };
 export default function CarbonManagementPage() {
-  const [rules, setRules] = useState<PointRule[]>(getPointRules());
-  const [txs] = useState<PointTransaction[]>(getPointTransactions());
-  const [redemptions] = useState<any[]>(getRedemptionRecords ? getRedemptionRecords() : []);
-
-  const saveRules = () => {
-    setPointRules(rules);
-    message.success('积分规则已保存');
-  };
-
-  const txCols = [
-    { title: '用户', dataIndex: 'userId', width: 80 },
-    { title: '类型', dataIndex: 'type', width: 70, render: (t: string) => ({ earn: <Tag color="green">获得</Tag>, redeem: <Tag color="blue">兑换</Tag>, adjust: <Tag color="orange">调整</Tag> }[t] || t) },
-    { title: '数量', dataIndex: 'amount', width: 70, render: (v: number) => <span style={{ color: v > 0 ? '#52c41a' : '#f5222d', fontWeight: 600 }}>{v > 0 ? '+' : ''}{v}</span> },
-    { title: '原因', dataIndex: 'reason', ellipsis: true },
-    { title: '操作员', dataIndex: 'operator', width: 80 },
-    { title: '时间', dataIndex: 'time', width: 150, render: (v: number) => new Date(v).toLocaleString('zh-CN') },
-  ];
-
-  return (
-    <div className="content-page">
-      <div className="page-header"><h2>🎁 碳积分管理</h2><p className="page-desc">积分规则配置、积分流水查询、兑换记录</p></div>
-
-      <Row gutter={16} style={{ marginBottom: 16 }}>
-        <Col span={6}><Card size="small"><Statistic title="今日发放" value={txs.filter(t => t.type === 'earn' && t.time > Date.now() - 86400000).reduce((s, t) => s + t.amount, 0)} suffix="积分" valueStyle={{ color: '#52c41a' }} /></Card></Col>
-        <Col span={6}><Card size="small"><Statistic title="今日兑换" value={txs.filter(t => t.type === 'redeem' && t.time > Date.now() - 86400000).reduce((s, t) => s + t.amount, 0)} suffix="积分" valueStyle={{ color: '#1677ff' }} /></Card></Col>
-        <Col span={6}><Card size="small"><Statistic title="总流水" value={txs.length} suffix="条" /></Card></Col>
-        <Col span={6}><Card size="small"><Statistic title="兑换订单" value={redemptions.length} suffix="单" /></Card></Col>
-      </Row>
-
-      <Tabs defaultActiveKey="rules" items={[
-        {
-          key: 'rules', label: '积分规则',
-          children: (
-            <Card extra={<Button type="primary" onClick={saveRules}>保存规则</Button>}>
-              <Table dataSource={rules} rowKey="id" size="small" pagination={false} columns={[
-                { title: '行为名称', dataIndex: 'name' },
-                { title: '动作标识', dataIndex: 'action' },
-                { title: '积分值', dataIndex: 'points', render: (v: number) => <span style={{ color: '#52c41a', fontWeight: 600 }}>+{v}</span> },
-                { title: '启用', dataIndex: 'enabled', render: (v: boolean, _, idx) => <Switch checked={v} onChange={checked => setRules(prev => prev.map((r, i) => i === idx ? { ...r, enabled: checked } : r))} /> },
-              ]} />
-            </Card>
-          ),
-        },
-        {
-          key: 'transactions', label: '积分流水',
-          children: <Table dataSource={txs} rowKey="id" size="small" columns={txCols} pagination={{ pageSize: 15 }} />,
-        },
-        {
-          key: 'redemptions', label: '兑换记录',
-          children: <Table dataSource={redemptions} rowKey="id" size="small" pagination={{ pageSize: 15 }} columns={[
-            { title: '用户', dataIndex: 'user_id', width: 60 },
-            { title: '商品', dataIndex: 'reward_name', ellipsis: true },
-            { title: '消耗积分', dataIndex: 'points_cost', width: 80, render: (v: number) => <span style={{ color: '#f5222d' }}>-{v}</span> },
-            { title: '状态', dataIndex: 'status', width: 90, render: (_: string, r: { status?: unknown; expires_at?: unknown }) => {
-              const status = resolveRedemptionStatus(r.status, r.expires_at);
-              const meta = REDEMPTION_STATUS_META[status];
-              const colorMap: Record<string, string> = {
-                unused: 'default', used: 'green', expired: 'red', unknown: 'orange',
-              };
-              return <Tag color={colorMap[status]}>{meta.label}</Tag>;
-            }},
-            { title: '兑换时间', dataIndex: 'redeemed_at', width: 160, render: (v: string) => formatDateSafe(v, '兑换时间未知') },
-            { title: '有效期至', dataIndex: 'expires_at', width: 160, render: (v: string) => formatExpiryDate(v) },
-          ]} />,
-        },
-      ]} />
-    </div>
-  );
+  const [config, setConfig] = useState(getCarbonConfig()); const [rules, setRules] = useState(getPointRules()); const [rewards, setRewards] = useState<CarbonReward[]>(getCarbonRewards());
+  const rows = rules.map(rule => { const mode = modeByAction[rule.action]; return { id: rule.id, behavior: rule.name, action: rule.action, mode, factor: mode ? (config.carbonFactors[mode] ?? 0) : 1, points: rule.points }; });
+  const updateFactor = (mode: string, factor: number) => setConfig({ ...config, carbonFactors: { ...config.carbonFactors, [mode]: factor } });
+  const updatePoints = (id: string, points: number) => setRules(items => items.map(rule => rule.id === id ? { ...rule, points } : rule));
+  const columns = [{ title: '行为', dataIndex: 'behavior', width: 180 }, { title: '动作标识', dataIndex: 'action', width: 180 }, { title: '减碳系数', dataIndex: 'factor', render: (factor: number, row: any) => <InputNumber min={0} step={0.1} value={factor} onChange={value => row.mode && updateFactor(row.mode, Number(value || 0))} /> }, { title: '固定积分', dataIndex: 'points', render: (points: number, row: any) => <InputNumber min={0} value={points} onChange={value => updatePoints(row.id, Number(value || 0))} /> }];
+  return <div className={`content-page ${styles.page}`}><header className={styles.hero}><div><div className={styles.eyebrow}>CARBON CREDIT OPERATIONS</div><h2>碳积分管理</h2><p>统一配置实际轨迹距离、减碳系数与固定积分。</p></div></header><Tabs className={styles.tabs} defaultActiveKey="settlement" items={[{ key: 'settlement', label: '积分结算规则', children: <Card className={styles.panel} extra={<Button type="primary" onClick={() => { setCarbonConfig(config); setPointRules(rules); message.success('积分结算规则已保存'); }}>保存规则</Button>}><div className={styles.sectionHead}><div><h3>积分因子配置</h3><p>实际轨迹距离（km）× 减碳系数 × 固定积分 = 碳积分；不再使用启用开关。</p></div></div><div className={styles.formula}><span className={styles.formulaChip}>实际轨迹距离（km）</span><span className={styles.formulaSymbol}>×</span><span className={styles.formulaChip}>减碳系数</span><span className={styles.formulaSymbol}>×</span><span className={styles.formulaChip}>固定积分</span><span className={styles.formulaSymbol}>=</span><span className={styles.formulaChip}>碳积分</span></div><div className={styles.configGrid}><label className={styles.fieldLabel}>距离来源</label><Select value="gps_track" disabled style={{ width: 280 }} options={[{ value: 'gps_track', label: 'GPS 实际轨迹' }]} /><label className={styles.fieldLabel} style={{ marginTop: 16 }}>单次距离上限</label><InputNumber min={0} addonAfter="km" value={config.maxTripDistanceKm} onChange={value => setConfig({ ...config, maxTripDistanceKm: Number(value || 0) })} /></div><div className={styles.subTitle}>积分因子配置</div><Table size="small" pagination={false} rowKey="id" dataSource={rows} columns={columns} /></Card> }, { key: 'rewards', label: '市民端兑换商品', children: <Card className={styles.panel}><div className={styles.sectionHead}><div><h3>兑换商品</h3><p>仅已上架且库存大于 0 的商品显示在市民端。</p></div><Button onClick={() => setRewards(items => [...items, { id: `rw${Date.now()}`, name: '新兑换商品', description: '', cost: 100, stock: 0, enabled: false }])}>新增商品</Button></div><div className={styles.productGrid}>{rewards.map((item, index) => <article className={styles.productCard} key={item.id}><div className={styles.productTop}><span className={styles.productIndex}>商品 {index + 1}</span><Switch checked={item.enabled} checkedChildren="已上架" unCheckedChildren="已下架" onChange={enabled => setRewards(items => items.map(x => x.id === item.id ? { ...x, enabled } : x))} /></div><div className={styles.productBody}><Input value={item.name} onChange={e => setRewards(items => items.map(x => x.id === item.id ? { ...x, name: e.target.value } : x))} /><Input value={item.description} onChange={e => setRewards(items => items.map(x => x.id === item.id ? { ...x, description: e.target.value } : x))} /><InputNumber min={0} value={item.cost} onChange={cost => setRewards(items => items.map(x => x.id === item.id ? { ...x, cost: Number(cost || 0) } : x))} /><InputNumber min={0} value={item.stock} onChange={stock => setRewards(items => items.map(x => x.id === item.id ? { ...x, stock: Number(stock || 0) } : x))} /></div></article>)}</div><div className={styles.saveBar}><span>配置写入市民端兑换商品数据源</span><Button type="primary" onClick={() => { setCarbonRewards(rewards); message.success('商品已保存'); }}>保存商品配置</Button></div></Card> }]} /></div>;
 }
