@@ -2,6 +2,7 @@ import { formatDistance } from '@zhitu/shared';
 import { loadAMap } from '../lib/amap';
 import { geocodeLocation, isValidCoord, reverseGeocodeDetail } from './locationService';
 import type { RouteTravelMode } from '../components/travel/TravelModeSelector';
+import { pickLowerImpactDrive } from './routeCarbonEstimator';
 
 export interface SegmentData {
   type: 'walk' | 'metro' | 'bus';
@@ -32,8 +33,24 @@ export interface PlannedRoute {
   error?: string;
 }
 
+export type TransitPolicy = 'least-time' | 'least-transfer' | 'least-walk';
+
 export interface TransitCandidate {
   plan: any;
+  policy?: TransitPolicy;
+  route: PlannedRoute;
+  segments: SegmentData[];
+  walkingDistance: number;
+  transferCount: number;
+}
+
+export type TransitCandidateTag = 'recommended' | 'least-transfer' | 'least-walk';
+
+export interface TransitRouteOption {
+  id: TransitCandidateTag;
+  label: string;
+  icon: string;
+  candidate: TransitCandidate;
   route: PlannedRoute;
   segments: SegmentData[];
   walkingDistance: number;
@@ -364,8 +381,6 @@ export async function planTransitCandidates(
   const startLngLat = new AMap.LngLat(start[0], start[1]);
   const endLngLat = new AMap.LngLat(end[0], end[1]);
 
-  // 高德 Transfer 的 city 是必填项：优先用调用方传入的真实城市；
-  // 缺失时按起点坐标逆地理取城市（避免手动起点无 city 导致 Transfer 失败）。
   let transferCity = (city || '').trim().replace(/市$/, '');
   if (!transferCity) {
     try {
@@ -373,64 +388,119 @@ export async function planTransitCandidates(
       transferCity = (detail.city || detail.province || '').replace(/市$/, '');
     } catch { /* 逆地理失败则保持空，Transfer 可能失败但会有明确报错 */ }
   }
-  const transferOptions: any = { policy: AMap.TransferPolicy.LEAST_TIME, nightflag: false };
-  if (transferCity) transferOptions.city = transferCity;
 
-  // 消除静默失败：插件回调内任何异常都同步 reject（否则 15s 超时掩盖真实原因）
-  const result = await withTimeout(new Promise<any>((resolve, reject) => {
-    try {
-      AMap.plugin(['AMap.Transfer'], () => {
-        try {
-          if (typeof AMap.Transfer === 'undefined') {
-            reject(new Error('AMap.Transfer 插件未加载，请检查高德 key/安全密钥配置'));
-            return;
-          }
-          const transfer = new AMap.Transfer(transferOptions);
-          transfer.search(startLngLat, endLngLat, (status: string, data: any) => {
-            if (status !== 'complete' || !data?.plans?.length) {
-              reject(new Error(data?.info || '公交路线规划失败'));
+  const policyMap: Array<{ policy: TransitPolicy; amapPolicy: any }> = [
+    { policy: 'least-time', amapPolicy: AMap.TransferPolicy.LEAST_TIME },
+    { policy: 'least-transfer', amapPolicy: AMap.TransferPolicy.LEAST_TRANSFER },
+    { policy: 'least-walk', amapPolicy: AMap.TransferPolicy.LEAST_WALK },
+  ];
+
+  const searchByPolicy = (policy: TransitPolicy, amapPolicy: any): Promise<TransitCandidate | null> => {
+    const transferOptions: any = { policy: amapPolicy, nightflag: false };
+    if (transferCity) transferOptions.city = transferCity;
+    return withTimeout(new Promise<TransitCandidate | null>((resolve, reject) => {
+      try {
+        AMap.plugin(['AMap.Transfer'], () => {
+          try {
+            if (typeof AMap.Transfer === 'undefined') {
+              reject(new Error('AMap.Transfer 插件未加载，请检查高德 key/安全密钥配置'));
               return;
             }
-            resolve(data);
-          });
-        } catch (e) {
-          reject(e instanceof Error ? e : new Error(String(e)));
-        }
-      });
-    } catch (e) {
-      reject(e instanceof Error ? e : new Error(String(e)));
-    }
-  }), 'Transit route');
+            const transfer = new AMap.Transfer(transferOptions);
+            transfer.search(startLngLat, endLngLat, (status: string, data: any) => {
+              if (status !== 'complete' || !data?.plans?.length) {
+                resolve(null);
+                return;
+              }
+              const valid = (data.plans as any[]).map(plan => {
+                const parsed = parseTransitPlan(plan);
+                if (parsed.hasRailway || parsed.path.length < 2) return null;
+                const hasValidSegment = parsed.segments.some(s => s.type === 'bus' || s.type === 'metro' || s.type === 'walk');
+                if (!hasValidSegment) return null;
+                return {
+                  plan,
+                  policy,
+                  segments: parsed.segments,
+                  walkingDistance: parsed.walkingDistance,
+                  transferCount: parsed.transferCount,
+                  route: {
+                    mode: 'bus' as const,
+                    distance: Number(plan.distance) || 0,
+                    duration: Number(plan.time) || 0,
+                    path: parsed.path,
+                    polyline: parsed.path,
+                    segments: parsed.segments,
+                    cost: Number(plan.cost) || 0,
+                  },
+                } satisfies TransitCandidate;
+              }).filter(candidate => candidate !== null) as TransitCandidate[];
+              resolve(valid[0] || null);
+            });
+          } catch (e) {
+            reject(e instanceof Error ? e : new Error(String(e)));
+          }
+        });
+      } catch (e) {
+        reject(e instanceof Error ? e : new Error(String(e)));
+      }
+    }), `Transit ${policy}`);
+  };
 
-  const candidates: TransitCandidate[] = [];
-  (result.plans as any[]).forEach((plan: any) => {
-    const parsed = parseTransitPlan(plan);
-    // 含铁路/城际段：该方案不可用（不把铁路当城市公交）
-    if (parsed.hasRailway) return;
-    if (parsed.path.length < 2) return;
-    // 必须至少包含真实公交/地铁/步行段；纯驾车/直线/通用 path 不算公交方案
-    const hasValidSegment = parsed.segments.some(s => s.type === 'bus' || s.type === 'metro' || s.type === 'walk');
-    if (!hasValidSegment) return;
-    candidates.push({
-      plan,
-      segments: parsed.segments,
-      walkingDistance: parsed.walkingDistance,
-      transferCount: parsed.transferCount,
-      route: {
-        mode: 'bus',
-        // 只用高德真实值；缺失时用 0（前端显示「距离/票价未知」，不伪造 9200m/¥5）
-        distance: Number(plan.distance) || 0,
-        duration: Number(plan.time) || 0,
-        path: parsed.path,
-        polyline: parsed.path,
-        segments: parsed.segments,
-        cost: Number(plan.cost) || 0,
-      },
-    });
-  });
-
+  const results = await Promise.all(policyMap.map(({ policy, amapPolicy }) => searchByPolicy(policy, amapPolicy)));
+  const candidates = results.filter((candidate): candidate is TransitCandidate => candidate !== null);
   if (!candidates.length) throw new Error('transit-no-valid-segment');
   return candidates;
+}
+
+/**
+ * 将真实公交候选按普通出行目标重排为推荐、少换乘、少步行方案。
+ * 只返回不同的真实方案，候选不足时不补造方案。
+ */
+export function buildTransitRouteOptions(candidates: TransitCandidate[]): TransitRouteOption[] {
+  if (!Array.isArray(candidates) || candidates.length === 0) return [];
+
+  const unique = candidates.filter((candidate, index, all) => {
+    const duplicateIndex = all.findIndex(other =>
+      other.route.distance === candidate.route.distance &&
+      other.route.duration === candidate.route.duration &&
+      other.transferCount === candidate.transferCount &&
+      other.walkingDistance === candidate.walkingDistance &&
+      other.route.path.length === candidate.route.path.length,
+    );
+    return duplicateIndex === index;
+  });
+
+  const byRecommended = [...unique].sort((a, b) =>
+    a.transferCount - b.transferCount ||
+    a.walkingDistance - b.walkingDistance ||
+    a.route.duration - b.route.duration,
+  )[0];
+  const byTransfer = [...unique].sort((a, b) =>
+    a.transferCount - b.transferCount ||
+    a.route.duration - b.route.duration ||
+    a.walkingDistance - b.walkingDistance,
+  )[0];
+  const byWalk = [...unique].sort((a, b) =>
+    a.walkingDistance - b.walkingDistance ||
+    a.transferCount - b.transferCount ||
+    a.route.duration - b.route.duration,
+  )[0];
+
+  const options: TransitRouteOption[] = [];
+  const add = (candidate: TransitCandidate | undefined, id: TransitCandidateTag, label: string, icon: string) => {
+    if (!candidate || options.some(option => option.candidate === candidate)) return;
+    options.push({
+      id, label, icon, candidate, route: candidate.route,
+      segments: candidate.segments,
+      walkingDistance: candidate.walkingDistance,
+      transferCount: candidate.transferCount,
+    });
+  };
+
+  add(byRecommended, 'recommended', '公交推荐', '🚌');
+  add(byTransfer, 'least-transfer', '少换乘', '🔄');
+  add(byWalk, 'least-walk', '少步行', '🚶');
+  return options;
 }
 
 export async function planAmapRoute(
@@ -560,8 +630,8 @@ async function planSingleSegment(
 
 // ===== 多候选路线（时间最短 / 距离最短 / 低碳） =====
 
-/** 候选路线标签：fastest=时间最短，shortest=距离最短 */
-export type RouteCandidateTag = 'fastest' | 'shortest';
+/** 候选路线标签：fastest=时间最短，shortest=距离最短，low-carbon=低碳估算 */
+export type RouteCandidateTag = 'fastest' | 'shortest' | 'low-carbon';
 
 export interface RouteCandidate {
   tag: RouteCandidateTag;
@@ -570,7 +640,7 @@ export interface RouteCandidate {
   route: PlannedRoute;
 }
 
-const CANDIDATE_ICONS: Record<RouteCandidateTag, string> = { fastest: '🚀', shortest: '📍' };
+const CANDIDATE_ICONS: Record<RouteCandidateTag, string> = { fastest: '🚀', shortest: '📍', 'low-carbon': '🌱' };
 
 /** 把高德单条路线对象解析为 PlannedRoute（复用 extractRoutePath + 真实值校验） */
 function routeFromAmapRoute(mode: 'drive' | 'bike' | 'walk', route: any): PlannedRoute | null {
@@ -616,6 +686,10 @@ export async function planRouteCandidates(
   const endLngLat = new AMap.LngLat(end[0], end[1]);
   const validWaypoints = (waypoints || []).filter(wp => Array.isArray(wp) && wp.length === 2 && Number.isFinite(wp[0]) && Number.isFinite(wp[1]));
 
+  if (mode === 'drive' && validWaypoints.length > 16) {
+    throw new Error('TOO_MANY_WAYPOINTS');
+  }
+
   // —— 驾车：两次真实策略规划 ——
   if (mode === 'drive') {
     const driveOnce = (policy: string): Promise<PlannedRoute | null> => withTimeout(new Promise((resolve) => {
@@ -642,11 +716,18 @@ export async function planRouteCandidates(
     const candidates: RouteCandidate[] = [];
     if (fastestRoute) candidates.push({ tag: 'fastest', label: '时间最短', icon: CANDIDATE_ICONS.fastest, route: fastestRoute });
     if (shortestRoute) candidates.push({ tag: 'shortest', label: '距离最短', icon: CANDIDATE_ICONS.shortest, route: shortestRoute });
+    const lowCarbonRoute = pickLowerImpactDrive(candidates, 'fuel');
+    if (lowCarbonRoute) candidates.push({ tag: 'low-carbon', label: '低碳路线', icon: CANDIDATE_ICONS['low-carbon'], route: lowCarbonRoute.route });
     return dedupeCandidates(candidates);
   }
 
-  // —— 骑行 / 步行：从一次返回的多条备选取时间/距离最短路 ——
+  // —— 骑行 / 步行：含途经点时按路段完整规划；无途经点时取多条备选 ——
   if (mode === 'bike' || mode === 'walk') {
+    if (validWaypoints.length) {
+      const route = await planAmapRoute(mode, start, end, city, validWaypoints);
+      return [{ tag: 'fastest', label: '途经点路线', icon: CANDIDATE_ICONS.fastest, route }];
+    }
+
     const isBike = mode === 'bike';
     const limitKm = isBike ? LONG_DISTANCE_LIMITS.bike : LONG_DISTANCE_LIMITS.walk;
     if (haversineKm(start, end) > limitKm) throw new Error('LONG_DISTANCE');

@@ -1,6 +1,7 @@
 export type TripMode = 'drive' | 'bus' | 'bike' | 'walk';
 export type TripProfile = 'standard' | 'ev' | 'accessible';
 export type TripStatus = 'in_progress' | 'completed' | 'cancelled';
+export type TripRouteStrategy = 'fastest' | 'shortest' | 'low-carbon' | 'accessible';
 export type TripDataSource = 'real' | 'estimated' | 'demo';
 
 export interface TripLocation {
@@ -15,6 +16,8 @@ export interface Trip {
   clientSessionId: string;
   mode: TripMode;
   profile: TripProfile;
+  routeStrategy?: TripRouteStrategy;
+  rewardReason?: string;
   origin: TripLocation;
   destination: TripLocation;
   startedAt: string;
@@ -37,6 +40,7 @@ export interface CreateTripRequest {
   clientSessionId: string;
   mode: TripMode;
   profile: TripProfile;
+  routeStrategy?: TripRouteStrategy;
   origin: TripLocation;
   destination: TripLocation;
   routeSnapshot: {

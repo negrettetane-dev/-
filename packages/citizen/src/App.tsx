@@ -36,8 +36,8 @@ import BusDetailPage from './pages/bus/BusDetailPage';
 import CustomBusPage from './pages/custombus/CustomBusPage';
 import MetroDetailPage from './pages/metro/MetroDetailPage';
 
-// 长辈模式 Context
-// 原则：返回首页 ≠ 退出长辈模式。只有主动调用 disableElderlyMode 才关闭模式。
+// 关怀模式 Context
+// 原则：返回首页 ≠ 退出关怀模式。只有主动调用 disableElderlyMode 才关闭模式。
 interface ElderlyContextType {
   elderlyMode: boolean;
   toggleElderlyMode: () => void;

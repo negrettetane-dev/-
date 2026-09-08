@@ -108,7 +108,7 @@ export function reverseGeocode(lng: number, lat: number): Promise<string> {
 }
 
 /**
- * 地点候选搜索：用高德 PlaceSearch 做真实 POI 搜索，返回多个候选（用于长辈模式选点）。
+ * 地点候选搜索：用高德 PlaceSearch 做真实 POI 搜索，返回多个候选（用于关怀模式选点）。
  * 不用固定坐标表冒充真实搜索结果。
  */
 export function searchLocationCandidates(

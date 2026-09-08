@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useElderly } from '../../App';
 import { useTravelLocationStore, type UnifiedLocation } from '../../stores/travelLocationStore';
@@ -19,6 +19,7 @@ const MODE_OPTIONS: { key: ElderlyDisplayMode; label: string; icon: string; rout
 ];
 
 type PlanStatus = 'idle' | 'locating' | 'resolving' | 'planning' | 'error';
+type VoiceStatus = 'idle' | 'listening' | 'processing' | 'success' | 'error' | 'unsupported';
 
 function readMode(): ElderlyDisplayMode {
   try {
@@ -33,9 +34,98 @@ const ElderlyHomePage: React.FC = () => {
   const { disableElderlyMode } = useElderly();
   const origin = useTravelLocationStore(s => s.origin);
   const [dest, setDest] = useState('');
-  const [voiceActive, setVoiceActive] = useState(false);
+  const [voiceStatus, setVoiceStatus] = useState<VoiceStatus>('idle');
+  const [voiceMessage, setVoiceMessage] = useState('');
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const recognitionRunRef = useRef(0);
   const [sosOpen, setSosOpen] = useState(false);
   const [exitConfirm, setExitConfirm] = useState(false);
+
+  useEffect(() => {
+    return () => {
+      recognitionRunRef.current += 1;
+      recognitionRef.current?.abort();
+      recognitionRef.current = null;
+    };
+  }, []);
+
+  // 语音输入：使用浏览器原生识别，仅填入目的地，不自动导航
+  const handleVoiceInput = () => {
+    if (voiceStatus === 'listening' || voiceStatus === 'processing') {
+      recognitionRunRef.current += 1;
+      recognitionRef.current?.abort();
+      recognitionRef.current = null;
+      setVoiceStatus('idle');
+      setVoiceMessage('');
+      return;
+    }
+
+    const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!Recognition) {
+      setVoiceStatus('unsupported');
+      setVoiceMessage('当前浏览器不支持语音输入，请手动输入目的地');
+      return;
+    }
+
+    const runId = recognitionRunRef.current + 1;
+    recognitionRunRef.current = runId;
+    const recognition = new Recognition();
+    recognition.lang = 'zh-CN';
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 1;
+    recognitionRef.current = recognition;
+    setVoiceStatus('listening');
+    setVoiceMessage('正在聆听，请说出您要去的地方');
+
+    recognition.onstart = () => {
+      if (recognitionRunRef.current !== runId) return;
+      setVoiceStatus('listening');
+    };
+
+    recognition.onresult = (event) => {
+      if (recognitionRunRef.current !== runId) return;
+      const transcript = Array.from({ length: event.results.length }, (_, index) => event.results[index])
+        .filter(result => result.isFinal)
+        .map(result => result[0]?.transcript || '')
+        .join('')
+        .trim();
+      if (transcript) {
+        setDest(transcript);
+        setVoiceStatus('processing');
+        setVoiceMessage(`已识别“${transcript}”，请确认后开始导航`);
+      }
+    };
+
+    recognition.onerror = (event) => {
+      if (recognitionRunRef.current !== runId) return;
+      const messages: Record<string, string> = {
+        'not-allowed': '麦克风权限被拒绝，请允许麦克风或手动输入目的地',
+        'service-not-allowed': '语音服务不可用，请手动输入目的地',
+        'audio-capture': '没有检测到麦克风，请检查设备后重试',
+        'no-speech': '没有听到说话，请再试一次',
+        network: '语音服务暂时不可用，请检查网络或手动输入',
+      };
+      setVoiceStatus('error');
+      setVoiceMessage(messages[event.error] || '语音输入失败，请重试或手动输入目的地');
+    };
+
+    recognition.onend = () => {
+      if (recognitionRunRef.current !== runId) return;
+      recognitionRef.current = null;
+      setVoiceStatus(current => current === 'processing' ? 'success' : current === 'listening' ? 'error' : current);
+      setVoiceMessage(current => current || '没有识别到目的地，请再试一次');
+    };
+
+    try {
+      recognition.start();
+    } catch {
+      if (recognitionRunRef.current !== runId) return;
+      recognitionRef.current = null;
+      setVoiceStatus('error');
+      setVoiceMessage('语音输入无法启动，请重试或手动输入目的地');
+    }
+  };
 
   // 起点选择：更换弹窗 / 手动输入 / 地图选点
   const [originPickerOpen, setOriginPickerOpen] = useState(false);
@@ -104,15 +194,6 @@ const ElderlyHomePage: React.FC = () => {
     } catch { /* 保留地址 */ }
     useTravelLocationStore.getState().setOrigin(loc);
     setErrorText('');
-  };
-
-  // 语音输入：演示功能（明确标注），识别后仅填入目的地，不自动导航
-  const handleVoiceInput = () => {
-    setVoiceActive(true);
-    setTimeout(() => {
-      setVoiceActive(false);
-      setDest('北京市第一人民医院');
-    }, 2000);
   };
 
   const selectMode = (mode: ElderlyDisplayMode) => {
@@ -212,18 +293,18 @@ const ElderlyHomePage: React.FC = () => {
 
   return (
     <div className={styles.page}>
-      {/* Top bar：返回首页 ≠ 退出长辈模式 */}
+      {/* Top bar：返回首页 ≠ 退出关怀模式 */}
       <div className={styles.topBar}>
         <button className={styles.exitBtn} onClick={() => navigate('/')} style={{ marginRight: 'auto' }}>🏠 返回首页</button>
-        <span className={styles.logo}>智途云枢 · 长辈模式</span>
-        <button className={styles.exitBtn} onClick={() => setExitConfirm(true)} style={{ marginLeft: 'auto' }}>退出长辈模式</button>
+        <span className={styles.logo}>智途云枢 · 关怀模式</span>
+        <button className={styles.exitBtn} onClick={() => setExitConfirm(true)} style={{ marginLeft: 'auto' }}>退出关怀模式</button>
       </div>
 
-      {/* 退出长辈模式确认弹窗 */}
+      {/* 退出关怀模式确认弹窗 */}
       {exitConfirm && (
         <div className={styles.sosOverlay} onClick={() => setExitConfirm(false)}>
           <div className={styles.sosDialog} onClick={e => e.stopPropagation()}>
-            <div className={styles.sosTitle}>确定退出长辈模式吗？</div>
+            <div className={styles.sosTitle}>确定退出关怀模式吗？</div>
             <div className={styles.sosDesc}>退出后将恢复普通模式显示。</div>
             <div className={styles.sosActions} style={{ display: 'flex', gap: 10 }}>
               <button className={styles.sosClose} onClick={() => setExitConfirm(false)} style={{ flex: 1 }}>继续使用</button>
@@ -330,11 +411,17 @@ const ElderlyHomePage: React.FC = () => {
           )}
 
           {/* 语音输入目的地 */}
-          <div className={styles.voiceInput} onClick={handleVoiceInput}>
-            <span style={{fontSize:32}}>🎤</span>
-            <span>{voiceActive ? '正在聆听...' : '点击语音输入目的地'}</span>
-          </div>
-          <div style={{fontSize:13,color:'#ad6800',marginTop:6}}>语音识别为演示功能，点击后示例填入目的地</div>
+          <button
+            type="button"
+            className={`${styles.voiceInput} ${voiceStatus === 'listening' ? styles.voiceListening : ''} ${voiceStatus === 'error' || voiceStatus === 'unsupported' ? styles.voiceError : ''}`}
+            onClick={handleVoiceInput}
+            aria-label={voiceStatus === 'listening' ? '停止语音输入' : '语音输入目的地'}
+            aria-pressed={voiceStatus === 'listening'}
+          >
+            <span style={{fontSize:32}} aria-hidden="true">🎤</span>
+            <span>{voiceStatus === 'listening' ? '正在聆听，再次点击停止' : '点击语音输入目的地'}</span>
+          </button>
+          {voiceMessage && <div className={styles.voiceMessage} role="status" aria-live="polite">{voiceMessage}</div>}
           <input className={styles.input} placeholder="输入目的地，如：天安门" value={dest} onChange={e=>setDest(e.target.value)} onKeyDown={e=>{ if(e.key==='Enter') void handleElderlyNavigation(); }}/>
           {dest && <button className={styles.btn} disabled={isBusy} onClick={()=>void handleElderlyNavigation()}>
             {status === 'resolving' ? '正在查找目的地…' : status === 'planning' ? '正在规划路线…' : '🚀 开始导航'}

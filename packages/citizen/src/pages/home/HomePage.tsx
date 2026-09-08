@@ -6,7 +6,7 @@ import AIAssistant from '../../components/AIAssistant';
 import TravelModeSelector, { normalizeTravelMode, TRAVEL_MODE_OPTIONS, type TravelModeOption } from '../../components/travel/TravelModeSelector';
 import styles from './HomePage.module.css';
 import { apiGet } from '../../services/apiClient';
-import { planAmapRoute, resolveRouteLocations } from '../../services/routePlanningService';
+import { planAmapRoute, resolveRouteLocations, resolveWaypointCoords } from '../../services/routePlanningService';
 import { useTravelLocationStore } from '../../stores/travelLocationStore';
 import { useTravelPlanStore } from '../../stores/travelPlanStore';
 import DepartureTimeSelect from '../../components/travel/DepartureTimeSelect';
@@ -188,7 +188,12 @@ const HomePage: React.FC = () => {
       destination,
       origin.lng != null && origin.lat != null ? { lng: origin.lng, lat: origin.lat } : null,
     )
-      .then(({ start, end }) => planAmapRoute(routeMode, start, end, origin.city || origin.province || null))
+      .then(async ({ start, end }) => {
+        const waypointCoords = waypoints.length
+          ? (await resolveWaypointCoords(waypoints, origin.city || origin.province || null)).map(item => item.coord)
+          : [];
+        return planAmapRoute(routeMode, start, end, origin.city || origin.province || null, waypointCoords);
+      })
       .then((route) => {
         if (requestId !== homeRouteRequestId.current || !mapInstance.current) return;
         // 空路径不静默成功：请求成功但没解析出有效路径 → 明确报错
@@ -222,7 +227,9 @@ const HomePage: React.FC = () => {
           ? '暂未找到可用该路线，请稍后重试'
           : rawMsg.includes('LONG_DISTANCE')
             ? '起终点距离过远，建议换乘公交或驾车'
-            : rawMsg.includes('CROSS_CITY_TRANSIT_UNSUPPORTED')
+            : rawMsg.includes('TOO_MANY_WAYPOINTS')
+            ? '驾车路线最多支持 16 个途经点，请删除部分途经点后重试'
+          : rawMsg.includes('CROSS_CITY_TRANSIT_UNSUPPORTED')
               ? '当前起终点不在同一城市，暂不支持跨城市公交/地铁规划'
               : rawMsg.includes('transit-no-valid-segment')
                 ? '暂无可用公交/地铁方案'
@@ -234,7 +241,7 @@ const HomePage: React.FC = () => {
     return () => {
       homeRouteRequestId.current += 1;
     };
-  }, [destination, mapLoaded, origin.address, origin.lat, origin.lng, selectedMode]);
+  }, [destination, mapLoaded, origin.address, origin.lat, origin.lng, origin.city, origin.province, selectedMode, waypoints]);
 
   // 加载数据
   useEffect(() => {
@@ -315,13 +322,13 @@ const HomePage: React.FC = () => {
 
   return (
     <div>
-      {/* 长辈模式已开启：返回首页 ≠ 退出长辈模式，保持大字号（data-elderly 全局生效） */}
+      {/* 关怀模式已开启：返回首页 ≠ 退出关怀模式，保持大字号（data-elderly 全局生效） */}
       {elderlyMode && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', background: '#fff7e6', borderBottom: '1px solid #ffe7ba', fontSize: 15 }}>
-          <span style={{ fontWeight: 700 }}>👴 长辈模式已开启</span>
+          <span style={{ fontWeight: 700 }}>👴 关怀模式已开启</span>
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
             <button onClick={() => navigate('/elderly')} style={{ padding: '8px 16px', borderRadius: 10, border: '1px solid #d9a94e', background: '#fff', color: '#8a5a00', fontSize: 14, cursor: 'pointer' }}>返回长辈首页</button>
-            <button onClick={disableElderlyMode} style={{ padding: '8px 16px', borderRadius: 10, border: 'none', background: '#faad14', color: '#fff', fontSize: 14, cursor: 'pointer' }}>退出长辈模式</button>
+            <button onClick={disableElderlyMode} style={{ padding: '8px 16px', borderRadius: 10, border: 'none', background: '#faad14', color: '#fff', fontSize: 14, cursor: 'pointer' }}>退出关怀模式</button>
           </span>
         </div>
       )}

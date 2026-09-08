@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { AMAP_KEY, loadAMap } from '../../lib/amap';
 import { formatDistance } from '@zhitu/shared';
 import { getRouteForecast } from '../../services/routeForecastService';
-import { hasSegmentContent, resolveRouteLocations, resolveWaypointCoords, planAmapRoute, planRouteCandidates, planTransitCandidates, type PlannedRoute, type SegmentData, type RouteCandidate } from '../../services/routePlanningService';
+import { hasSegmentContent, resolveRouteLocations, resolveWaypointCoords, planAmapRoute, planRouteCandidates, planTransitCandidates, buildTransitRouteOptions, type PlannedRoute, type SegmentData, type RouteCandidate, type TransitRouteOption } from '../../services/routePlanningService';
 import type { RouteForecastPoint, TravelMode as ForecastMode } from '../../types/routeForecast';
 import { calculateRouteScore, recommendBestRoute, generateRecommendationReason, generateDepartureAdvice } from '../../utils/routeRecommendation';
 import { isValidDepartureAt, labelForDepartureAt, computeDepartureState, saveDepartureState } from '../../utils/departureTime';
@@ -17,8 +17,9 @@ import { useTripStore } from '../../stores/tripStore';
 import { useTravelPlanStore } from '../../stores/travelPlanStore';
 import { useTravelLocationStore } from '../../stores/travelLocationStore';
 import { isTransitSupported } from '../../services/transitEligibility';
+import { estimateDriveImpact } from '../../services/routeCarbonEstimator';
 import { fromLegacyRouteMode } from '../../types/travelMode';
-import type { Trip } from '../../types/trip';
+import type { Trip, TripRouteStrategy } from '../../types/trip';
 import styles from './Travel.module.css';
 
 /** 到达判定阈值：当前车辆与终点剩余距离 ≤ 50m 即视为到达（避免 GPS 误差导致永不触发） */
@@ -157,6 +158,10 @@ const RouteResultPage: React.FC = () => {
     return list[idx] || null;
   };
 
+  // 公交/地铁多候选（推荐/少换乘/少步行）
+  const [transitOptions, setTransitOptions] = useState<TransitRouteOption[]>([]);
+  const [selectedTransitOptionId, setSelectedTransitOptionId] = useState<TransitRouteOption['id'] | null>(null);
+
   // 导航状态
   const [navActive, setNavActive] = useState(false);
   const [navMode, setNavMode] = useState<TravelMode | null>(null);
@@ -242,6 +247,8 @@ const RouteResultPage: React.FC = () => {
     setIsPlanning(true);
     setRouteResults({});
     setUnavailableNote('');
+    setTransitOptions([]);
+    setSelectedTransitOptionId(null);
 
     // 加载 mock 卡片数据作为展示兜底
     const query = new URLSearchParams({ origin, dest: destination, mode: selectedMode });
@@ -311,10 +318,18 @@ const RouteResultPage: React.FC = () => {
       return planAmapRoute(selectedMode, s, e, transitCity, wp);
     };
 
-    // 公交：单条（Transfer 已内部处理多方案，取最优第一条）
+    // 公交：真实候选方案按普通出行目标重排，首个候选作为默认路线
     const planBus = async (): Promise<PlannedRoute> => {
       await resolveWp();
-      return planAmapRoute(selectedMode, s, e, transitCity);
+      if (waypoints.some(point => point.trim())) {
+        throw new Error('TRANSIT_WAYPOINTS_UNSUPPORTED');
+      }
+      const candidates = await planTransitCandidates(s, e, transitCity);
+      const options = buildTransitRouteOptions(candidates);
+      if (!options.length) throw new Error('transit-no-valid-segment');
+      setTransitOptions(options);
+      setSelectedTransitOptionId(options[0].id);
+      return options[0].route;
     };
 
     const planTask = selectedMode === 'bus'
@@ -334,10 +349,14 @@ const RouteResultPage: React.FC = () => {
         setRouteResults({});
         setRouteCandidates(prev => ({ ...prev, [selectedMode]: [] }));
         const msg = error instanceof Error ? error.message : '';
-        if (selectedMode === 'bus' && msg.includes('CROSS_CITY_TRANSIT_UNSUPPORTED')) {
+        if (selectedMode === 'bus' && msg.includes('TRANSIT_WAYPOINTS_UNSUPPORTED')) {
+          setUnavailableNote('🚌 公交/地铁路线暂不支持途经点，请删除途经点后继续。');
+        } else if (selectedMode === 'bus' && msg.includes('CROSS_CITY_TRANSIT_UNSUPPORTED')) {
           setUnavailableNote('🚌 当前起终点不在同一城市，暂不支持跨城市公交/地铁规划。');
         } else if (selectedMode === 'bus' && msg.includes('transit-no-valid-segment')) {
           setUnavailableNote('🚌 暂无可用公交/地铁方案。');
+        } else if (msg.includes('TOO_MANY_WAYPOINTS')) {
+          setUnavailableNote('驾车路线最多支持 16 个途经点，请删除部分途经点后重试。');
         } else if (msg.includes('LONG_DISTANCE')) {
           setUnavailableNote(`起终点距离过远，${MODE_META[selectedMode].label}耗时过长，建议换乘公交或驾车。`);
         } else if (msg.includes('EMPTY_ROUTE')) {
@@ -691,10 +710,17 @@ const RouteResultPage: React.FC = () => {
         const clientSessionId = typeof crypto.randomUUID === 'function'
           ? crypto.randomUUID()
           : `nav_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+        const selectedCandidateTag = mode === 'drive' ? selectedCandidate('drive')?.tag : undefined;
+        const routeStrategy: TripRouteStrategy = mode === 'bus'
+          ? (accessibleActive ? 'accessible' : selectedTransitOptionId === 'least-walk' ? 'shortest' : 'fastest')
+          : mode === 'drive'
+            ? (selectedCandidateTag || 'fastest')
+            : 'fastest';
         void useTripStore.getState().startTrip({
           clientSessionId,
           mode,
-          profile: 'standard',
+          profile: selectedDisplayMode === 'ev' ? 'ev' : 'standard',
+          routeStrategy,
           origin: { name: displayOrigin, address: displayOrigin, lng: s[0], lat: s[1] },
           destination: { name: displayDest, address: displayDest, lng: e[0], lat: e[1] },
           routeSnapshot: {
@@ -799,6 +825,12 @@ const RouteResultPage: React.FC = () => {
     setRouteResults(prev => ({ ...prev, [mode]: candidate.route }));
   };
 
+  // 公交/地铁：切换真实候选 → 写回 routeResults.bus 供地图/导航复用
+  const selectTransitOption = (option: TransitRouteOption) => {
+    setSelectedTransitOptionId(option.id);
+    setRouteResults(prev => ({ ...prev, bus: option.route }));
+  };
+
   // ===== 无障碍模式开始导航（复用现有 bus 导航逻辑，仅改文案/设施提示） =====
   const startAccessibleNavigation = (option: AccessibleRouteOption) => {
     // 防重复进入：导航中/已到达/已结束时不允许再次启动导航
@@ -829,6 +861,7 @@ const RouteResultPage: React.FC = () => {
           clientSessionId,
           mode: 'bus',
           profile: 'accessible',
+          routeStrategy: 'accessible',
           origin: { name: displayOrigin, address: displayOrigin, lng: s[0], lat: s[1] },
           destination: { name: displayDest, address: displayDest, lng: e[0], lat: e[1] },
           routeSnapshot: {
@@ -1027,6 +1060,9 @@ const RouteResultPage: React.FC = () => {
             // 高德未返回真实值时显示「未知」，不伪造 0.0km/0分钟
             const showDuration = duration > 0 ? formatDuration(duration) : '—';
             const showDistance = distance > 0 ? `${(distance / 1000).toFixed(1)}km` : '—';
+            const driveEstimate = mode === 'drive'
+              ? estimateDriveImpact(distance, duration, selectedDisplayMode === 'ev' ? 'ev' : 'fuel')
+              : null;
 
             return (
               <div
@@ -1034,6 +1070,38 @@ const RouteResultPage: React.FC = () => {
                 className={`${styles.routeCard} ${selectedMode === mode ? styles.routeCardActive : ''}`}
                 onClick={() => setSelectedMode(mode)}
               >
+                {/* 公交/地铁多候选：推荐、少换乘、少步行 */}
+                {mode === 'bus' && transitOptions.length > 1 && (
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+                    {transitOptions.map(option => {
+                      const active = selectedTransitOptionId === option.id;
+                      return (
+                        <button
+                          key={option.id}
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); selectTransitOption(option); }}
+                          style={{
+                            flex: 1, minWidth: 110, padding: '8px 12px', borderRadius: 10,
+                            border: active ? '2px solid #1677ff' : '1px solid #e5e9ef',
+                            background: active ? '#f0f5ff' : '#fff',
+                            color: active ? '#1677ff' : 'var(--text-secondary)',
+                            cursor: 'pointer', fontSize: 13, textAlign: 'left', lineHeight: 1.5,
+                          }}
+                        >
+                          <div style={{ fontWeight: 700 }}>{option.icon} {option.label}</div>
+                          <div style={{ fontSize: 12, opacity: 0.8 }}>
+                            {option.route.duration > 0 ? formatDuration(option.route.duration) : '—'}
+                            {option.route.distance > 0 ? ` · ${(option.route.distance / 1000).toFixed(1)}km` : ''}
+                          </div>
+                          <div style={{ fontSize: 11, opacity: 0.75 }}>
+                            换乘 {option.transferCount} 次 · 步行 {Math.round(option.walkingDistance)}m
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
                 {/* 多候选切换条：驾车/骑行/步行的时间最短/距离最短（去重后可能仅 1 条） */}
                 {(routeCandidates[mode]?.length || 0) > 1 && (
                   <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
@@ -1053,11 +1121,15 @@ const RouteResultPage: React.FC = () => {
                             cursor: 'pointer', fontSize: 13, textAlign: 'left', lineHeight: 1.5,
                           }}
                         >
-                          <div style={{ fontWeight: 700 }}>{cand.icon} {cand.label}</div>
+                          <div style={{ fontWeight: 700 }}>{cand.icon} {cand.label}{cand.tag === 'low-carbon' ? '（估算）' : ''}</div>
                           <div style={{ fontSize: 12, opacity: 0.8 }}>
                             {candRoute.duration > 0 ? formatDuration(candRoute.duration) : '—'}
                             {candRoute.distance > 0 ? ` · ${(candRoute.distance / 1000).toFixed(1)}km` : ''}
                           </div>
+                          {cand.tag === 'low-carbon' && (() => {
+                            const estimate = estimateDriveImpact(candRoute.distance, candRoute.duration, selectedDisplayMode === 'ev' ? 'ev' : 'fuel');
+                            return estimate ? <div style={{ fontSize: 11, color: '#389e0d' }}>{estimate.label}</div> : null;
+                          })()}
                         </button>
                       );
                     })}
@@ -1082,6 +1154,13 @@ const RouteResultPage: React.FC = () => {
                     {mock.congestionSegments.map((s, j) => (
                       <div key={j} style={{ flex: s.ratio, background: congestionColor(s.level), height: '100%', borderRadius: 2 }} />
                     ))}
+                  </div>
+                )}
+
+                {mode === 'drive' && driveEstimate && (
+                  <div className={styles.aiAdvice} style={{ background: '#f6ffed', color: '#237804' }}>
+                    {selectedDisplayMode === 'ev' ? '⚡' : '🌱'} {driveEstimate.label}（估算）
+                    <span style={{ marginLeft: 8, fontSize: 11 }}>数据仅供路线比较：{driveEstimate.assumptions}</span>
                   </div>
                 )}
 

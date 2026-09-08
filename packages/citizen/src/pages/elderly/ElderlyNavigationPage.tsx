@@ -120,7 +120,7 @@ const ElderlyNavigationPage: React.FC = () => {
     navigate('/elderly');
   };
 
-  // 返回长辈首页：已到达直接结束；导航中需确认（不静默丢弃导航、不退出长辈模式）
+  // 返回长辈首页：已到达直接结束；导航中需确认（不静默丢弃导航、不退出关怀模式）
   const backHome = () => {
     if (arrived) { endNavigation(); return; }
     setBackConfirm(true);
@@ -159,7 +159,7 @@ const ElderlyNavigationPage: React.FC = () => {
       {/* 顶部：返回长辈首页 + 模式 + 结束导航 */}
       <div style={{ position: 'absolute', top: 16, left: 16, right: 16, display: 'flex', alignItems: 'center', gap: 10, zIndex: 10 }}>
         <button onClick={backHome} style={{ background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff', padding: '10px 18px', borderRadius: 20, fontSize: 16, cursor: 'pointer' }}>← 返回长辈首页</button>
-        <span style={{ color: '#fff', fontSize: 16, fontWeight: 700, margin: '0 auto' }}>{modeLabel}导航 · 长辈模式</span>
+        <span style={{ color: '#fff', fontSize: 16, fontWeight: 700, margin: '0 auto' }}>{modeLabel}导航 · 关怀模式</span>
         <button onClick={endNavigation} style={{ background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff', padding: '10px 18px', borderRadius: 20, fontSize: 16, cursor: 'pointer' }}>✕ 结束</button>
       </div>
 

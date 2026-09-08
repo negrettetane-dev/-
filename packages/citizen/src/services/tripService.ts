@@ -87,6 +87,8 @@ function normalizeHistoryTrip(row: HistoryRow): Trip | null {
     clientSessionId: stringValue(row.clientSessionId ?? row.client_session_id) || `history_${id}`,
     mode,
     profile: row.profile === 'ev' || row.profile === 'accessible' ? row.profile : 'standard',
+    routeStrategy: normalizeRouteStrategy(row.routeStrategy ?? row.route_strategy),
+    rewardReason: stringValue(row.rewardReason ?? row.reward_reason) || undefined,
     origin: readLocation(row, 'origin'),
     destination: readLocation(row, 'destination'),
     startedAt,
@@ -103,6 +105,10 @@ function normalizeHistoryTrip(row: HistoryRow): Trip | null {
     dataSource,
     createdAt: dateValue(row.createdAt ?? row.created_at ?? startedAt),
   };
+}
+
+function normalizeRouteStrategy(value: unknown): NonNullable<Trip['routeStrategy']> {
+  return value === 'shortest' || value === 'low-carbon' || value === 'accessible' ? value : 'fastest';
 }
 
 function isRecord(value: unknown): value is HistoryRow {

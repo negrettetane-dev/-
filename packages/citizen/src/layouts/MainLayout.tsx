@@ -30,7 +30,7 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const currentPath = location.pathname;
   const [aboutModal, setAboutModal] = useState('');
 
-  // 长辈模式或详情页时不显示标准导航
+  // 关怀模式或详情页时不显示标准导航
   const isFullScreen = currentPath.startsWith('/elderly');
 
   // 判断当前激活菜单
@@ -77,7 +77,7 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
           <div className={styles.headerRight}>
             {elderlyMode && (
-              <button className={styles.elderlyBadge} onClick={() => navigate('/elderly')}>👴 长辈模式</button>
+              <button className={styles.elderlyBadge} onClick={() => navigate('/elderly')}>👴 关怀模式</button>
             )}
             {isLoggedIn ? (
               <div className={styles.userArea}>

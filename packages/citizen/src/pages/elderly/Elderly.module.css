@@ -7,14 +7,18 @@
 .mainButtons { display: flex; flex-direction: column; gap: 24px; }
 .card { background: #fff; border: 3px solid #eee; border-radius: 20px; padding: 28px; display: flex; flex-direction: column; gap: 18px; box-shadow: 0 4px 20px rgba(0,0,0,0.06); }
 .cardTitle { font-size: 28px; font-weight: 700; }
-.voiceInput { display: flex; align-items: center; gap: 16px; padding: 20px; background: var(--primary-light); border-radius: 16px; cursor: pointer; font-size: 22px; }
+.voiceInput { display: flex; align-items: center; gap: 16px; width: 100%; padding: 20px; border: 2px solid transparent; background: var(--primary-light); border-radius: 16px; cursor: pointer; font: inherit; color: inherit; text-align: left; }
+.voiceInput:focus-visible { outline: 4px solid rgba(22,119,255,0.35); outline-offset: 3px; }
+.voiceListening { background: #e6fffb; border-color: #13c2c2; color: #006d75; }
+.voiceError { background: #fff1f0; border-color: #ffccc7; color: #a8071a; }
+.voiceMessage { font-size: 17px; line-height: 1.5; color: var(--text-secondary); }
 .input { width: 100%; padding: 18px; border: 2px solid #ddd; border-radius: 14px; font-size: 22px; }
 .btn { width: 100%; padding: 20px; background: var(--primary); color: #fff; border: none; border-radius: 14px; font-size: 22px; cursor: pointer; font-weight: 600; }
 .busRow { display: flex; align-items: center; gap: 16px; font-size: 22px; padding: 14px; background: var(--bg-page); border-radius: 12px; }
 .busName { font-weight: 700; background: var(--primary); color: #fff; padding: 6px 16px; border-radius: 10px; }
 .busArrival { color: var(--primary); font-weight: 600; }
 
-/* ===== 公交车到哪了（长辈模式） ===== */
+/* ===== 公交车到哪了（关怀模式） ===== */
 .busDemoBanner { background: #fff7e6; border: 2px solid #ffd591; color: #ad6800; border-radius: 12px; padding: 14px 16px; font-size: 20px; font-weight: 700; text-align: center; }
 .busRefreshRow { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .busUpdatedAt { font-size: 18px; color: var(--text-secondary); }

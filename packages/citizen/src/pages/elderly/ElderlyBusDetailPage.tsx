@@ -4,7 +4,7 @@ import { getLineDetail } from '../../services/transitService';
 import type { TransitLine } from '../../types/transit';
 import styles from './Elderly.module.css';
 
-/** 长辈模式公交线路详情（轻量，大字，无地图）：展示线路号/方向/首末班/站点列表 */
+/** 关怀模式公交线路详情（轻量，大字，无地图）：展示线路号/方向/首末班/站点列表 */
 const ElderlyBusDetailPage: React.FC = () => {
   const { lineId = '' } = useParams<{ lineId: string }>();
   const navigate = useNavigate();
@@ -28,7 +28,7 @@ const ElderlyBusDetailPage: React.FC = () => {
     <div className={styles.page}>
       <div className={styles.topBar}>
         <button className={styles.exitBtn} onClick={() => navigate('/elderly')} style={{ marginRight: 'auto' }}>← 返回长辈首页</button>
-        <span className={styles.logo}>线路详情 · 长辈模式</span>
+        <span className={styles.logo}>线路详情 · 关怀模式</span>
         <span style={{ width: 88 }} />
       </div>
 

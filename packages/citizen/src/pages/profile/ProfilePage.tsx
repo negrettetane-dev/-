@@ -94,7 +94,7 @@ const ProfilePage: React.FC = () => {
         <div className={styles.menuItem} onClick={toggleElderlyMode}>
           <span className={styles.menuIcon}>👴</span>
           <div className={styles.menuBody}>
-            <div className={styles.menuLabel}>长辈简易模式</div>
+            <div className={styles.menuLabel}>关怀模式</div>
             <div className={styles.menuDesc}>{elderlyMode ? '已开启：大字体、简化功能' : '大字体、语音交互、极简操作'}</div>
           </div>
           <div className={`${styles.toggle} ${elderlyMode?styles.toggleOn:''}`}>

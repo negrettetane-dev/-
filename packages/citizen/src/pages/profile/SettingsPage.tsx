@@ -44,7 +44,7 @@ const SettingsPage: React.FC = () => {
 
       <div className={styles.settingsSection}>
         <div className={styles.settingsItem}>
-          <span className={styles.settingsLabel}>👴 长辈简易模式</span>
+          <span className={styles.settingsLabel}>👴 关怀模式</span>
           <div className={`${styles.toggle} ${elderlyMode?styles.toggleOn:''}`} onClick={toggleElderlyMode}>
             <div className={styles.toggleBall}/>
           </div>

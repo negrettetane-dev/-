@@ -16,7 +16,7 @@ function formatClock(d: Date): string {
   return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
-/** 长辈模式「公交车到哪了」模块：候车站 + 线路到站卡片 */
+/** 关怀模式「公交车到哪了」模块：候车站 + 线路到站卡片 */
 const ElderlyBusCard: React.FC = () => {
   const navigate = useNavigate();
 
