@@ -131,6 +131,43 @@ function haversineKm(a: [number, number], b: [number, number]): number {
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
+function distanceToSegmentKm(point: [number, number], start: [number, number], end: [number, number]): number {
+  const cosLat = Math.cos((point[1] * Math.PI) / 180);
+  const scaleX = 111.32 * cosLat;
+  const scaleY = 111.32;
+  const px = point[0] * scaleX;
+  const py = point[1] * scaleY;
+  const ax = start[0] * scaleX;
+  const ay = start[1] * scaleY;
+  const bx = end[0] * scaleX;
+  const by = end[1] * scaleY;
+  const dx = bx - ax;
+  const dy = by - ay;
+  const lengthSquared = dx * dx + dy * dy;
+  const t = lengthSquared ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lengthSquared)) : 0;
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+
+function routePassesWaypoints(path: [number, number][], waypoints: [number, number][], thresholdKm = 0.35): boolean {
+  if (!waypoints.length) return true;
+  let segmentStart = 0;
+  return waypoints.every(waypoint => {
+    let nearest = Number.POSITIVE_INFINITY;
+    let nearestIndex = segmentStart;
+    for (let index = segmentStart; index < path.length - 1; index += 1) {
+      const distance = distanceToSegmentKm(waypoint, path[index], path[index + 1]);
+      if (distance < nearest) {
+        nearest = distance;
+        nearestIndex = index;
+      }
+    }
+    if (nearest > thresholdKm) return false;
+    segmentStart = Math.max(segmentStart, nearestIndex);
+    return true;
+  });
+}
+
+
 // ===== 坐标归一化：兼容 [lng,lat] / AMap.LngLat / {lng,lat} / {longitude,latitude} =====
 
 function toLngLatTuple(point: any): [number, number] | null {
@@ -542,32 +579,28 @@ export async function planAmapRoute(
   }
 
   if (mode === 'drive') {
-    return withTimeout(new Promise((resolve, reject) => {
-      AMap.plugin(['AMap.Driving'], () => {
-        const drivingOptions: any = { policy: AMap.DrivingPolicy.LEAST_TIME };
-        // 驾车途经点：高德原生支持（最多 16 个）
-        if (validWaypoints.length) {
-          drivingOptions.waypoints = validWaypoints.map(wp => new AMap.LngLat(wp[0], wp[1]));
-        }
-        const driving = new AMap.Driving(drivingOptions);
-        driving.search(startLngLat, endLngLat, (status: string, result: any) => {
-          if (status === 'complete' && result.routes?.length) {
-            const route = result.routes[0];
-            const path = extractRoutePath(route);
-            // 空路径/无效结果不静默成功：EMPTY_ROUTE 明确报错
-            if (path.length < 2 || !Number(route.distance) || !Number(route.time)) {
-              reject(new Error('EMPTY_ROUTE'));
-              return;
-            }
-            resolve({
-              mode, distance: route.distance, duration: route.time, path, polyline: path,
-              congestionSegments: [{ level: 'slow', ratio: 0.3 }, { level: 'free', ratio: 0.7 }],
-              aiAdvice: '建议避开长安街东段，走三环辅路可节省约8分钟',
+    if (validWaypoints.length > 16) throw new Error('TOO_MANY_WAYPOINTS');
+    const driveOnce = (policy: string): Promise<PlannedRoute | null> => withTimeout(new Promise((resolve) => {
+      try {
+        AMap.plugin(['AMap.Driving'], () => {
+          try {
+            const drivingOptions: any = { policy };
+            if (validWaypoints.length) drivingOptions.waypoints = validWaypoints.map(wp => new AMap.LngLat(wp[0], wp[1]));
+            const driving = new AMap.Driving(drivingOptions);
+            driving.search(startLngLat, endLngLat, (status: string, result: any) => {
+              if (status === 'complete' && result.routes?.length) {
+                const candidate = routeFromAmapRoute('drive', result.routes[0]);
+                resolve(candidate && routePassesWaypoints(candidate.path, validWaypoints) ? candidate : null);
+              } else resolve(null);
             });
-          } else reject(new Error(result.info || '驾车路线规划失败'));
+          } catch { resolve(null); }
         });
-      });
+      } catch { resolve(null); }
     }), 'Driving route');
+    return driveOnce(AMap.DrivingPolicy.LEAST_TIME).then(route => {
+      if (route) return route;
+      throw new Error('EMPTY_ROUTE');
+    });
   }
 
   if (mode === 'bus') {
@@ -690,18 +723,21 @@ export async function planRouteCandidates(
     throw new Error('TOO_MANY_WAYPOINTS');
   }
 
-  // —— 驾车：两次真实策略规划 ——
+  // —— 驾车：两次完整策略规划（原生 waypoints 保证每条候选覆盖起点→途经点→终点） ——
   if (mode === 'drive') {
     const driveOnce = (policy: string): Promise<PlannedRoute | null> => withTimeout(new Promise((resolve) => {
       try {
         AMap.plugin(['AMap.Driving'], () => {
           try {
             const drivingOptions: any = { policy };
-            if (validWaypoints.length) drivingOptions.waypoints = validWaypoints.map(wp => new AMap.LngLat(wp[0], wp[1]));
+            if (validWaypoints.length) {
+              drivingOptions.waypoints = validWaypoints.map(wp => new AMap.LngLat(wp[0], wp[1]));
+            }
             const driving = new AMap.Driving(drivingOptions);
             driving.search(startLngLat, endLngLat, (status: string, result: any) => {
               if (status === 'complete' && result.routes?.length) {
-                resolve(routeFromAmapRoute('drive', result.routes[0]));
+                const candidate = routeFromAmapRoute('drive', result.routes[0]);
+                resolve(candidate && routePassesWaypoints(candidate.path, validWaypoints) ? candidate : null);
               } else resolve(null);
             });
           } catch { resolve(null); }
@@ -709,9 +745,43 @@ export async function planRouteCandidates(
       } catch { resolve(null); }
     }), 'Driving policy route');
 
+    const planBySegments = async (policy: string): Promise<PlannedRoute | null> => {
+      if (!validWaypoints.length) return null;
+      const points: [number, number][] = [start, ...validWaypoints, end];
+      const segments: PlannedRoute[] = [];
+      for (let index = 0; index < points.length - 1; index += 1) {
+        const segment = await withTimeout(new Promise<PlannedRoute | null>((resolve) => {
+          AMap.plugin(['AMap.Driving'], () => {
+            const driving = new AMap.Driving({ policy });
+            driving.search(new AMap.LngLat(points[index][0], points[index][1]), new AMap.LngLat(points[index + 1][0], points[index + 1][1]), (status: string, result: any) => {
+              resolve(status === 'complete' && result.routes?.length ? routeFromAmapRoute('drive', result.routes[0]) : null);
+            });
+          });
+        }), 'Driving waypoint segment');
+        if (!segment) return null;
+        segments.push(segment);
+      }
+      const path = segments.flatMap((segment, index) => index === 0 ? segment.path : segment.path.slice(1));
+      if (!routePassesWaypoints(path, validWaypoints)) return null;
+      return {
+        mode: 'drive',
+        distance: segments.reduce((sum, segment) => sum + segment.distance, 0),
+        duration: segments.reduce((sum, segment) => sum + segment.duration, 0),
+        path,
+        polyline: path,
+        congestionSegments: [{ level: 'slow', ratio: 0.3 }, { level: 'free', ratio: 0.7 }],
+        aiAdvice: '建议避开拥堵路段',
+      };
+    };
+
+    const completeRoute = async (policy: string): Promise<PlannedRoute | null> => {
+      const nativeRoute = await driveOnce(policy);
+      return nativeRoute || planBySegments(policy);
+    };
+
     const [fastestRoute, shortestRoute] = await Promise.all([
-      driveOnce(AMap.DrivingPolicy.LEAST_TIME),
-      driveOnce(AMap.DrivingPolicy.LEAST_DISTANCE),
+      completeRoute(AMap.DrivingPolicy.LEAST_TIME),
+      completeRoute(AMap.DrivingPolicy.LEAST_DISTANCE),
     ]);
     const candidates: RouteCandidate[] = [];
     if (fastestRoute) candidates.push({ tag: 'fastest', label: '时间最短', icon: CANDIDATE_ICONS.fastest, route: fastestRoute });

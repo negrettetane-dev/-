@@ -31,6 +31,7 @@ import LoginPage from './pages/auth/LoginPage';
 import RegisterPage from './pages/auth/RegisterPage';
 import QRCodePage from './pages/qrcode/QRCodePage';
 import ChargingScanPage from './pages/charging/ChargingScanPage';
+import ChargingSessionPage from './pages/charging/ChargingSessionPage';
 import MoveCarPage from './pages/movecar/MoveCarPage';
 import BusDetailPage from './pages/bus/BusDetailPage';
 import CustomBusPage from './pages/custombus/CustomBusPage';
@@ -128,6 +129,7 @@ const App: React.FC = () => {
             <Route path="/carbon" element={<CarbonPage />} />
             <Route path="/qrcode" element={<RequireAuth><QRCodePage /></RequireAuth>} />
             <Route path="/charging/scan" element={<ChargingScanPage />} />
+            <Route path="/charging/session" element={<ChargingSessionPage />} />
             <Route path="/move-car" element={<MoveCarPage />} />
             <Route path="/travel/bus/:lineId" element={<BusDetailPage />} />
             <Route path="/travel/metro/:lineId" element={<MetroDetailPage />} />

@@ -235,7 +235,7 @@ export function fetchInterceptor() {
 
     // 无障碍设施（平民端查询）：mock 环境下返回演示数据，对齐后端契约
     if (url === '/api/accessibility/stations') {
-      return new Response(JSON.stringify(json(DEMO_ACCESSIBLE_FACILITIES.map(f => ({ ...f, source: 'backend' })))), { headers: { 'Content-Type': 'application/json' } });
+      return new Response(JSON.stringify(json(DEMO_ACCESSIBLE_FACILITIES.map(f => ({ ...f, source: 'demo' })))), { headers: { 'Content-Type': 'application/json' } });
     }
 
     // 定制公交（mock 模拟后端：班次实例 / 预约）。真实后端实现后前端零改动。

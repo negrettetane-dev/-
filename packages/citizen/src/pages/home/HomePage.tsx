@@ -6,7 +6,7 @@ import AIAssistant from '../../components/AIAssistant';
 import TravelModeSelector, { normalizeTravelMode, TRAVEL_MODE_OPTIONS, type TravelModeOption } from '../../components/travel/TravelModeSelector';
 import styles from './HomePage.module.css';
 import { apiGet } from '../../services/apiClient';
-import { planAmapRoute, resolveRouteLocations, resolveWaypointCoords } from '../../services/routePlanningService';
+import { planAmapRoute, planRouteCandidates, resolveRouteLocations, resolveWaypointCoords } from '../../services/routePlanningService';
 import { useTravelLocationStore } from '../../stores/travelLocationStore';
 import { useTravelPlanStore } from '../../stores/travelPlanStore';
 import DepartureTimeSelect from '../../components/travel/DepartureTimeSelect';
@@ -41,6 +41,8 @@ const HomePage: React.FC = () => {
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<any>(null);
   const homeRoutePolyline = useRef<any>(null);
+  const homeWaypointMarkers = useRef<any[]>([]);
+  const homeRouteWaypointCoords = useRef<[number, number][]>([]);
   const homeRouteRequestId = useRef(0);
   const [news, setNews] = useState<News[]>([]);
   const [newsFailed, setNewsFailed] = useState(false);
@@ -176,6 +178,9 @@ const HomePage: React.FC = () => {
       map.remove(homeRoutePolyline.current);
       homeRoutePolyline.current = null;
     }
+    homeWaypointMarkers.current.forEach(marker => map.remove(marker));
+    homeWaypointMarkers.current = [];
+    homeRouteWaypointCoords.current = [];
 
     if (!origin.address.trim() || !destination.trim()) return;
 
@@ -189,12 +194,24 @@ const HomePage: React.FC = () => {
       origin.lng != null && origin.lat != null ? { lng: origin.lng, lat: origin.lat } : null,
     )
       .then(async ({ start, end }) => {
-        const waypointCoords = waypoints.length
+        const routeWaypointCoords: [number, number][] = waypoints.length
           ? (await resolveWaypointCoords(waypoints, origin.city || origin.province || null)).map(item => item.coord)
           : [];
-        return planAmapRoute(routeMode, start, end, origin.city || origin.province || null, waypointCoords);
+        if (routeMode === 'bus' && waypoints.some(point => point.trim())) {
+          throw new Error('TRANSIT_WAYPOINTS_UNSUPPORTED');
+        }
+        if (routeMode === 'bus') {
+          return planAmapRoute(routeMode, start, end, origin.city || origin.province || null, routeWaypointCoords)
+            .then(route => ({ route, waypointCoords: routeWaypointCoords }));
+        }
+        return planRouteCandidates(routeMode, start, end, origin.city || origin.province || null, routeWaypointCoords)
+          .then(candidates => (candidates[0]?.route || null))
+          .then(route => {
+            if (!route) throw new Error('EMPTY_ROUTE');
+            return { route, waypointCoords: routeWaypointCoords };
+          });
       })
-      .then((route) => {
+      .then(({ route, waypointCoords }) => {
         if (requestId !== homeRouteRequestId.current || !mapInstance.current) return;
         // 空路径不静默成功：请求成功但没解析出有效路径 → 明确报错
         if (!route.path || route.path.length < 2) {
@@ -214,7 +231,19 @@ const HomePage: React.FC = () => {
         });
         mapInstance.current.add(polyline);
         homeRoutePolyline.current = polyline;
-        mapInstance.current.setFitView([polyline], false, [70, 70, 100, 440]);
+        homeRouteWaypointCoords.current = waypointCoords;
+        const waypointMarkers = waypointCoords.map((coord: [number, number], index: number) => new AMap.Marker({
+          position: coord,
+          content: `<div style="width:28px;height:28px;border-radius:50%;background:#faad14;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:14px;">${index + 1}</div>`,
+          offset: new AMap.Pixel(-14, -14),
+          title: `途经点${index + 1}`,
+          zIndex: 90,
+        }));
+        if (waypointMarkers.length) {
+          mapInstance.current.add(waypointMarkers);
+          homeWaypointMarkers.current = waypointMarkers;
+        }
+        mapInstance.current.setFitView([polyline, ...waypointMarkers], false, [70, 70, 100, 440]);
         setRoutePreviewStatus('success');
         setRoutePreviewMessage('');
       })
@@ -229,6 +258,8 @@ const HomePage: React.FC = () => {
             ? '起终点距离过远，建议换乘公交或驾车'
             : rawMsg.includes('TOO_MANY_WAYPOINTS')
             ? '驾车路线最多支持 16 个途经点，请删除部分途经点后重试'
+          : rawMsg.includes('TRANSIT_WAYPOINTS_UNSUPPORTED')
+            ? '公交/地铁路线暂不支持途经点，请删除途经点后继续'
           : rawMsg.includes('CROSS_CITY_TRANSIT_UNSUPPORTED')
               ? '当前起终点不在同一城市，暂不支持跨城市公交/地铁规划'
               : rawMsg.includes('transit-no-valid-segment')

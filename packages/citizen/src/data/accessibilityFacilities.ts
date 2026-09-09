@@ -88,6 +88,17 @@ let facilityMap = new Map<string, StationFacility>(DEMO_ACCESSIBLE_FACILITIES.ma
 /** 当前设施数据来源：demo（演示兜底） | backend（后端真实） */
 let facilitySource: 'demo' | 'backend' = 'demo';
 let loadPromise: Promise<boolean> | null = null;
+const facilityListeners = new Set<() => void>();
+
+export function subscribeAccessibilityFacilities(listener: () => void): () => void {
+  facilityListeners.add(listener);
+  return () => facilityListeners.delete(listener);
+}
+
+export function refreshAccessibilityFacilities(): Promise<boolean> {
+  loadPromise = null;
+  return loadAccessibilityFacilities();
+}
 
 /** 按站名查无障碍设施；未收录返回 null（视为「设施信息待确认」） */
 export function getFacilityForStation(stationName: string): StationFacility | null {
@@ -110,10 +121,15 @@ export function loadAccessibilityFacilities(): Promise<boolean> {
   if (loadPromise) return loadPromise;
   loadPromise = apiGet<StationFacility[]>('/accessibility/stations')
     .then((data) => {
-      const list = Array.isArray(data) ? data : [];
+      const list = Array.isArray(data)
+        ? data
+        : data && typeof data === 'object' && Array.isArray((data as { list?: unknown }).list)
+          ? (data as { list: StationFacility[] }).list
+          : [];
       if (list.length === 0) return false;
       facilityMap = new Map(list.map(f => [normalizeFacilityName(f.stationName), { ...f, source: 'backend' as const }]));
       facilitySource = 'backend';
+      facilityListeners.forEach(listener => listener());
       return true;
     })
     .catch(() => false);

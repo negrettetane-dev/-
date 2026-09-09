@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import jsQR from 'jsqr';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { generateChargingDemoQr, type ChargingDemoQrState } from '../../services/chargingScanService';
-import DemoQrCode from '../../components/DemoQrCode';
+import { ChargingQrParseError, parseChargingQrContent, type ChargingQrPayload } from '../../services/chargingScanService';
+import { createChargingSession } from '../../services/chargingSessionService';
 import { formatPrice } from '../../utils/price';
 import type { PriceValue } from '../../types/price';
 import styles from './ChargingScan.module.css';
@@ -15,85 +16,112 @@ interface ChargingScanLocationState {
   address?: string;
 }
 
-type ScanStatus = 'idle' | 'scanned';
+type ScanStatus = 'idle' | 'decoding' | 'scanned' | 'confirmed';
 
-const VALIDITY = 60; // 秒
+const statusLabels: Record<ChargingQrPayload['status'], string> = {
+  available: '空闲',
+  occupied: '使用中',
+  offline: '离线',
+  fault: '故障',
+};
+
+const statusClassNames: Record<ChargingQrPayload['status'], string> = {
+  available: styles.statusAvailable,
+  occupied: styles.statusOccupied,
+  offline: styles.statusUnavailable,
+  fault: styles.statusUnavailable,
+};
+
+const decodeImageFile = (file: File): Promise<string> => new Promise((resolve, reject) => {
+  const url = URL.createObjectURL(file);
+  const image = new Image();
+  image.onload = () => {
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = image.naturalWidth;
+      canvas.height = image.naturalHeight;
+      const context = canvas.getContext('2d');
+      if (!context) throw new Error('无法读取图片');
+      context.drawImage(image, 0, 0);
+      const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+      const result = jsQR(imageData.data, imageData.width, imageData.height);
+      if (!result) throw new Error('未识别到二维码，请选择清晰、完整的二维码图片');
+      resolve(result.data);
+    } catch (error) {
+      reject(error);
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  };
+  image.onerror = () => {
+    URL.revokeObjectURL(url);
+    reject(new Error('无法读取图片，请选择有效的图片文件'));
+  };
+  image.src = url;
+});
 
 const ChargingScanPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const station = location.state as ChargingScanLocationState | null;
-
-  const [pileCode, setPileCode] = useState('');
-  const [gunCode, setGunCode] = useState('GUN-01');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const decodeRequestRef = useRef(0);
   const [status, setStatus] = useState<ScanStatus>('idle');
-  const [scanning, setScanning] = useState(false);
-  const [qr, setQr] = useState<ChargingDemoQrState | null>(null);
-  const [countdown, setCountdown] = useState(VALIDITY);
+  const [payload, setPayload] = useState<ChargingQrPayload | null>(null);
   const [error, setError] = useState('');
-  const timerRef = useRef<number | null>(null);
+  const [selectedFileName, setSelectedFileName] = useState('');
 
-  const clearTimer = useCallback(() => {
-    if (timerRef.current !== null) {
-      window.clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-  }, []);
+  useEffect(() => () => { decodeRequestRef.current += 1; }, []);
 
-  // 卸载时清理 Timer
-  useEffect(() => {
-    return () => {
-      if (timerRef.current !== null) {
-        window.clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
-    };
-  }, []);
-
-  const startCountdown = useCallback(() => {
-    clearTimer();
-    setCountdown(VALIDITY);
-    timerRef.current = window.setInterval(() => {
-      setCountdown(prev => {
-        if (prev <= 1) {
-          // 过期后重新生成
-          if (station?.stationId) {
-            setQr(generateChargingDemoQr(station.stationId, pileCode, gunCode));
-          } else {
-            setQr(generateChargingDemoQr('UNKNOWN', pileCode, gunCode));
-          }
-          return VALIDITY;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-  }, [clearTimer, pileCode, gunCode, station]);
-
-  const handleScan = () => {
-    if (scanning) return;
-    if (!pileCode.trim()) { setError('请输入充电桩编号'); return; }
-    if (!gunCode.trim()) { setError('请输入充电枪编号'); return; }
-    setError('');
-    setScanning(true);
-
-    // 模拟扫码（短延迟）
-    setTimeout(() => {
-      const sid = station?.stationId || 'UNKNOWN';
-      const q = generateChargingDemoQr(sid, pileCode.trim(), gunCode.trim());
-      setQr(q);
-      setStatus('scanned');
-      setScanning(false);
-      startCountdown();
-    }, 600);
-  };
-
-  const handleRescan = () => {
-    clearTimer();
-    setQr(null);
+  const resetSelection = () => {
+    decodeRequestRef.current += 1;
     setStatus('idle');
-    setCountdown(VALIDITY);
+    setPayload(null);
     setError('');
+    setSelectedFileName('');
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
+
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    const requestId = ++decodeRequestRef.current;
+    setStatus('decoding');
+    setPayload(null);
+    setError('');
+    setSelectedFileName(file.name);
+
+    try {
+      const content = await decodeImageFile(file);
+      if (requestId !== decodeRequestRef.current) return;
+      const nextPayload = parseChargingQrContent(content);
+      if (station?.stationId && nextPayload.stationId !== station.stationId) {
+        throw new Error('二维码不属于当前充电站，请返回列表重新选择设备');
+      }
+      setPayload(nextPayload);
+      setStatus('scanned');
+    } catch (caught) {
+      if (requestId !== decodeRequestRef.current) return;
+      setStatus('idle');
+      setPayload(null);
+      setError(caught instanceof ChargingQrParseError || caught instanceof Error ? caught.message : '二维码识别失败，请重试');
+    }
+  };
+
+  const handleConfirm = () => {
+    if (!payload || payload.status !== 'available') return;
+    createChargingSession(payload, {
+      stationId: station?.stationId,
+      stationName: station?.stationName,
+      operator: station?.operator,
+      address: station?.address,
+    });
+    navigate('/charging/session');
+  };
+
+  const canConfirm = payload?.status === 'available' && status === 'scanned';
 
   return (
     <div className={styles.page}>
@@ -103,12 +131,10 @@ const ChargingScanPage: React.FC = () => {
         <span className={styles.demoBadge}>演示</span>
       </div>
 
-      {/* 演示警告 */}
       <div className={styles.warnBanner}>
         ⚠️ 演示扫码充电 · 未连接真实充电运营平台，不会启动实体充电
       </div>
 
-      {/* 充电站信息 */}
       <div className={styles.stationCard}>
         <div className={styles.stationName}>
           {station?.stationName ? `🔌 ${station.stationName}` : '未选择充电站'}
@@ -124,70 +150,52 @@ const ChargingScanPage: React.FC = () => {
         ) : (
           <div className={styles.noStation}>
             <div>未选择充电站（页面刷新后上下文丢失）</div>
-            <button className={styles.btn} onClick={() => navigate('/parking')}>返回充电站列表</button>
+            <button className={styles.secondaryBtn} onClick={() => navigate('/parking')}>返回充电站列表</button>
           </div>
         )}
       </div>
 
-      {/* 扫码表单 */}
       <div className={styles.formCard}>
-        <div className={styles.formTitle}>输入充电桩 / 充电枪</div>
-        <label className={styles.label}>充电桩编号</label>
-        <input
-          className={styles.input}
-          placeholder="如：P-001"
-          value={pileCode}
-          onChange={e => setPileCode(e.target.value)}
-          maxLength={20}
-        />
-        <label className={styles.label}>充电枪编号</label>
-        <select className={styles.select} value={gunCode} onChange={e => setGunCode(e.target.value)}>
-          {['GUN-01', 'GUN-02', 'GUN-03', 'GUN-04'].map(g => (
-            <option key={g} value={g}>{g}</option>
-          ))}
-        </select>
-
-        {error && <div className={styles.error}>{error}</div>}
-
-        {status === 'idle' ? (
-          <button className={styles.btn} onClick={handleScan} disabled={scanning}>
-            {scanning ? '识别中...' : '📷 模拟扫码'}
-          </button>
-        ) : (
-          <button className={styles.btn} onClick={handleRescan}>🔄 重新扫码</button>
-        )}
+        <div className={styles.formTitle}>识别充电设备</div>
+        <div className={styles.formHint}>从电脑文件夹选择充电桩二维码图片，系统会自动识别充电桩和充电枪。</div>
+        <input ref={fileInputRef} className={styles.fileInput} type="file" accept="image/*" onChange={handleFileChange} />
+        <button className={styles.uploadBtn} onClick={() => fileInputRef.current?.click()} disabled={status === 'decoding'}>
+          {status === 'decoding' ? '正在识别二维码…' : payload ? '重新选择二维码' : '选择二维码图片'}
+        </button>
+        {selectedFileName && <div className={styles.fileName}>已选择：{selectedFileName}</div>}
+        {error && <div className={styles.error} role="alert">⚠️ {error}</div>}
       </div>
 
-      {/* 扫码结果 */}
-      {status === 'scanned' && qr && (
+      {payload && (
         <div className={styles.resultCard}>
-          <div className={styles.resultTitle}>已识别演示充电枪</div>
-          <div className={styles.resultInfo}>
-            <div>充电桩：<b>{pileCode}</b></div>
-            <div>充电枪：<b>{gunCode}</b></div>
-            {station?.stationName && <div>充电站：<b>{station.stationName}</b></div>}
+          <div className={styles.resultHeader}>
+            <div className={styles.resultTitle}>已识别充电设备</div>
+            <span className={`${styles.statusBadge} ${statusClassNames[payload.status]}`}>
+              ● {statusLabels[payload.status]}
+            </span>
           </div>
-
-          <div className={styles.qrBox}>
-            <DemoQrCode content={qr.content} className={styles.qrSvg} />
-            {countdown <= 10 && (
-              <div className={styles.qrOverlay}>
-                <span>即将过期</span>
-                <span onClick={handleRescan} style={{ cursor: 'pointer', color: '#1677ff', textDecoration: 'underline' }}>重新扫码</span>
-              </div>
-            )}
+          <div className={styles.deviceGrid}>
+            <div><span>充电桩</span><b>{payload.pileCode}</b></div>
+            <div><span>充电枪</span><b>{payload.gunCode}</b></div>
+            <div><span>充电类型</span><b>直流快充</b></div>
+            <div><span>最大功率</span><b>{payload.powerKw} kW</b></div>
+            <div><span>当前电价</span><b>{formatPrice(payload.price)}</b></div>
           </div>
-
-          <div className={styles.qrTimer}>
-            ⏱️ 二维码有效 <b style={{ color: countdown <= 10 ? '#f5222d' : '#52c41a' }}>{countdown}s</b> · 自动刷新
-          </div>
-
-          <div className={styles.demoNote}>
-            当前为演示二维码，未连接真实充电运营平台，不会启动实体充电、不会计费。
-          </div>
+          {payload.status !== 'available' && (
+            <div className={styles.unavailableNote}>该充电枪当前不可用，请选择其他设备。</div>
+          )}
+          {status === 'scanned' && (
+            <button className={styles.btn} onClick={handleConfirm} disabled={!canConfirm}>
+              确认设备并开始演示
+            </button>
+          )}
+          <button className={styles.resetBtn} onClick={resetSelection}>重新选择二维码</button>
         </div>
       )}
 
+      {!payload && !error && status === 'idle' && (
+        <div className={styles.emptyHint}>尚未识别设备，请先选择一张充电桩二维码图片。</div>
+      )}
       <div style={{ height: 32 }} />
     </div>
   );

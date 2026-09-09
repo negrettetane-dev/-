@@ -9,7 +9,7 @@
 import type { PlannedRoute, SegmentData, TransitCandidate } from './routePlanningService';
 import { getFacilityForStation } from '../data/accessibilityFacilities';
 import {
-  calculateAccessibleScore, durationPenalty, buildAccessibleTags,
+  calculateAccessibleScore, buildAccessibleTags,
   type AccessibleRouteMetrics, type AccessibleLevel, type AccessibleScoreResult,
 } from '../utils/accessibilityScore';
 
@@ -34,9 +34,15 @@ export function computeAccessibleMetrics(segments: SegmentData[]): AccessibleRou
   const walkingDistance = segments
     .filter(s => s.type === 'walk')
     .reduce((sum, s) => {
-      // 从 instruction 解析「步行 Xkm」（parseTransitPlan 内生成）
-      const m = /步行\s*([\d.]+)\s*km/.exec(s.instruction || '');
-      return sum + (m ? Number(m[1]) * 1000 : 0);
+      // 结构化距离优先；兼容高德生成的「步行 300m」和「步行 0.3km」文案。
+      const structuredDistance = Number((s as SegmentData & { distance?: number }).distance);
+      if (Number.isFinite(structuredDistance) && structuredDistance >= 0) return sum + structuredDistance;
+      const instruction = s.instruction || '';
+      const m = /步行\s*([\d.]+)\s*(m|米|km|公里)/i.exec(instruction);
+      if (!m) return sum;
+      const value = Number(m[1]);
+      if (!Number.isFinite(value)) return sum;
+      return sum + (/km|公里/i.test(m[2]) ? value * 1000 : value);
     }, 0);
   const transferCount = Math.max(0, transitSegments.length - 1);
 
@@ -93,11 +99,7 @@ export function buildAccessibleOptions(candidates: TransitCandidate[]): Accessib
 
   const parsed = candidates.map(candidate => {
     const metrics = computeAccessibleMetrics(candidate.segments);
-    const scoreBase = calculateAccessibleScore(metrics);
-    const score: AccessibleScoreResult = {
-      ...scoreBase,
-      score: Math.max(0, Math.min(100, scoreBase.score - durationPenalty(candidate.route.duration))),
-    };
+    const score = calculateAccessibleScore(metrics, candidate.route.duration);
     return {
       candidate,
       route: candidate.route,

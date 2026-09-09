@@ -31,7 +31,7 @@ export interface AccessibleScoreResult {
 }
 
 /** 满分 100，按权重计算无障碍评分（V1 固定权重） */
-export function calculateAccessibleScore(metrics: AccessibleRouteMetrics): AccessibleScoreResult {
+export function calculateAccessibleScore(metrics: AccessibleRouteMetrics, durationSeconds = 0): AccessibleScoreResult {
   let score = 100;
 
   // —— 硬性规则 ——
@@ -49,7 +49,8 @@ export function calculateAccessibleScore(metrics: AccessibleRouteMetrics): Acces
   score -= Math.min(Math.floor(metrics.walkingDistance / 40), 25);
   // 换乘次数 20%（每次换乘扣 10 分，封顶 20）
   score -= Math.min(metrics.transferCount * 10, 20);
-  // 路线耗时 10%（每 10 分钟扣 1 分，封顶 10；由调用方传入折算后的 minutesPenalty）
+  // 路线耗时 10%：每 10 分钟扣 1 分，封顶 10
+  score -= durationPenalty(durationSeconds);
   // 信息可靠程度 10%（每个设施未知站点扣 2 分，封顶 10）
   score -= Math.min(metrics.unknownFacilityCount * 2, 10);
   // 楼梯风险（每站 -5）

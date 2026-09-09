@@ -11,7 +11,7 @@ import RouteForecastPanel from '../../components/travel/RouteForecastPanel';
 import TravelModeSelector, { normalizeTravelMode, type RouteTravelMode, type TravelModeOption } from '../../components/travel/TravelModeSelector';
 import AccessibleRouteCard from '../../components/travel/AccessibleRouteCard';
 import { buildAccessibleOptions, type AccessibleRouteOption } from '../../services/accessibilityService';
-import { getFacilityForStation, getFacilitySource } from '../../data/accessibilityFacilities';
+import { getFacilityForStation, getFacilitySource, subscribeAccessibilityFacilities } from '../../data/accessibilityFacilities';
 import { useAuthStore } from '../../stores/authStore';
 import { useTripStore } from '../../stores/tripStore';
 import { useTravelPlanStore } from '../../stores/travelPlanStore';
@@ -183,6 +183,7 @@ const RouteResultPage: React.FC = () => {
   const [displayDest, setDisplayDest] = useState(destination || '目的地');
   const [locationsReady, setLocationsReady] = useState(false);
   const [locationError, setLocationError] = useState('');
+  const [facilityVersion, setFacilityVersion] = useState(0);
 
   // ===== 唯一地图实例 refs（导航复用同一张地图，不创建第二张） =====
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
@@ -192,6 +193,7 @@ const RouteResultPage: React.FC = () => {
   const routePolylineRefs = useRef<Partial<Record<TravelMode, any>>>({});
   const startMarkerRef = useRef<any>(null);
   const endMarkerRef = useRef<any>(null);
+  const waypointMarkersRef = useRef<any[]>([]);
   const carMarkerRef = useRef<any>(null);
   const movePathRef = useRef<[number, number][]>([]);
   const pathIdxRef = useRef(0);
@@ -202,7 +204,13 @@ const RouteResultPage: React.FC = () => {
   // 无障碍设施标记（♿/🛗/⚠️），仅无障碍模式绘制，进入导航时清除
   const accessibleMarkersRef = useRef<any[]>([]);
 
-  // ===== 解析起终点：标题、Marker、路线规划和导航共用这一对坐标 =====
+  useEffect(() => {
+    return subscribeAccessibilityFacilities(() => {
+      if (selectedDisplayMode !== 'accessible') return;
+      setFacilityVersion(version => version + 1);
+    });
+  }, [selectedDisplayMode]);
+
   useEffect(() => {
     let cancelled = false;
     // 立即使上一次起终点对应的规划请求失效，避免旧请求晚返回后重新画回旧路线。
@@ -366,7 +374,7 @@ const RouteResultPage: React.FC = () => {
         }
         setIsPlanning(false);
       });
-  }, [origin, destination, waypoints, originCoords, locationsReady, selectedMode, selectedDisplayMode]);
+  }, [origin, destination, waypoints, originCoords, locationsReady, selectedMode, selectedDisplayMode, facilityVersion]);
 
   // ===== 规划完成后加载每条成功路线的未来拥堵预测（模拟 Service） =====
   useEffect(() => {
@@ -452,6 +460,7 @@ const RouteResultPage: React.FC = () => {
       routePolylineRefs.current = {};
       startMarkerRef.current = null;
       endMarkerRef.current = null;
+      waypointMarkersRef.current = [];
       carMarkerRef.current = null;
     };
   }, []);
@@ -463,8 +472,12 @@ const RouteResultPage: React.FC = () => {
     const AMap = (window as any).AMap;
     if (!AMap) return;
 
+    let cancelled = false;
+
     if (startMarkerRef.current) { map.remove(startMarkerRef.current); startMarkerRef.current = null; }
     if (endMarkerRef.current) { map.remove(endMarkerRef.current); endMarkerRef.current = null; }
+    waypointMarkersRef.current.forEach(marker => map.remove(marker));
+    waypointMarkersRef.current = [];
     if (!locationsReady || !startCoord.current || !endCoord.current) return;
 
     startMarkerRef.current = new AMap.Marker({
@@ -476,8 +489,26 @@ const RouteResultPage: React.FC = () => {
       icon: makeMarkerIcon(AMap, '#f5222d', '终', 28),
     });
     map.add([startMarkerRef.current, endMarkerRef.current]);
+
+    const city = useTravelLocationStore.getState().origin?.city || null;
+    resolveWaypointCoords(waypoints, city).then(items => {
+      if (cancelled || !mapRef.current || !items.length) return;
+      const markers = items.map((item, index) => new AMap.Marker({
+        position: item.coord,
+        content: `<div style="width:28px;height:28px;border-radius:50%;background:#faad14;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:14px;">${index + 1}</div>`,
+        offset: new AMap.Pixel(-14, -14),
+        title: `途经点${index + 1}：${item.name}`,
+        zIndex: 90,
+      }));
+      map.add(markers);
+      waypointMarkersRef.current = markers;
+    });
     map.setCenter(startCoord.current);
-  }, [origin, destination, originCoords, mapReady, locationsReady]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [origin, destination, originCoords, mapReady, locationsReady, waypoints]);
 
   // ===== 多路线 Polyline：同时绘制所有可用方案，当前高亮、其他淡化 =====
   useEffect(() => {
