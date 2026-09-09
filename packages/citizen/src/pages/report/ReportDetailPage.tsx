@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { apiGet } from '../../services/apiClient';
 import styles from './Report.module.css';
 
-interface WorkOrder { id:string; workOrderNo:string; category:string; description:string; images:string[]; position:[number,number]; address:string; status:string; createTime:number; updateTime:number; processLogs:{time:number;action:string;operator:string;detail:string}[]; rating?:number; afterImage?:string }
+interface WorkOrder { id:string; workOrderNo:string; category:string; description:string; images:string[]; position:[number,number]; address:string; status:string; createTime:number; updateTime:number; processLogs:{time:number;action:string;operator:string;detail:string}[]; rating?:number; afterImage?:string; platformFeedback?: string; feedback?: string }
 
 const STATUS_LABELS: Record<string,string> = { pending:'待受理', received:'已受理', processing:'处置中', completed:'已办结', rejected:'已驳回' };
 const STATUS_COLORS: Record<string,string> = { pending:'#faad14', received:'#1677ff', processing:'#ff7a00', completed:'#52c41a', rejected:'#f5222d' };
@@ -20,10 +20,11 @@ const ReportDetailPage: React.FC = () => {
   useEffect(() => {
     let alive = true;
     if (!id) return;
-    apiGet<WorkOrder>(`/report/detail/${id}`)
-      .then(data => { if (alive) setReport(data); })
+    const load = () => apiGet<WorkOrder>(`/report/detail/${id}`).then(data => { if (alive) setReport(data); });
+    load()
       .catch(() => { if (alive) setError('工单不存在或您无权查看'); });
-    return () => { alive = false; };
+    const timer = window.setInterval(load, 15000);
+    return () => { alive = false; window.clearInterval(timer); };
   }, [id]);
 
   if (error) return <div className={styles.page}><div style={{textAlign:'center',padding:40}}>{error}</div></div>;
@@ -69,6 +70,8 @@ const ReportDetailPage: React.FC = () => {
           ))}
         </div>
       </div>
+
+      {(report.platformFeedback || report.feedback) && <div className={styles.formSection}><div className={styles.formTitle}>📣 平台反馈</div><div style={{ lineHeight: 1.7 }}>{report.platformFeedback || report.feedback}</div></div>}
 
       {/* Rating (if completed) */}
       {report.status === 'completed' && (
