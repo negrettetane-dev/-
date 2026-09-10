@@ -239,16 +239,25 @@ export function registerAccount(data: {
 }
 
 // ====== 通知设置 ======
+// 按用户作用域持久化（key: notification_settings:{userId}），未登录/旧数据回退到公共 key。
 
 const NOTIF_KEY = 'notification_settings';
 
-export function getNotificationSettings(): NotificationSettings {
-  return get<NotificationSettings>(NOTIF_KEY, {
-    congestion: true, weather: true, control: true, workorder: true, system: false,
-  });
+export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
+  congestion: true, weather: true, control: true, workorder: true, system: false,
+};
+
+/** 读取通知设置：优先当前用户的 scoped 数据，其次旧版公共数据，最后默认值 */
+export function getNotificationSettings(userId = 'legacy'): NotificationSettings {
+  const scoped = get<NotificationSettings | null>(userScopedKey(NOTIF_KEY, userId), null);
+  if (scoped) return { ...DEFAULT_NOTIFICATION_SETTINGS, ...scoped };
+  return get<NotificationSettings>(NOTIF_KEY, DEFAULT_NOTIFICATION_SETTINGS);
 }
 
-export function setNotificationSettings(s: NotificationSettings): void {
+/** 写入通知设置（用户作用域） */
+export function setNotificationSettings(s: NotificationSettings, userId = 'legacy'): void {
+  set(userScopedKey(NOTIF_KEY, userId), s);
+  // 兼容旧读取方：同步写一份公共 key（退出登录时会被清理）
   set(NOTIF_KEY, s);
 }
 
@@ -363,5 +372,11 @@ export function clearPersonalData(): void {
   PERSONAL_KEYS.forEach(key => {
     try { localStorage.removeItem(STORAGE_PREFIX + key); } catch { /* ignore */ }
   });
+  // 通知设置为用户作用域 key（notification_settings:{userId}），需要前缀匹配清理
+  try {
+    Object.keys(localStorage)
+      .filter(k => k.startsWith(STORAGE_PREFIX + 'notification_settings'))
+      .forEach(k => localStorage.removeItem(k));
+  } catch { /* ignore */ }
   try { localStorage.removeItem(STORAGE_PREFIX + USER_KEY); } catch { /* ignore */ }
 }
