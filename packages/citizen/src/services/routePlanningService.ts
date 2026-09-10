@@ -564,7 +564,16 @@ export async function planAmapRoute(
               congestionSegments: [{ level: 'slow', ratio: 0.3 }, { level: 'free', ratio: 0.7 }],
               aiAdvice: '建议避开长安街东段，走三环辅路可节省约8分钟',
             });
-          } else reject(new Error(result.info || '驾车路线规划失败'));
+          } else {
+            // 保留高德原始状态/错误信息，便于区分白名单、配额、参数和确实无路线。
+            console.error('AMap driving failed', {
+              status,
+              info: result?.info,
+              infocode: result?.infocode,
+              result,
+            });
+            reject(new Error(result?.info || result?.message || `驾车路线规划失败（${status || 'unknown'}）`));
+          }
         });
       });
     }), 'Driving route');
