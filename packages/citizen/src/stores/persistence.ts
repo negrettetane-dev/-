@@ -433,5 +433,11 @@ export function clearPersonalData(): void {
   PERSONAL_KEYS.forEach(key => {
     try { localStorage.removeItem(STORAGE_PREFIX + key); } catch { /* ignore */ }
   });
+  // 用户作用域 key（如 notification_settings:{userId}）不在 PERSONAL_KEYS 精确匹配范围内，需按前缀+分隔符清理，否则退出登录后残留造成跨账号串号
+  try {
+    Object.keys(localStorage)
+      .filter(k => PERSONAL_KEYS.some(key => k.startsWith(`${STORAGE_PREFIX}${key}:`)))
+      .forEach(k => localStorage.removeItem(k));
+  } catch { /* ignore */ }
   try { localStorage.removeItem(STORAGE_PREFIX + USER_KEY); } catch { /* ignore */ }
 }
