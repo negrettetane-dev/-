@@ -1,0 +1,22 @@
+.timeline { background: rgba(255,255,255,.96); border-radius: 16px; padding: 16px; margin: 12px; max-height: 46vh; overflow: auto; box-shadow: 0 6px 24px rgba(0,0,0,.18); }
+.stage { display: flex; min-height: 62px; }
+.rail { width: 30px; display: flex; flex-direction: column; align-items: center; flex-shrink: 0; }
+.dot { width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; background: #bfbfbf; font-size: 12px; font-weight: 700; z-index: 1; }
+.line { width: 2px; flex: 1; background: #e5e5e5; }
+.content { flex: 1; padding: 0 0 16px 10px; min-width: 0; }
+.header { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 15px; }
+.header strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.status { font-size: 11px; color: #8c8c8c; flex-shrink: 0; }
+.meta { margin-top: 5px; color: #8c8c8c; font-size: 12px; }
+.action, .transitInfo { margin-top: 8px; font-size: 13px; color: #595959; }
+.transitInfo { color: #1677ff; }
+.syncState { margin: -4px 0 10px; color: #8c8c8c; font-size: 11px; text-align: right; }
+.transitStatus { margin-top: 7px; color: #d46b08; font-size: 12px; }
+.button { margin-top: 10px; width: 100%; border: 0; border-radius: 9px; padding: 10px 12px; color: #fff; background: #1677ff; cursor: pointer; font-weight: 600; }
+.stageCurrent .dot { background: #1677ff; box-shadow: 0 0 0 4px #e6f4ff; }
+.stageCurrent .line { background: #91caff; }
+.stageCurrent .status { color: #1677ff; }
+.stageCompleted .dot { background: #52c41a; }
+.stageCompleted .content { color: #8c8c8c; }
+.stageCompleted .line { background: #b7eb8f; }
+@media (max-width: 600px) { .timeline { margin: 8px; padding: 12px; max-height: 52vh; } }

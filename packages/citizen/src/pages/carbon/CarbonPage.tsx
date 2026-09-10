@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { getCarbonConfig, getPointRules, type RedemptionRecord, type CitizenCarbonConfig, type CitizenPointRule } from '../../stores/persistence';
 import { apiGet, apiPost } from '../../services/apiClient';
 import { useAuthStore } from '../../stores/authStore';
-import { resolveRedemptionStatus, REDEMPTION_STATUS_META, formatDateSafe, formatExpiryDate } from '@zhitu/shared';
+import { resolveRedemptionStatus, formatDateSafe, formatExpiryDate } from '@zhitu/shared';
 import styles from './Carbon.module.css';
 
 interface CarbonRecord { id:string; type:string; date:string; distance:number; duration:number; carbonSaved:number; points:number; route?:string }
@@ -33,6 +33,7 @@ const CarbonPage: React.FC = () => {
   const [msgType, setMsgType] = useState<'success' | 'error'>('success');
   const [carbonConfig, setCarbonConfig] = useState<CitizenCarbonConfig>(getCarbonConfig());
   const [pointRules, setPointRules] = useState<CitizenPointRule[]>(getPointRules());
+  const markUsed = async (record: RedemptionRecord) => { setRedemptions(items => { const updated = items.map(item => item.id === record.id ? { ...item, status: 'used' } : item); return [...updated.filter(item => resolveRedemptionStatus(item.status, item.expires_at) === 'unused'), ...updated.filter(item => resolveRedemptionStatus(item.status, item.expires_at) !== 'unused')]; }); try { await apiPost(`/redemptions/${encodeURIComponent(record.id)}/use`, {}); } catch { setRedeemMsg('核销状态已更新，网络同步稍后重试'); } };
 
   const loadData = useCallback(() => {
     // 未登录：只加载公共商品列表，不调用个人接口（/points /carbon/stats /redemptions）
@@ -124,7 +125,7 @@ const CarbonPage: React.FC = () => {
     <div className={styles.page}>
       <div className={styles.header}>
         <span className={styles.title}>🌳 我的碳积分</span>
-        <span className={styles.rank}>🏅 排名前 {stats.rankPercent}%</span>
+        <div className={styles.headerActions}><span className={styles.rank}>🏅 排名前 {stats.rankPercent}%</span><button className={styles.rank} onClick={() => navigate('/carbon/points-detail')}>路口 · 积分详情 →</button></div>
       </div>
 
       {/* Score Ring */}
@@ -138,7 +139,6 @@ const CarbonPage: React.FC = () => {
           <text x="60" y="72" textAnchor="middle" fill="#999" fontSize="10">碳积分</text>
         </svg>
       </div>
-
       {/* Stats Grid */}
       <div className={styles.statsGrid}>
         <div className={styles.statItem}>
@@ -264,18 +264,17 @@ const CarbonPage: React.FC = () => {
       {/* 兑换记录 */}
       {redemptions.length > 0 && (
         <div className={styles.rewards} style={{marginTop:16}}>
-          <div className={styles.sectionTitle}>📜 我的兑换记录</div>
+          <div className={styles.sectionTitle}>📜 我的兑换记录 <button className={styles.sectionArrow} onClick={() => navigate('/carbon/redemptions')}>→</button></div>
           <div className={styles.rewardGrid}>
-            {redemptions.map(r => {
+            {redemptions.slice(0, 2).map(r => {
               const status = resolveRedemptionStatus(r.status, r.expires_at);
-              const statusMeta = REDEMPTION_STATUS_META[status];
               const redeemedDate = formatDateSafe(r.redeemed_at, '兑换时间未知');
               const expiryDate = formatExpiryDate(r.expires_at);
               return (
                 <div key={r.id} className={styles.rewardCard} style={{opacity:0.85}}>
                   <div className={styles.rewardName}>{r.reward_name}</div>
-                  <div style={{fontSize:12,color:'var(--text-hint)',margin:'4px 0'}}>
-                    消耗 <b>{r.points_cost}</b> 积分 · {statusMeta.label}
+                  <div style={{fontSize:12,color:'var(--text-hint)',margin:'4px 0',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                    <span>消耗 <b>{r.points_cost}</b> 积分</span>{status === 'unused' ? <button className={styles.useButton} onClick={() => markUsed(r)}>去使用</button> : <span className={styles.usedButton}>已使用</span>}
                   </div>
                   <div style={{fontSize:11,color:'var(--text-hint)'}}>
                     {redeemedDate} → {expiryDate}

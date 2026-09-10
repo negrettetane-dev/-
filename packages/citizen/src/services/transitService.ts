@@ -141,7 +141,27 @@ export async function getNearbyStations(lat?: number, lng?: number): Promise<Nea
   return data.map((station, index) => ({ ...station, id: `${station.type}_${station.name}_${index}`, mode: station.type }));
 }
 
-/** 获取实时到站信息 */
+export interface TransitRealtimeStatus {
+  lineId: string;
+  status: 'normal' | 'delayed' | 'suspended' | 'rerouted' | 'unknown';
+  delaySeconds?: number;
+  message?: string;
+  updatedAt: number;
+  source: DataSource;
+}
+
+export async function getTransitLineStatus(lineId: string): Promise<TransitRealtimeStatus> {
+  const data = await apiGet<any>(`/transit/lines/${encodeURIComponent(lineId)}/status`);
+  return {
+    lineId: String(data.lineId || data.line_id || lineId),
+    status: data.status || data.statusCode || 'unknown',
+    delaySeconds: data.delaySeconds ?? data.delay_seconds,
+    message: data.message,
+    updatedAt: data.updatedAt ?? data.updated_at ?? Date.now(),
+    source: data.source || 'api',
+  };
+}
+
 export async function getArrivalInfo(lineId: string, stationId: string): Promise<ArrivalInfo> {
   const data = await apiGet<{
     lineId: string;

@@ -16,6 +16,10 @@ const CATEGORIES = [
   { value:'signal_fault', label:'信号灯故障', icon:'🚦' },
   { value:'accident_clue', label:'事故线索', icon:'🚨' },
   { value:'barrier', label:'道路障碍', icon:'🚧' },
+  { value:'accessibility_elevator', label:'无障碍电梯故障', icon:'🛗' },
+  { value:'accessibility_ramp', label:'坡道/入口异常', icon:'♿' },
+  { value:'accessibility_path', label:'盲道/通道障碍', icon:'🦯' },
+  { value:'accessibility_station', label:'站点设施异常', icon:'🚉' },
   { value:'other', label:'其他问题', icon:'📝' },
 ];
 

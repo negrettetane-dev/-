@@ -10,8 +10,8 @@ import { isValidDepartureAt, labelForDepartureAt, computeDepartureState, saveDep
 import RouteForecastPanel from '../../components/travel/RouteForecastPanel';
 import TravelModeSelector, { normalizeTravelMode, type RouteTravelMode, type TravelModeOption } from '../../components/travel/TravelModeSelector';
 import AccessibleRouteCard from '../../components/travel/AccessibleRouteCard';
-import { buildAccessibleOptions, type AccessibleRouteOption } from '../../services/accessibilityService';
-import { getFacilityForStation, getFacilitySource } from '../../data/accessibilityFacilities';
+import { buildAccessibleOptions, getAccessibilityPreferenceHint, ACCESSIBILITY_PREFERENCE_META, type AccessibilityPreference, type AccessibleRouteOption } from '../../services/accessibilityService';
+import { getFacilityForStation, getFacilitySource, subscribeAccessibilityFacilities } from '../../data/accessibilityFacilities';
 import { useAuthStore } from '../../stores/authStore';
 import { useTripStore } from '../../stores/tripStore';
 import { useTravelPlanStore } from '../../stores/travelPlanStore';
@@ -19,6 +19,11 @@ import { useTravelLocationStore } from '../../stores/travelLocationStore';
 import { isTransitSupported } from '../../services/transitEligibility';
 import { estimateDriveImpact } from '../../services/routeCarbonEstimator';
 import { fromLegacyRouteMode } from '../../types/travelMode';
+import { buildTravelStages, createTravelRouteFingerprint } from '../../services/routePlanningService';
+import { useTravelStageNavigationStore } from '../../stores/travelStageNavigationStore';
+import TravelStageTimeline from '../../components/travel/TravelStageTimeline';
+import { watchNavigationLocation, distanceBetweenMeters } from '../../services/navigationLocationService';
+import { getTransitLineStatus, type TransitRealtimeStatus } from '../../services/transitService';
 import type { Trip, TripRouteStrategy } from '../../types/trip';
 import styles from './Travel.module.css';
 
@@ -49,7 +54,7 @@ interface RouteCardData {
 
 const MODE_META: Record<TravelMode, { icon: string; label: string; color: string }> = {
   drive: { icon: '🚗', label: '驾车', color: '#1677ff' },
-  bus: { icon: '🚌', label: '公交地铁', color: '#52c41a' },
+  bus: { icon: '🚌', label: '公交地铁', color: '#722ed1' },
   bike: { icon: '🚲', label: '骑行', color: '#faad14' },
   walk: { icon: '🚶', label: '步行', color: '#722ed1' },
 };
@@ -147,6 +152,12 @@ const RouteResultPage: React.FC = () => {
   const [accessibleUnavailableNote, setAccessibleUnavailableNote] = useState('');
   // 无障碍模式派生状态（须在组件顶部、所有 effect 依赖数组之前定义，避免 TDZ）
   const accessibleActive = selectedDisplayMode === 'accessible';
+  const [accessibilityPreferences, setAccessibilityPreferences] = useState<AccessibilityPreference[]>(() => {
+    try {
+      const saved = JSON.parse(sessionStorage.getItem('zhitu_accessibility_preferences') || 'null');
+      return Array.isArray(saved) && saved.length ? saved : ['wheelchair'];
+    } catch { return ['wheelchair']; }
+  });
   const accessibleSelected = accessibleOptions.find(o => o.id === accessibleSelectedId) || accessibleOptions[0] || null;
 
   // 多候选路线（驾车/骑行/步行：时间最短 + 距离最短；去重后可能 1 条）
@@ -167,14 +178,28 @@ const RouteResultPage: React.FC = () => {
   const [navMode, setNavMode] = useState<TravelMode | null>(null);
   const [navDistance, setNavDistance] = useState(0);
   const [navRouteError, setNavRouteError] = useState('');
+  const [transitRealtime, setTransitRealtime] = useState<TransitRealtimeStatus | null>(null);
   const isLoggedIn = useAuthStore(state => state.isLoggedIn);
 
   // ===== 导航状态机：idle → navigating → arrived → ended =====
   const [navStatus, setNavStatus] = useState<'idle' | 'navigating' | 'arrived' | 'ended'>('idle');
   const navStatusRef = useRef<'idle' | 'navigating' | 'arrived' | 'ended'>('idle');
+  const stageSnapshot = useTravelStageNavigationStore(state => state.snapshot);
+  const startStageNavigation = useTravelStageNavigationStore(state => state.startNavigation);
+  const completeStage = useTravelStageNavigationStore(state => state.completeCurrentStage);
+  const confirmStage = useTravelStageNavigationStore(state => state.confirmCurrentStage);
+  const pauseStageNavigation = useTravelStageNavigationStore(state => state.pauseNavigation);
+  const resumeStageNavigation = useTravelStageNavigationStore(state => state.resumeNavigation);
+  const endStageNavigation = useTravelStageNavigationStore(state => state.endNavigation);
+  const addStageReminder = useTravelStageNavigationStore(state => state.addReminder);
+  const reportStageLocation = useTravelStageNavigationStore(state => state.reportLocation);
+  const lastReportedLocationRef = useRef(0);
+  const restoreStageNavigation = useTravelStageNavigationStore(state => state.restoreIfMatching);
   const [arrivedTrip, setArrivedTrip] = useState<Trip | null>(null);
   const hasCompletedTripRef = useRef(false);
   const navDistanceRef = useRef(0);
+  const navigationLocationCleanupRef = useRef<(() => void) | null>(null);
+  const walkArrivalCountRef = useRef(0);
 
   // 起终点：没有解析成功前保持 null，禁止用天安门等固定位置冒充用户起点。
   const startCoord = useRef<[number, number] | null>(null);
@@ -183,6 +208,7 @@ const RouteResultPage: React.FC = () => {
   const [displayDest, setDisplayDest] = useState(destination || '目的地');
   const [locationsReady, setLocationsReady] = useState(false);
   const [locationError, setLocationError] = useState('');
+  const [facilityVersion, setFacilityVersion] = useState(0);
 
   // ===== 唯一地图实例 refs（导航复用同一张地图，不创建第二张） =====
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
@@ -192,6 +218,7 @@ const RouteResultPage: React.FC = () => {
   const routePolylineRefs = useRef<Partial<Record<TravelMode, any>>>({});
   const startMarkerRef = useRef<any>(null);
   const endMarkerRef = useRef<any>(null);
+  const waypointMarkersRef = useRef<any[]>([]);
   const carMarkerRef = useRef<any>(null);
   const movePathRef = useRef<[number, number][]>([]);
   const pathIdxRef = useRef(0);
@@ -202,7 +229,13 @@ const RouteResultPage: React.FC = () => {
   // 无障碍设施标记（♿/🛗/⚠️），仅无障碍模式绘制，进入导航时清除
   const accessibleMarkersRef = useRef<any[]>([]);
 
-  // ===== 解析起终点：标题、Marker、路线规划和导航共用这一对坐标 =====
+  useEffect(() => {
+    return subscribeAccessibilityFacilities(() => {
+      if (selectedDisplayMode !== 'accessible') return;
+      setFacilityVersion(version => version + 1);
+    });
+  }, [selectedDisplayMode]);
+
   useEffect(() => {
     let cancelled = false;
     // 立即使上一次起终点对应的规划请求失效，避免旧请求晚返回后重新画回旧路线。
@@ -297,7 +330,7 @@ const RouteResultPage: React.FC = () => {
     // 无障碍：走无障碍候选
     const planAccessible = async (): Promise<PlannedRoute> => {
       const candidates = await planTransitCandidates(s, e, transitCity);
-      const accessible = buildAccessibleOptions(candidates);
+      const accessible = buildAccessibleOptions(candidates, accessibilityPreferences);
       setAccessibleOptions(accessible);
       setAccessibleUnavailableNote(accessible.length ? '' : '');
       if (accessible.length === 0) throw new Error('transit-no-valid-segment');
@@ -366,7 +399,7 @@ const RouteResultPage: React.FC = () => {
         }
         setIsPlanning(false);
       });
-  }, [origin, destination, waypoints, originCoords, locationsReady, selectedMode, selectedDisplayMode]);
+  }, [origin, destination, waypoints, originCoords, locationsReady, selectedMode, selectedDisplayMode, facilityVersion, accessibilityPreferences]);
 
   // ===== 规划完成后加载每条成功路线的未来拥堵预测（模拟 Service） =====
   useEffect(() => {
@@ -452,6 +485,7 @@ const RouteResultPage: React.FC = () => {
       routePolylineRefs.current = {};
       startMarkerRef.current = null;
       endMarkerRef.current = null;
+      waypointMarkersRef.current = [];
       carMarkerRef.current = null;
     };
   }, []);
@@ -463,8 +497,12 @@ const RouteResultPage: React.FC = () => {
     const AMap = (window as any).AMap;
     if (!AMap) return;
 
+    let cancelled = false;
+
     if (startMarkerRef.current) { map.remove(startMarkerRef.current); startMarkerRef.current = null; }
     if (endMarkerRef.current) { map.remove(endMarkerRef.current); endMarkerRef.current = null; }
+    waypointMarkersRef.current.forEach(marker => map.remove(marker));
+    waypointMarkersRef.current = [];
     if (!locationsReady || !startCoord.current || !endCoord.current) return;
 
     startMarkerRef.current = new AMap.Marker({
@@ -476,8 +514,26 @@ const RouteResultPage: React.FC = () => {
       icon: makeMarkerIcon(AMap, '#f5222d', '终', 28),
     });
     map.add([startMarkerRef.current, endMarkerRef.current]);
+
+    const city = useTravelLocationStore.getState().origin?.city || null;
+    resolveWaypointCoords(waypoints, city).then(items => {
+      if (cancelled || !mapRef.current || !items.length) return;
+      const markers = items.map((item, index) => new AMap.Marker({
+        position: item.coord,
+        content: `<div style="width:28px;height:28px;border-radius:50%;background:#faad14;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:14px;">${index + 1}</div>`,
+        offset: new AMap.Pixel(-14, -14),
+        title: `途经点${index + 1}：${item.name}`,
+        zIndex: 90,
+      }));
+      map.add(markers);
+      waypointMarkersRef.current = markers;
+    });
     map.setCenter(startCoord.current);
-  }, [origin, destination, originCoords, mapReady, locationsReady]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [origin, destination, originCoords, mapReady, locationsReady, waypoints]);
 
   // ===== 多路线 Polyline：同时绘制所有可用方案，当前高亮、其他淡化 =====
   useEffect(() => {
@@ -499,9 +555,11 @@ const RouteResultPage: React.FC = () => {
       const pl = new AMap.Polyline({
         path: route.path,
         strokeColor: MODE_META[mode].color,
-        strokeWeight: isSelected ? 6 : 4,
-        strokeOpacity: isSelected ? 0.9 : 0.25,
+        strokeWeight: isSelected ? 7 : 5,
+        strokeOpacity: isSelected ? 0.95 : 0.3,
         strokeStyle: mode === 'bus' ? 'dashed' : 'solid',
+        outlineColor: '#ffffff',
+        outlineWidth: mode === 'bus' ? 2 : 0,
         lineJoin: 'round', lineCap: 'round',
       });
       map.add(pl);
@@ -561,6 +619,71 @@ const RouteResultPage: React.FC = () => {
 
   // ===== 导航模式：复用唯一地图，只切换视角 + 车辆 Marker =====
   useEffect(() => {
+    navigationLocationCleanupRef.current?.();
+    navigationLocationCleanupRef.current = null;
+    walkArrivalCountRef.current = 0;
+    const stage = stageSnapshot?.stages[stageSnapshot.currentStageIndex];
+    if (!navActive || !stageSnapshot || stageSnapshot.navStatus !== 'navigating' || !stage) return;
+    if (stage.kind !== 'walk' && stage.kind !== 'transfer') return;
+    if (!stage.autoComplete || !stage.endCoord) return;
+    navigationLocationCleanupRef.current = watchNavigationLocation((position) => {
+      if (position.accuracy > 100) return;
+      const distance = distanceBetweenMeters({ lng: position.lng, lat: position.lat }, { lng: stage.endCoord![0], lat: stage.endCoord![1] });
+      if (distance <= 60) walkArrivalCountRef.current += 1;
+      else walkArrivalCountRef.current = 0;
+      if (walkArrivalCountRef.current >= 2) {
+        completeStage('location');
+        walkArrivalCountRef.current = 0;
+      }
+    });
+    return () => {
+      navigationLocationCleanupRef.current?.();
+      navigationLocationCleanupRef.current = null;
+    };
+  }, [navActive, stageSnapshot?.currentStageIndex, stageSnapshot?.navStatus, stageSnapshot?.stages, completeStage]);
+
+  useEffect(() => {
+    if (!navActive || !stageSnapshot || stageSnapshot.navStatus !== 'navigating') return;
+    const stage = stageSnapshot.stages[stageSnapshot.currentStageIndex];
+    if (!stage || (stage.kind !== 'bus' && stage.kind !== 'metro') || !stage.endCoord) return;
+    const cleanup = watchNavigationLocation((position) => {
+      if (position.accuracy > 150) return;
+      if (position.timestamp - lastReportedLocationRef.current >= 10000) {
+        lastReportedLocationRef.current = position.timestamp;
+        void reportStageLocation(position);
+      }
+      const distance = distanceBetweenMeters({ lng: position.lng, lat: position.lat }, { lng: stage.endCoord![0], lat: stage.endCoord![1] });
+      const level = distance <= 80 ? 'arriving' : distance <= 220 ? 'near' : null;
+      if (level && !stageSnapshot.reminderKeys.includes(`${stage.id}:${level}`)) {
+        addStageReminder(`${stage.id}:${level}`);
+        setNavRouteError(level === 'arriving' ? `已接近${stage.toStation || '下车站'}，请准备下车并确认` : `即将到达${stage.toStation || '下车站'}`);
+      }
+    });
+    return cleanup;
+  }, [navActive, stageSnapshot, addStageReminder]);
+
+  useEffect(() => {
+    const stage = stageSnapshot?.stages[stageSnapshot.currentStageIndex];
+    if (!navActive || stageSnapshot?.navStatus !== 'navigating' || !stage?.lineName || (stage.kind !== 'bus' && stage.kind !== 'metro')) {
+      setTransitRealtime(null);
+      return;
+    }
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const status = await getTransitLineStatus(stage.lineName!);
+        if (!cancelled) setTransitRealtime(status);
+      } catch {
+        if (!cancelled) setTransitRealtime(null);
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(refresh, 30000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [navActive, stageSnapshot?.currentStageIndex, stageSnapshot?.navStatus, stageSnapshot?.stages]);
+
+  // ===== 导航模式：复用唯一地图，只切换视角 + 车辆 Marker =====
+  useEffect(() => {
     if (!navActive || !navMode) return;
     const map = mapRef.current;
     if (!map || !mapReady) return;
@@ -576,6 +699,17 @@ const RouteResultPage: React.FC = () => {
       return;
     }
     setNavRouteError('');
+
+    // 阶段导航由时间轴和定位推进，不能让旧的整条路线模拟计时器直接完成全程。
+    if (stageSnapshot) {
+      Object.entries(routePolylineRefs.current).forEach(([m, pl]) => {
+        if (pl) pl.setOptions({ visible: m === navMode });
+      });
+      map.setZoom(16);
+      map.setPitch(0);
+      map.setCenter(resolvedStart);
+      return;
+    }
 
     // 导航时只显示当前路线，隐藏其他方案的 Polyline
     Object.entries(routePolylineRefs.current).forEach(([m, pl]) => {
@@ -698,6 +832,24 @@ const RouteResultPage: React.FC = () => {
     }
     setSelectedMode(mode);
     setNavMode(mode);
+    const stageOrigin = useTravelLocationStore.getState().origin;
+    const stageDestination = useTravelPlanStore.getState().destination || {
+      name: displayDest, address: displayDest, lng: endCoord.current?.[0] ?? null, lat: endCoord.current?.[1] ?? null, source: 'manual' as const,
+    };
+    const stages = buildTravelStages(route, stageOrigin, stageDestination);
+    const routeFingerprint = createTravelRouteFingerprint(route, stageOrigin, stageDestination);
+    const restored = restoreStageNavigation(routeFingerprint);
+    if (!restored) {
+      void startStageNavigation({
+        sessionId: typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `stage_${Date.now()}`,
+        routeFingerprint,
+        origin: stageOrigin,
+        destination: stageDestination,
+        routeMode: route.mode,
+        route,
+        stages,
+      });
+    }
     navStatusRef.current = 'navigating';
     setNavStatus('navigating');
     setNavActive(true);
@@ -753,11 +905,14 @@ const RouteResultPage: React.FC = () => {
   // ===== 结束导航：清理 + 保留规划条件 + 返回首页规划页 =====
   const endNavigation = () => {
     clearNavigationResources();
+    navigationLocationCleanupRef.current?.();
+    navigationLocationCleanupRef.current = null;
     // 中途结束（未完成）→ Trip 标记取消，不标已完成
     if (navStatusRef.current === 'navigating') {
       void useTripStore.getState().cancelActiveTrip().catch(() => undefined);
     }
     navStatusRef.current = 'ended';
+    endStageNavigation();
     setNavStatus('ended');
     setNavActive(false);
     setNavMode(null);
@@ -896,6 +1051,36 @@ const RouteResultPage: React.FC = () => {
         </div>
       )}
 
+      {/* 无障碍偏好：仅在无障碍路线结果页显示，不新增首页交通方式 */}
+      {!navActive && accessibleActive && (
+        <section style={{ padding: '12px 14px', marginBottom: 12, borderRadius: 12, background: '#fff', border: '1px solid var(--border-color)' }} aria-labelledby="result-accessibility-preferences-title">
+          <div id="result-accessibility-preferences-title" style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>选择您的出行需求</div>
+          <div style={{ color: 'var(--text-secondary)', fontSize: 12, marginBottom: 10 }}>可多选，路线会按已选需求重新排序</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            {Object.entries(ACCESSIBILITY_PREFERENCE_META).map(([value, meta]) => {
+              const preference = value as AccessibilityPreference;
+              const active = accessibilityPreferences.includes(preference);
+              return (
+                <button
+                  key={preference}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => setAccessibilityPreferences(current => {
+                    const next = active ? current.filter(item => item !== preference) : [...current, preference];
+                    if (!next.length) return current;
+                    sessionStorage.setItem('zhitu_accessibility_preferences', JSON.stringify(next));
+                    return next;
+                  })}
+                  style={{ border: `1px solid ${active ? 'var(--primary)' : 'var(--border-color)'}`, background: active ? 'var(--primary-light)' : '#fff', color: active ? 'var(--primary)' : 'var(--text-primary)', borderRadius: 18, padding: '7px 10px', cursor: 'pointer', fontSize: 12 }}
+                >
+                  {meta.icon} {meta.label}
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
       {/* 出发时间提示（非「现在出发」时显示） */}
       {!navActive && departureLabel && (
         <div style={{ padding: '8px 14px', background: '#f0f5ff', borderRadius: 8, fontSize: 12, color: '#1677ff', marginBottom: 12, lineHeight: 1.6 }}>
@@ -951,6 +1136,22 @@ const RouteResultPage: React.FC = () => {
               {navMode ? (accessibleActive ? '♿ 无障碍出行' : `${MODE_META[navMode].icon} ${MODE_META[navMode].label}`) : ''}
             </span>
           </div>
+          {stageSnapshot && (
+            <div className={styles.navStageOverlay}>
+              <TravelStageTimeline
+              stages={stageSnapshot.stages}
+              currentStageIndex={stageSnapshot.currentStageIndex}
+              navStatus={stageSnapshot.navStatus}
+              syncState={stageSnapshot.syncState}
+              transitStatus={transitRealtime}
+              onComplete={() => {
+                if (stageSnapshot.stages[stageSnapshot.currentStageIndex]?.kind === 'arrive') confirmStage();
+                else completeStage('manual');
+              }}
+              onResume={resumeStageNavigation}
+            />
+            </div>
+          )}
           {navStatus === 'arrived' ? (
             /* ===== 已到达：不再显示 剩余距离/ETA/速度/导航步骤 ===== */
             <div className={styles.navArrivedCard}>
@@ -1020,6 +1221,19 @@ const RouteResultPage: React.FC = () => {
       )}
 
       <div className={styles.optionScroll}>
+        {accessibleActive && (
+          <div style={{ padding: '10px 12px', marginBottom: 12, borderRadius: 10, background: '#f0f5ff', color: '#1d39c4', fontSize: 13, lineHeight: 1.6 }}>
+            <div style={{ fontWeight: 700 }}>已按以下需求规划</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+              {accessibilityPreferences.map(preference => (
+                <span key={preference} style={{ background: '#fff', borderRadius: 14, padding: '3px 8px' }}>
+                  {ACCESSIBILITY_PREFERENCE_META[preference].icon} {ACCESSIBILITY_PREFERENCE_META[preference].label}
+                </span>
+              ))}
+            </div>
+            <div style={{ color: '#597ef7', marginTop: 4 }}>{getAccessibilityPreferenceHint(accessibilityPreferences)}</div>
+          </div>
+        )}
         {accessibleActive ? (
           /* ===== 无障碍出行：多候选方案卡片 ===== */
           isPlanning ? (
@@ -1139,7 +1353,7 @@ const RouteResultPage: React.FC = () => {
                   <span style={{ fontSize: 18 }}>{MODE_META[mode].icon}</span>
                   <div>
                     <span className={styles.routeDuration}>{showDuration}</span>
-                    <span style={{ fontSize: 12, color: '#52c41a', marginLeft: 4 }}>
+                    <span style={{ fontSize: 12, color: '#722ed1', marginLeft: 4 }}>
                       {badge}
                     </span>
                   </div>

@@ -16,9 +16,22 @@ const apiClient = axios.create({
   adapter: import.meta.env.VITE_ENABLE_MOCK === 'true' ? 'fetch' : undefined,
 });
 
+const DEVICE_ID_KEY = 'zhitu_device_id';
+
+export function getOrCreateDeviceId(): string {
+  const existing = localStorage.getItem(DEVICE_ID_KEY);
+  if (existing) return existing;
+  const generated = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `device_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  localStorage.setItem(DEVICE_ID_KEY, generated);
+  return generated;
+}
+
 apiClient.interceptors.request.use((config) => {
   const token = localStorage.getItem('zhitu_token');
   if (token) config.headers.Authorization = `Bearer ${token}`;
+  config.headers['X-Device-Id'] = getOrCreateDeviceId();
   return config;
 });
 
@@ -57,6 +70,11 @@ export async function apiPost<T>(url: string, data?: unknown): Promise<T> {
 
 export async function apiPut<T>(url: string, data?: unknown): Promise<T> {
   const response = await apiClient.put<ApiResponse<T>>(url, data);
+  return response.data.data;
+}
+
+export async function apiPatch<T>(url: string, data?: unknown): Promise<T> {
+  const response = await apiClient.patch<ApiResponse<T>>(url, data);
   return response.data.data;
 }
 

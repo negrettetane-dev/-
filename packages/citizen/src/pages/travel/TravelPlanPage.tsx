@@ -6,6 +6,7 @@ import TravelModeSelector, { type TravelModeOption } from '../../components/trav
 import TransitSearchPanel from '../../components/travel/TransitSearchPanel';
 import ModeAssistPanel from '../../components/travel/ModeAssistPanel';
 import { parseTravelMode } from '../../types/travelMode';
+import type { AccessibilityPreference } from '../../services/accessibilityService';
 import { getNearbyStations, getBusLines, getMetroLines } from '../../services/transitService';
 import type { TransitLine, NearbyStation } from '../../types/transit';
 import styles from './Travel.module.css';
@@ -16,8 +17,21 @@ const TravelPlanPage: React.FC = () => {
   const [mode, setMode] = useState<TravelModeOption>(() => parseTravelMode(new URLSearchParams(window.location.search).get('mode')) || 'driving');
   const [busLines, setBusLines] = useState<TransitLine[]>([]);
   const [metroLines, setMetroLines] = useState<TransitLine[]>([]);
+  const [accessibilityPreferences, setAccessibilityPreferences] = useState<AccessibilityPreference[]>(['wheelchair']);
 
-  // 无障碍出行底层基于公交/地铁，同样展示公交辅助模块
+  const ACCESSIBILITY_PREFERENCES: Array<{ value: AccessibilityPreference; label: string; icon: string }> = [
+    { value: 'wheelchair', label: '轮椅出行', icon: '♿' },
+    { value: 'visual', label: '视障出行', icon: '🦯' },
+    { value: 'hearing', label: '听障出行', icon: '🧏' },
+    { value: 'elderly', label: '老年人', icon: '🧓' },
+    { value: 'stroller', label: '婴儿车', icon: '👶' },
+  ];
+
+  useEffect(() => {
+    if (mode !== 'accessible') return;
+    sessionStorage.setItem('zhitu_accessibility_preferences', JSON.stringify(accessibilityPreferences));
+  }, [mode, accessibilityPreferences]);
+
   const isTransitMode = mode === 'transit' || mode === 'accessible';
 
   useEffect(() => {
@@ -61,6 +75,45 @@ const TravelPlanPage: React.FC = () => {
   return (
     <div className={styles.page}>
       <TravelModeSelector value={mode} onChange={setMode} className={styles.travelPageModeSelector} />
+
+      {mode === 'accessible' && (
+        <section className={styles.transitSection} aria-labelledby="accessibility-preferences-title">
+          <div className={styles.sectionTitle} id="accessibility-preferences-title">♿ 选择您的出行需求</div>
+          <div style={{ color: 'var(--text-secondary)', fontSize: 13, marginBottom: 10 }}>
+            可多选，系统会根据设施和路线信息调整推荐顺序
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            {ACCESSIBILITY_PREFERENCES.map(preference => {
+              const active = accessibilityPreferences.includes(preference.value);
+              return (
+                <button
+                  key={preference.value}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => setAccessibilityPreferences(current => {
+                    if (active) {
+                      const next = current.filter(value => value !== preference.value);
+                      return next.length ? next : current;
+                    }
+                    return [...current, preference.value];
+                  })}
+                  style={{
+                    border: `1px solid ${active ? 'var(--primary)' : 'var(--border-color)'}`,
+                    background: active ? 'var(--primary-light)' : '#fff',
+                    color: active ? 'var(--primary)' : 'var(--text-primary)',
+                    borderRadius: 18, padding: '8px 12px', cursor: 'pointer', fontSize: 13,
+                  }}
+                >
+                  {preference.icon} {preference.label}
+                </button>
+              );
+            })}
+          </div>
+          <div style={{ color: 'var(--text-hint)', fontSize: 12, marginTop: 8 }}>
+            已选择：{accessibilityPreferences.map(value => ACCESSIBILITY_PREFERENCES.find(item => item.value === value)?.label).join('、')}
+          </div>
+        </section>
+      )}
 
       {isTransitMode && <>
       {/* 公交地铁辅助模块在 transit / accessible 模式显示（无障碍出行底层基于公交地铁） */}

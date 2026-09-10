@@ -19,6 +19,9 @@ const SOURCE_META: Record<AssistantDataSource, { label: string; color: string; b
   unknown: { label: '来源待确认', color: '#8c8c8c', bg: '#fafafa' },
 };
 
+const MAX_HISTORY_MESSAGES = 50;
+const historyKey = (userId: string) => `zhitu_ai_history:v1:${encodeURIComponent(userId)}`;
+
 function greeting(): AssistantMessage {
   return {
     id: 'greeting',
@@ -31,13 +34,53 @@ function greeting(): AssistantMessage {
 const AIAssistant: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { isLoggedIn } = useAuthStore();
+  const { isLoggedIn, user } = useAuthStore();
   const { origin } = useTravelLocationStore();
+  const userId = user?.id || null;
+  const identityRef = useRef(userId);
+  const identityVersionRef = useRef(0);
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<AssistantMessage[]>([greeting()]);
   const [input, setInput] = useState('');
   const [thinking, setThinking] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    identityRef.current = userId;
+    identityVersionRef.current += 1;
+    setThinking('');
+    if (!userId) {
+      setMessages([greeting()]);
+      return;
+    }
+    let loaded: AssistantMessage[] = [];
+    try {
+      const raw = localStorage.getItem(historyKey(userId));
+      const parsed = raw ? JSON.parse(raw) : [];
+      if (Array.isArray(parsed)) {
+        loaded = parsed.filter((item): item is AssistantMessage =>
+          item && (item.role === 'user' || item.role === 'ai') && typeof item.text === 'string' && typeof item.createdAt === 'number'
+        ).slice(-MAX_HISTORY_MESSAGES);
+      }
+    } catch { loaded = []; }
+    setMessages(loaded.length ? loaded : [greeting()]);
+  }, [userId]);
+
+  const persistMessages = (next: AssistantMessage[], ownerId: string | null) => {
+    if (!ownerId) return;
+    try {
+      localStorage.setItem(historyKey(ownerId), JSON.stringify(next.slice(-MAX_HISTORY_MESSAGES)));
+    } catch { /* storage unavailable */ }
+  };
+
+  const clearHistory = () => {
+    identityVersionRef.current += 1;
+    setThinking('');
+    setMessages([greeting()]);
+    if (userId) {
+      try { localStorage.removeItem(historyKey(userId)); } catch { /* storage unavailable */ }
+    }
+  };
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -46,7 +89,14 @@ const AIAssistant: React.FC = () => {
   const send = async (text: string) => {
     const t = text.trim();
     if (!t || thinking) return;
-    setMessages(prev => [...prev, { id: `u_${Date.now()}`, role: 'user', text: t, createdAt: Date.now() }]);
+    const ownerId = identityRef.current;
+    const requestVersion = identityVersionRef.current;
+    const userMessage: AssistantMessage = { id: `u_${Date.now()}`, role: 'user', text: t, createdAt: Date.now() };
+    setMessages(prev => {
+      const next = [...prev, userMessage];
+      persistMessages(next, ownerId);
+      return next;
+    });
     setInput('');
     setThinking(thinkingLabel(t));
     try {
@@ -56,16 +106,27 @@ const AIAssistant: React.FC = () => {
         currentPage: location.pathname,
       };
       const reply = await respond(t, ctx);
-      setMessages(prev => [...prev, reply]);
+      if (identityRef.current !== ownerId || identityVersionRef.current !== requestVersion) return;
+      setMessages(prev => {
+        const next = [...prev, reply];
+        persistMessages(next, ownerId);
+        return next;
+      });
     } catch {
-      setMessages(prev => [...prev, {
+      if (identityRef.current !== ownerId || identityVersionRef.current !== requestVersion) return;
+      const errorMessage: AssistantMessage = {
         id: `e_${Date.now()}`,
         role: 'ai',
         text: '抱歉，处理你的请求时出了点问题，请稍后重试。',
         createdAt: Date.now(),
-      }]);
+      };
+      setMessages(prev => {
+        const next = [...prev, errorMessage];
+        persistMessages(next, ownerId);
+        return next;
+      });
     } finally {
-      setThinking('');
+      if (identityRef.current === ownerId && identityVersionRef.current === requestVersion) setThinking('');
     }
   };
 
@@ -74,8 +135,8 @@ const AIAssistant: React.FC = () => {
   };
 
   const quickQuestions = isLoggedIn
-    ? ['我的积分还有多少？', '去北京南站怎么走？', '附近哪里有停车场？', '我的上报处理了吗？']
-    : ['去北京南站怎么走？', '附近哪里有停车场？', '现在路况怎么样？', '有哪些公交线路？'];
+    ? ['查我的积分', '规划去北京南站', '找附近停车场', '查看上报进度']
+    : ['怎么去北京南站', '找附近停车场', '查看现在路况', '查询附近公交'];
 
   return (
     <>
@@ -95,6 +156,7 @@ const AIAssistant: React.FC = () => {
           <div className={styles.header}>
             <span>🤖 小枢出行助手</span>
             <span className={styles.subtitle}>可信数据 · 结果可执行</span>
+            <button type="button" onClick={clearHistory} style={{ marginLeft: 'auto', border: 0, background: 'transparent', color: '#fff', cursor: 'pointer', fontSize: 13 }}>清空对话</button>
           </div>
 
           <div className={styles.body}>

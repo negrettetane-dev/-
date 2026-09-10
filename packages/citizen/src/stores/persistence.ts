@@ -48,11 +48,24 @@ export interface PersistedUser {
 }
 
 export interface NotificationSettings {
-  congestion: boolean;
+  carbon: boolean;
   weather: boolean;
-  control: boolean;
-  workorder: boolean;
+  event: boolean;
   system: boolean;
+}
+
+export type NotificationType = 'carbon' | 'weather' | 'event' | 'system';
+
+export interface UserNotification {
+  id: string;
+  userId: string;
+  type: NotificationType;
+  title: string;
+  content: string;
+  createdAt: number | string;
+  read: boolean;
+  relatedId?: string;
+  actionPath?: string;
 }
 
 // ====== 上报工单 ======
@@ -209,6 +222,25 @@ export function findAccountById(userId: string): StoredAccount | null {
   return getAccounts().find(account => account.id === userId) || null;
 }
 
+export function updateAccount(userId: string, patch: Partial<Pick<StoredAccount, 'nickname' | 'phone' | 'email' | 'avatar'>>): StoredAccount | null {
+  const accounts = getAccounts();
+  const index = accounts.findIndex(account => account.id === userId);
+  if (index < 0) return null;
+  accounts[index] = { ...accounts[index], ...patch };
+  saveAccounts(accounts);
+  return accounts[index];
+}
+
+export function updateAccountPassword(userId: string, currentPassword: string, newPassword: string): 'success' | 'invalid_password' | 'not_found' {
+  const accounts = getAccounts();
+  const index = accounts.findIndex(account => account.id === userId);
+  if (index < 0) return 'not_found';
+  if (accounts[index].passwordHash !== hashPassword(currentPassword)) return 'invalid_password';
+  accounts[index] = { ...accounts[index], passwordHash: hashPassword(newPassword) };
+  saveAccounts(accounts);
+  return 'success';
+}
+
 /** 注册新账号；返回错误码：username_exists / phone_exists / email_exists / null(成功) */
 export function registerAccount(data: {
   username: string; phone: string; email: string;
@@ -239,26 +271,46 @@ export function registerAccount(data: {
 }
 
 // ====== 通知设置 ======
-// 按用户作用域持久化（key: notification_settings:{userId}），未登录/旧数据回退到公共 key。
 
 const NOTIF_KEY = 'notification_settings';
 
-export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
-  congestion: true, weather: true, control: true, workorder: true, system: false,
-};
-
-/** 读取通知设置：优先当前用户的 scoped 数据，其次旧版公共数据，最后默认值 */
 export function getNotificationSettings(userId = 'legacy'): NotificationSettings {
-  const scoped = get<NotificationSettings | null>(userScopedKey(NOTIF_KEY, userId), null);
-  if (scoped) return { ...DEFAULT_NOTIFICATION_SETTINGS, ...scoped };
-  return get<NotificationSettings>(NOTIF_KEY, DEFAULT_NOTIFICATION_SETTINGS);
+  const saved = get<Partial<NotificationSettings> & { congestion?: boolean; workorder?: boolean }>(userScopedKey(NOTIF_KEY, userId), {});
+  const legacy = get<Partial<NotificationSettings> & { congestion?: boolean; workorder?: boolean }>(NOTIF_KEY, {});
+  const source = Object.keys(saved).length ? saved : legacy;
+  return {
+    carbon: source.carbon ?? source.congestion ?? true,
+    weather: source.weather ?? true,
+    event: source.event ?? source.workorder ?? true,
+    system: source.system ?? true,
+  };
 }
 
-/** 写入通知设置（用户作用域） */
-export function setNotificationSettings(s: NotificationSettings, userId = 'legacy'): void {
-  set(userScopedKey(NOTIF_KEY, userId), s);
-  // 兼容旧读取方：同步写一份公共 key（退出登录时会被清理）
-  set(NOTIF_KEY, s);
+export function setNotificationSettings(settings: NotificationSettings, userId = 'legacy'): void {
+  set(userScopedKey(NOTIF_KEY, userId), settings);
+}
+
+const NOTIFICATIONS_KEY = 'notifications';
+
+export function getNotifications(userId = 'legacy'): UserNotification[] {
+  return get<UserNotification[]>(NOTIFICATIONS_KEY, [])
+    .filter(item => item.userId === userId)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+}
+
+export function addNotification(notification: UserNotification): void {
+  const notifications = get<UserNotification[]>(NOTIFICATIONS_KEY, []);
+  if (notifications.some(item => item.id === notification.id)) return;
+  notifications.unshift(notification);
+  set(NOTIFICATIONS_KEY, notifications.slice(0, 200));
+}
+
+export function markNotificationsRead(ids: string[], userId = 'legacy'): void {
+  const idSet = new Set(ids);
+  const notifications = get<UserNotification[]>(NOTIFICATIONS_KEY, []).map(item =>
+    item.userId === userId && idSet.has(item.id) ? { ...item, read: true } : item,
+  );
+  set(NOTIFICATIONS_KEY, notifications);
 }
 
 // ====== 收藏公交 ======
@@ -332,6 +384,15 @@ export function addRedemption(r: RedemptionRecord, userId = 'legacy'): void {
   set(userScopedKey(REDEMPTIONS_KEY, userId), records);
 }
 
+export function markRedemptionUsed(id: string, userId = 'legacy'): RedemptionRecord | undefined {
+  const records = getRedemptions(userId);
+  const index = records.findIndex(record => record.id === id);
+  if (index < 0) return undefined;
+  records[index] = { ...records[index], status: 'used' };
+  set(userScopedKey(REDEMPTIONS_KEY, userId), records);
+  return records[index];
+}
+
 // ====== 最近目的地 ======
 
 const RECENT_DEST_KEY = 'recent_destinations';
@@ -372,11 +433,5 @@ export function clearPersonalData(): void {
   PERSONAL_KEYS.forEach(key => {
     try { localStorage.removeItem(STORAGE_PREFIX + key); } catch { /* ignore */ }
   });
-  // 通知设置为用户作用域 key（notification_settings:{userId}），需要前缀匹配清理
-  try {
-    Object.keys(localStorage)
-      .filter(k => k.startsWith(STORAGE_PREFIX + 'notification_settings'))
-      .forEach(k => localStorage.removeItem(k));
-  } catch { /* ignore */ }
   try { localStorage.removeItem(STORAGE_PREFIX + USER_KEY); } catch { /* ignore */ }
 }

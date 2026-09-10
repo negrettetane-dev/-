@@ -27,7 +27,7 @@ const ElderlyBusDetailPage: React.FC = () => {
   return (
     <div className={styles.page}>
       <div className={styles.topBar}>
-        <button className={styles.exitBtn} onClick={() => navigate('/elderly')} style={{ marginRight: 'auto' }}>← 返回长辈首页</button>
+        <button className={styles.exitBtn} onClick={() => navigate('/elderly')} style={{ marginRight: 'auto' }}>← 返回关怀首页</button>
         <span className={styles.logo}>线路详情 · 关怀模式</span>
         <span style={{ width: 88 }} />
       </div>
@@ -37,7 +37,7 @@ const ElderlyBusDetailPage: React.FC = () => {
       ) : notFound || !line ? (
         <div className={styles.card}>
           <div style={{ textAlign: 'center', padding: 20, fontSize: 22, color: 'var(--text-hint)' }}>该线路信息暂未接入</div>
-          <button type="button" className={styles.btn} onClick={() => navigate('/elderly')}>返回长辈首页</button>
+          <button type="button" className={styles.btn} onClick={() => navigate('/elderly')}>返回关怀首页</button>
         </div>
       ) : (
         <div className={styles.card}>
@@ -61,7 +61,7 @@ const ElderlyBusDetailPage: React.FC = () => {
             )}
           </div>
 
-          <button type="button" className={styles.btn} onClick={() => navigate('/elderly')}>返回长辈首页</button>
+          <button type="button" className={styles.btn} onClick={() => navigate('/elderly')}>返回关怀首页</button>
         </div>
       )}
 

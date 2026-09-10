@@ -9,9 +9,27 @@
 import type { PlannedRoute, SegmentData, TransitCandidate } from './routePlanningService';
 import { getFacilityForStation } from '../data/accessibilityFacilities';
 import {
-  calculateAccessibleScore, durationPenalty, buildAccessibleTags,
+  calculateAccessibleScore, buildAccessibleTags,
   type AccessibleRouteMetrics, type AccessibleLevel, type AccessibleScoreResult,
 } from '../utils/accessibilityScore';
+
+export type AccessibilityPreference = 'wheelchair' | 'visual' | 'hearing' | 'elderly' | 'stroller';
+
+export const ACCESSIBILITY_PREFERENCE_META: Record<AccessibilityPreference, { label: string; icon: string; hint: string }> = {
+  wheelchair: { label: '轮椅出行', icon: '♿', hint: '优先电梯、坡道，避开楼梯' },
+  visual: { label: '视障出行', icon: '🦯', hint: '强化语音和分段提示' },
+  hearing: { label: '听障出行', icon: '🧏', hint: '强化视觉提醒和状态标识' },
+  elderly: { label: '老年人', icon: '🧓', hint: '优先少换乘、少步行' },
+  stroller: { label: '婴儿车', icon: '👶', hint: '优先坡道、电梯和无障碍入口' },
+};
+
+export function getAccessibilityPreferenceHint(preferences: AccessibilityPreference[]): string {
+  if (preferences.includes('wheelchair') || preferences.includes('stroller')) return '优先电梯和坡道，避开已知楼梯风险';
+  if (preferences.includes('elderly')) return '优先少换乘、少步行的路线';
+  if (preferences.includes('visual')) return '将提供更清晰的分段和语音提示';
+  if (preferences.includes('hearing')) return '将提供更明显的视觉状态提醒';
+  return '根据当前设施数据筛选无障碍路线';
+}
 
 export interface AccessibleRouteOption {
   /** 方案标识：accessible / fastest / least-walk */
@@ -34,9 +52,15 @@ export function computeAccessibleMetrics(segments: SegmentData[]): AccessibleRou
   const walkingDistance = segments
     .filter(s => s.type === 'walk')
     .reduce((sum, s) => {
-      // 从 instruction 解析「步行 Xkm」（parseTransitPlan 内生成）
-      const m = /步行\s*([\d.]+)\s*km/.exec(s.instruction || '');
-      return sum + (m ? Number(m[1]) * 1000 : 0);
+      // 结构化距离优先；兼容高德生成的「步行 300m」和「步行 0.3km」文案。
+      const structuredDistance = Number((s as SegmentData & { distance?: number }).distance);
+      if (Number.isFinite(structuredDistance) && structuredDistance >= 0) return sum + structuredDistance;
+      const instruction = s.instruction || '';
+      const m = /步行\s*([\d.]+)\s*(m|米|km|公里)/i.exec(instruction);
+      if (!m) return sum;
+      const value = Number(m[1]);
+      if (!Number.isFinite(value)) return sum;
+      return sum + (/km|公里/i.test(m[2]) ? value * 1000 : value);
     }, 0);
   const transferCount = Math.max(0, transitSegments.length - 1);
 
@@ -49,12 +73,14 @@ export function computeAccessibleMetrics(segments: SegmentData[]): AccessibleRou
   let accessibleEntranceCount = 0;
   let stairsRiskCount = 0;
   let unknownFacilityCount = 0;
+  const unknownFacilityNames: string[] = [];
 
   stationNames.forEach(name => {
     const facility = getFacilityForStation(name);
     if (!facility) {
       // 未收录站点：设施信息待确认
       unknownFacilityCount += 1;
+      unknownFacilityNames.push(name);
       return;
     }
     const best = facility.entrances
@@ -64,11 +90,18 @@ export function computeAccessibleMetrics(segments: SegmentData[]): AccessibleRou
         Number(b.wheelchairAccessible) - Number(a.wheelchairAccessible) ||
         Number(b.ramp) - Number(a.ramp),
       )[0];
-    if (!best) { unknownFacilityCount += 1; return; }
+    if (!best) {
+      unknownFacilityCount += 1;
+      unknownFacilityNames.push(name);
+      return;
+    }
     if (best.elevator) elevatorCount += 1;
     if (best.wheelchairAccessible) accessibleEntranceCount += 1;
     if (best.stairsOnly) stairsRiskCount += 1;
-    if (best.status === 'unknown') unknownFacilityCount += 1;
+    if (best.status === 'unknown') {
+      unknownFacilityCount += 1;
+      unknownFacilityNames.push(name);
+    }
   });
 
   const total = stationNames.length || 1;
@@ -80,6 +113,7 @@ export function computeAccessibleMetrics(segments: SegmentData[]): AccessibleRou
     accessibleEntranceCoverage: accessibleEntranceCount / total,
     stairsRiskCount,
     unknownFacilityCount,
+    unknownFacilityNames,
   };
 }
 
@@ -88,16 +122,15 @@ export function computeAccessibleMetrics(segments: SegmentData[]): AccessibleRou
  * 每个候选按无障碍目标评分；按角色分配（同一真实方案可复用）：
  *   accessible（评分最高）/ fastest（耗时最短）/ least-walk（步行最短）
  */
-export function buildAccessibleOptions(candidates: TransitCandidate[]): AccessibleRouteOption[] {
+export function buildAccessibleOptions(
+  candidates: TransitCandidate[],
+  preferences: AccessibilityPreference[] = ['wheelchair'],
+): AccessibleRouteOption[] {
   if (!Array.isArray(candidates) || candidates.length === 0) return [];
 
   const parsed = candidates.map(candidate => {
     const metrics = computeAccessibleMetrics(candidate.segments);
-    const scoreBase = calculateAccessibleScore(metrics);
-    const score: AccessibleScoreResult = {
-      ...scoreBase,
-      score: Math.max(0, Math.min(100, scoreBase.score - durationPenalty(candidate.route.duration))),
-    };
+    const score = calculateAccessibleScore(metrics, candidate.route.duration);
     return {
       candidate,
       route: candidate.route,
@@ -108,11 +141,22 @@ export function buildAccessibleOptions(candidates: TransitCandidate[]): Accessib
     };
   });
 
+  const preferenceAdjusted = parsed.map(item => ({
+    ...item,
+    preferenceScore: item.score.score
+      + (preferences.includes('elderly') ? (item.metrics.transferCount <= 1 ? 12 : -item.metrics.transferCount * 4) : 0)
+      + (preferences.includes('visual') ? (item.metrics.transferCount <= 1 ? 8 : -item.metrics.transferCount * 3) : 0)
+      + (preferences.includes('hearing') ? (item.metrics.unknownFacilityCount === 0 ? 8 : -item.metrics.unknownFacilityCount * 2) : 0)
+      + (preferences.includes('wheelchair') || preferences.includes('stroller')
+        ? (item.metrics.elevatorCoverage + item.metrics.accessibleEntranceCoverage) * 10
+        : 0),
+  }));
+
   // 角色分配
-  const byScore = [...parsed].sort((a, b) => b.score.score - a.score.score);
+  const byScore = [...preferenceAdjusted].sort((a, b) => b.preferenceScore - a.preferenceScore);
   const accessible = byScore[0];
-  const byTime = [...parsed].sort((a, b) => a.duration - b.duration)[0];
-  const byWalk = [...parsed].sort((a, b) => a.walkingDistance - b.walkingDistance)[0];
+  const byTime = [...preferenceAdjusted].sort((a, b) => a.duration - b.duration)[0];
+  const byWalk = [...preferenceAdjusted].sort((a, b) => a.walkingDistance - b.walkingDistance)[0];
 
   const pick = (item: typeof accessible, id: 'accessible' | 'fastest' | 'least-walk', label: string, icon: string): AccessibleRouteOption => ({
     id,

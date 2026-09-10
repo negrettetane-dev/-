@@ -120,7 +120,7 @@ const ElderlyNavigationPage: React.FC = () => {
     navigate('/elderly');
   };
 
-  // 返回长辈首页：已到达直接结束；导航中需确认（不静默丢弃导航、不退出关怀模式）
+  // 返回关怀首页：已到达直接结束；导航中需确认（不静默丢弃导航、不退出关怀模式）
   const backHome = () => {
     if (arrived) { endNavigation(); return; }
     setBackConfirm(true);
@@ -134,7 +134,7 @@ const ElderlyNavigationPage: React.FC = () => {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 18, minHeight: '100vh', padding: 24, background: '#f7f8fa' }}>
         <div style={{ fontSize: 22, fontWeight: 700 }}>未找到导航信息</div>
-        <button onClick={() => navigate('/elderly')} style={{ padding: '14px 28px', background: '#1677ff', color: '#fff', border: 'none', borderRadius: 12, fontSize: 18 }}>返回长辈首页</button>
+        <button onClick={() => navigate('/elderly')} style={{ padding: '14px 28px', background: '#1677ff', color: '#fff', border: 'none', borderRadius: 12, fontSize: 18 }}>返回关怀首页</button>
       </div>
     );
   }
@@ -143,7 +143,7 @@ const ElderlyNavigationPage: React.FC = () => {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 18, minHeight: '100vh', padding: 24, background: '#f7f8fa' }}>
         <div style={{ fontSize: 22, fontWeight: 700 }}>当前公交路线数据无效，请重新规划。</div>
-        <button onClick={() => navigate('/elderly')} style={{ padding: '14px 28px', background: '#1677ff', color: '#fff', border: 'none', borderRadius: 12, fontSize: 18 }}>返回长辈首页</button>
+        <button onClick={() => navigate('/elderly')} style={{ padding: '14px 28px', background: '#1677ff', color: '#fff', border: 'none', borderRadius: 12, fontSize: 18 }}>返回关怀首页</button>
       </div>
     );
   }
@@ -156,14 +156,14 @@ const ElderlyNavigationPage: React.FC = () => {
     <div style={{ position: 'fixed', inset: 0, zIndex: 1000, background: '#0a1628' }}>
       <div ref={mapContainerRef} style={{ width: '100%', height: '100%' }} />
 
-      {/* 顶部：返回长辈首页 + 模式 + 结束导航 */}
+      {/* 顶部：返回关怀首页 + 模式 + 结束导航 */}
       <div style={{ position: 'absolute', top: 16, left: 16, right: 16, display: 'flex', alignItems: 'center', gap: 10, zIndex: 10 }}>
-        <button onClick={backHome} style={{ background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff', padding: '10px 18px', borderRadius: 20, fontSize: 16, cursor: 'pointer' }}>← 返回长辈首页</button>
+        <button onClick={backHome} style={{ background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff', padding: '10px 18px', borderRadius: 20, fontSize: 16, cursor: 'pointer' }}>← 返回关怀首页</button>
         <span style={{ color: '#fff', fontSize: 16, fontWeight: 700, margin: '0 auto' }}>{modeLabel}导航 · 关怀模式</span>
         <button onClick={endNavigation} style={{ background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff', padding: '10px 18px', borderRadius: 20, fontSize: 16, cursor: 'pointer' }}>✕ 结束</button>
       </div>
 
-      {/* 导航中返回长辈首页确认（应用内弹窗，不静默丢弃导航） */}
+      {/* 导航中返回关怀首页确认（应用内弹窗，不静默丢弃导航） */}
       {backConfirm && (
         <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 20 }}>
           <div style={{ background: '#fff', borderRadius: 16, padding: 24, maxWidth: 360, width: '80%', textAlign: 'center' }}>

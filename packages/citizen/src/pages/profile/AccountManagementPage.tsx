@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { X } from 'lucide-react';
 import { maskPhone } from '@zhitu/shared';
-import { useAuthStore } from '../../stores/authStore';
-import { apiPost } from '../../services/apiClient';
+import { useAuthStore, type User } from '../../stores/authStore';
+import { apiPatch, apiPost, apiPut } from '../../services/apiClient';
 import styles from './Profile.module.css';
 
 type EditableField = 'nickname' | 'phone' | 'email';
@@ -38,7 +38,7 @@ const AccountManagementPage: React.FC<{ mode?: 'password' }> = ({ mode }) => {
   const [phoneCountdown, setPhoneCountdown] = useState(0);
 
   const close = () => setAction(null);
-  const save = (field: EditableField) => {
+  const save = async (field: EditableField) => {
     const value = field === 'nickname' ? nickname.trim() : field === 'phone' ? phone.trim() : email.trim();
     const invalidPhone = field === 'phone' && !/^1\d{10}$/.test(value);
     const invalidNickname = field === 'nickname' && value.length > 15;
@@ -51,9 +51,14 @@ const AccountManagementPage: React.FC<{ mode?: 'password' }> = ({ mode }) => {
       setNotice(invalidNickname ? '昵称不能超过 15 个字符。' : '请填写正确的资料后再保存。');
       return;
     }
-    updateUser({ [field]: value });
-    close();
-    setNotice(field === 'email' ? '邮箱已在本地账号信息中更新，正式绑定需后端验证码确认。' : '已保存到本地账号信息。');
+    try {
+      const updated = await apiPatch<Partial<User>>('/user/profile', { [field]: value });
+      updateUser(updated);
+      close();
+      setNotice(field === 'email' ? '邮箱已更新，系统消息会同步通知。' : '已保存。');
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : '保存失败，请稍后重试。');
+    }
   };
 
   const sendPhoneCode = async () => {
@@ -81,12 +86,18 @@ const AccountManagementPage: React.FC<{ mode?: 'password' }> = ({ mode }) => {
   };
 
   if (mode === 'password') {
-    const savePassword = () => {
+    const savePassword = async () => {
       if (!password.current || password.next.length < 6 || password.next !== password.confirm) {
         setNotice('请填写当前密码，新密码至少 6 位且两次输入一致。');
         return;
       }
-      setNotice('密码修改界面已完成，正式保存需要后端接口。');
+      try {
+        await apiPut('/user/password', { currentPassword: password.current, newPassword: password.next });
+        setPassword({ current: '', next: '', confirm: '' });
+        setNotice('密码修改成功，系统消息已发送。');
+      } catch (error) {
+        setNotice(error instanceof Error ? error.message : '密码修改失败，请稍后重试。');
+      }
     };
 
     return (

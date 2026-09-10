@@ -19,9 +19,11 @@ export interface AccessibleRouteMetrics {
   stairsRiskCount: number;
   /** 设施信息未知的站点数 */
   unknownFacilityCount: number;
+  /** 设施信息未知的站点名称 */
+  unknownFacilityNames?: string[];
 }
 
-export type AccessibleLevel = 'excellent' | 'good' | 'partial' | 'not_recommended';
+export type AccessibleLevel = 'excellent' | 'good' | 'partial' | 'caution' | 'not_recommended';
 
 export interface AccessibleScoreResult {
   score: number;
@@ -31,7 +33,7 @@ export interface AccessibleScoreResult {
 }
 
 /** 满分 100，按权重计算无障碍评分（V1 固定权重） */
-export function calculateAccessibleScore(metrics: AccessibleRouteMetrics): AccessibleScoreResult {
+export function calculateAccessibleScore(metrics: AccessibleRouteMetrics, durationSeconds = 0): AccessibleScoreResult {
   let score = 100;
 
   // —— 硬性规则 ——
@@ -49,7 +51,8 @@ export function calculateAccessibleScore(metrics: AccessibleRouteMetrics): Acces
   score -= Math.min(Math.floor(metrics.walkingDistance / 40), 25);
   // 换乘次数 20%（每次换乘扣 10 分，封顶 20）
   score -= Math.min(metrics.transferCount * 10, 20);
-  // 路线耗时 10%（每 10 分钟扣 1 分，封顶 10；由调用方传入折算后的 minutesPenalty）
+  // 路线耗时 10%：每 10 分钟扣 1 分，封顶 10
+  score -= durationPenalty(durationSeconds);
   // 信息可靠程度 10%（每个设施未知站点扣 2 分，封顶 10）
   score -= Math.min(metrics.unknownFacilityCount * 2, 10);
   // 楼梯风险（每站 -5）
@@ -57,9 +60,10 @@ export function calculateAccessibleScore(metrics: AccessibleRouteMetrics): Acces
 
   score = Math.max(0, Math.min(100, Math.round(score)));
 
-  if (hasStairsOnly || score < 60) {
-    return { score, level: 'not_recommended', levelLabel: '不建议', levelTone: 'red' };
+  if (hasStairsOnly) {
+    return { score, level: 'not_recommended', levelLabel: '不建议：存在楼梯风险', levelTone: 'red' };
   }
+  if (score < 60) return { score, level: 'caution', levelLabel: '谨慎选择', levelTone: 'orange' };
   if (score >= 90) return { score, level: 'excellent', levelLabel: '无障碍条件优秀', levelTone: 'green' };
   if (score >= 75) return { score, level: 'good', levelLabel: '无障碍条件较好', levelTone: 'blue' };
   return { score, level: 'partial', levelLabel: '部分设施待确认', levelTone: 'orange' };
