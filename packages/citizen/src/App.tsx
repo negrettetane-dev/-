@@ -16,6 +16,8 @@ import NewsDetailPage from './pages/news/NewsDetailPage';
 import ServicesPage from './pages/services/ServicesPage';
 import LongDistanceBusPage from './pages/services/LongDistanceBusPage';
 import CarbonPage from './pages/carbon/CarbonPage';
+import CarbonPointsDetailPage from './pages/carbon/CarbonPointsDetailPage';
+import RedemptionRecordsPage from './pages/carbon/RedemptionRecordsPage';
 import ProfilePage from './pages/profile/ProfilePage';
 import MyReportsPage from './pages/profile/MyReportsPage';
 import SettingsPage from './pages/profile/SettingsPage';
@@ -127,6 +129,8 @@ const App: React.FC = () => {
             <Route path="/services" element={<ServicesPage />} />
             <Route path="/services/bus" element={<LongDistanceBusPage />} />
             <Route path="/carbon" element={<CarbonPage />} />
+            <Route path="/carbon/points-detail" element={<RequireAuth><CarbonPointsDetailPage /></RequireAuth>} />
+            <Route path="/carbon/redemptions" element={<RequireAuth><RedemptionRecordsPage /></RequireAuth>} />
             <Route path="/qrcode" element={<RequireAuth><QRCodePage /></RequireAuth>} />
             <Route path="/charging/scan" element={<ChargingScanPage />} />
             <Route path="/charging/session" element={<ChargingSessionPage />} />

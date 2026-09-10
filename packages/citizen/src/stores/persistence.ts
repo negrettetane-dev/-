@@ -323,6 +323,15 @@ export function addRedemption(r: RedemptionRecord, userId = 'legacy'): void {
   set(userScopedKey(REDEMPTIONS_KEY, userId), records);
 }
 
+export function markRedemptionUsed(id: string, userId = 'legacy'): RedemptionRecord | undefined {
+  const records = getRedemptions(userId);
+  const index = records.findIndex(record => record.id === id);
+  if (index < 0) return undefined;
+  records[index] = { ...records[index], status: 'used' };
+  set(userScopedKey(REDEMPTIONS_KEY, userId), records);
+  return records[index];
+}
+
 // ====== 最近目的地 ======
 
 const RECENT_DEST_KEY = 'recent_destinations';

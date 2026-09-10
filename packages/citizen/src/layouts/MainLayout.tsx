@@ -6,6 +6,7 @@ import { maskPhone } from '@zhitu/shared';
 import styles from './MainLayout.module.css';
 import ClickSpark from '../components/ClickSpark/ClickSpark';
 import { AvatarIcon } from '../components/ui/avatar-picker';
+import NotificationBell from '../components/NotificationBell/NotificationBell';
 
 const ABOUT_CONTENT: Record<string, string> = {
   '平台介绍': '智途云枢是面向城市交通治理的智慧出行平台，融合多源交通数据与智能决策能力，为市民提供实时路况、出行规划、公交地铁、停车充电、事件上报、碳积分等一站式出行服务。',
@@ -81,6 +82,7 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             )}
             {isLoggedIn ? (
               <div className={styles.userArea}>
+                <NotificationBell />
                 <div className={styles.avatar} onClick={() => navigate('/profile')}><AvatarIcon avatar={user?.avatar} size={32} /></div>
                 <div className={styles.userInfo} onClick={() => navigate('/profile')}>
                   <div className={styles.userName}>{user?.nickname || user?.username || '市民用户'}</div>

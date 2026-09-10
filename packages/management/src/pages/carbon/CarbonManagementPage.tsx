@@ -2,11 +2,13 @@ import React, { useState } from 'react';
 import { Button, Card, Input, InputNumber, message, Select, Switch, Table, Tabs } from 'antd';
 import { getCarbonConfig, getCarbonRewards, getPointRules, setCarbonConfig, setCarbonRewards, setPointRules, type CarbonReward, type PointRule } from '../../stores/adminPersistence';
 import styles from './CarbonManagementPage.module.css';
+import { carbonRewardService } from '../../services/carbonRewardService';
 
 const names: Record<string, string> = { walk: '步行', bike: '骑行', metro: '地铁', bus: '公交', new_energy_vehicle: '新能源汽车' };
 const modeByAction: Record<string, string> = { walk: 'walk', walk_ride: 'walk', bike_ride: 'bike', metro_ride: 'metro', bus_ride: 'bus', new_energy_vehicle_ride: 'new_energy_vehicle' };
 export default function CarbonManagementPage() {
   const [config, setConfig] = useState(getCarbonConfig()); const [rules, setRules] = useState(getPointRules()); const [rewards, setRewards] = useState<CarbonReward[]>(getCarbonRewards());
+  React.useEffect(() => { carbonRewardService.list().then(setRewards).catch(() => undefined); }, []);
   const rows = rules.map(rule => { const mode = modeByAction[rule.action]; return { id: rule.id, behavior: rule.name, action: rule.action, mode, factor: mode ? (config.carbonFactors[mode] ?? 0) : 1, points: rule.points }; });
   const updateFactor = (mode: string, factor: number) => setConfig({ ...config, carbonFactors: { ...config.carbonFactors, [mode]: factor } });
   const updatePoints = (id: string, points: number) => setRules(items => items.map(rule => rule.id === id ? { ...rule, points } : rule));

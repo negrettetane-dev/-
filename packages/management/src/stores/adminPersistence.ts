@@ -38,6 +38,10 @@ export interface PointTransaction {
   amount: number; reason: string; operator: string; time: number;
 }
 
+export interface AdminNotification {
+  id: string; userId: string; type: 'workorder' | 'points'; title: string; content: string; createdAt: number; read: boolean;
+}
+
 export interface OperationLog {
   id: string; operator: string; module: string; action: string;
   target: string; detail: string; ip: string; time: number;
@@ -105,6 +109,18 @@ export function adjustUserPoints(userId: string, amount: number, reason: string,
     set('user_points', Math.max(0, current + amount));
   }
   addPointTransaction({ id:'pt_'+Date.now().toString(36), userId, type:'adjust', amount, reason, operator, time:Date.now() });
+  addAdminNotification({ id: 'n_' + Date.now().toString(36), userId, type: 'points', title: amount > 0 ? '积分已到账' : '积分变动提醒', content: `${amount > 0 ? '管理端已向你的账户发放' : '你的账户积分已调整'} ${Math.abs(amount)} 分${reason ? `：${reason}` : ''}`, createdAt: Date.now(), read: false });
+}
+
+const NOTIFICATIONS_KEY = 'notifications';
+export function getAdminNotifications(userId?: string): AdminNotification[] {
+  const all = get<AdminNotification[]>(NOTIFICATIONS_KEY, []);
+  return userId ? all.filter(item => item.userId === userId) : all;
+}
+export function addAdminNotification(notification: AdminNotification): void {
+  const all = getAdminNotifications();
+  all.unshift(notification);
+  set(NOTIFICATIONS_KEY, all.slice(0, 200));
 }
 
 // ====== 积分 ======
