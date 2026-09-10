@@ -1,8 +1,13 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 
-export default defineConfig({
+export default defineConfig(({ mode }) => {
+  // Vite 不会把项目 .env 自动注入 config 文件；必须显式 loadEnv，
+  // 否则本地 VITE_API_PROXY_TARGET 修改不会生效。
+  const env = loadEnv(mode, process.cwd(), '');
+
+  return {
   plugins: [react()],
   resolve: {
     alias: { '@': path.resolve(__dirname, 'src') },
@@ -16,10 +21,11 @@ export default defineConfig({
     host: '0.0.0.0',
     proxy: {
       '/api': {
-        target: process.env.VITE_API_PROXY_TARGET || 'https://9tr30463os14.vicp.fun',
+        target: env.VITE_API_PROXY_TARGET || 'https://9tr30463os14.vicp.fun',
         changeOrigin: true,
         secure: false,
       },
     },
   },
+  };
 });

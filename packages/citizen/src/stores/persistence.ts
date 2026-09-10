@@ -48,11 +48,24 @@ export interface PersistedUser {
 }
 
 export interface NotificationSettings {
-  congestion: boolean;
+  carbon: boolean;
   weather: boolean;
-  control: boolean;
-  workorder: boolean;
+  event: boolean;
   system: boolean;
+}
+
+export type NotificationType = 'carbon' | 'weather' | 'event' | 'system';
+
+export interface UserNotification {
+  id: string;
+  userId: string;
+  type: NotificationType;
+  title: string;
+  content: string;
+  createdAt: number | string;
+  read: boolean;
+  relatedId?: string;
+  actionPath?: string;
 }
 
 // ====== 上报工单 ======
@@ -209,6 +222,25 @@ export function findAccountById(userId: string): StoredAccount | null {
   return getAccounts().find(account => account.id === userId) || null;
 }
 
+export function updateAccount(userId: string, patch: Partial<Pick<StoredAccount, 'nickname' | 'phone' | 'email' | 'avatar'>>): StoredAccount | null {
+  const accounts = getAccounts();
+  const index = accounts.findIndex(account => account.id === userId);
+  if (index < 0) return null;
+  accounts[index] = { ...accounts[index], ...patch };
+  saveAccounts(accounts);
+  return accounts[index];
+}
+
+export function updateAccountPassword(userId: string, currentPassword: string, newPassword: string): 'success' | 'invalid_password' | 'not_found' {
+  const accounts = getAccounts();
+  const index = accounts.findIndex(account => account.id === userId);
+  if (index < 0) return 'not_found';
+  if (accounts[index].passwordHash !== hashPassword(currentPassword)) return 'invalid_password';
+  accounts[index] = { ...accounts[index], passwordHash: hashPassword(newPassword) };
+  saveAccounts(accounts);
+  return 'success';
+}
+
 /** 注册新账号；返回错误码：username_exists / phone_exists / email_exists / null(成功) */
 export function registerAccount(data: {
   username: string; phone: string; email: string;
@@ -242,14 +274,43 @@ export function registerAccount(data: {
 
 const NOTIF_KEY = 'notification_settings';
 
-export function getNotificationSettings(): NotificationSettings {
-  return get<NotificationSettings>(NOTIF_KEY, {
-    congestion: true, weather: true, control: true, workorder: true, system: false,
-  });
+export function getNotificationSettings(userId = 'legacy'): NotificationSettings {
+  const saved = get<Partial<NotificationSettings> & { congestion?: boolean; workorder?: boolean }>(userScopedKey(NOTIF_KEY, userId), {});
+  const legacy = get<Partial<NotificationSettings> & { congestion?: boolean; workorder?: boolean }>(NOTIF_KEY, {});
+  const source = Object.keys(saved).length ? saved : legacy;
+  return {
+    carbon: source.carbon ?? source.congestion ?? true,
+    weather: source.weather ?? true,
+    event: source.event ?? source.workorder ?? true,
+    system: source.system ?? true,
+  };
 }
 
-export function setNotificationSettings(s: NotificationSettings): void {
-  set(NOTIF_KEY, s);
+export function setNotificationSettings(settings: NotificationSettings, userId = 'legacy'): void {
+  set(userScopedKey(NOTIF_KEY, userId), settings);
+}
+
+const NOTIFICATIONS_KEY = 'notifications';
+
+export function getNotifications(userId = 'legacy'): UserNotification[] {
+  return get<UserNotification[]>(NOTIFICATIONS_KEY, [])
+    .filter(item => item.userId === userId)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+}
+
+export function addNotification(notification: UserNotification): void {
+  const notifications = get<UserNotification[]>(NOTIFICATIONS_KEY, []);
+  if (notifications.some(item => item.id === notification.id)) return;
+  notifications.unshift(notification);
+  set(NOTIFICATIONS_KEY, notifications.slice(0, 200));
+}
+
+export function markNotificationsRead(ids: string[], userId = 'legacy'): void {
+  const idSet = new Set(ids);
+  const notifications = get<UserNotification[]>(NOTIFICATIONS_KEY, []).map(item =>
+    item.userId === userId && idSet.has(item.id) ? { ...item, read: true } : item,
+  );
+  set(NOTIFICATIONS_KEY, notifications);
 }
 
 // ====== 收藏公交 ======
