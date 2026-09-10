@@ -90,7 +90,9 @@ export default function IncidentDetailPage() {
         onChange={setStatus}
         style={{ width: 180 }}
         placeholder="请选择状态"
-        options={INCIDENT_STATUS_OPTIONS.map(item => ({ value: item.value, label: item.label }))}
+        options={incident?.status === 'closed'
+          ? [...INCIDENT_STATUS_OPTIONS.map(item => ({ value: item.value, label: item.label })), { value: 'closed', label: '已关闭（历史状态）', disabled: true }]
+          : INCIDENT_STATUS_OPTIONS.map(item => ({ value: item.value, label: item.label }))}
       />
       <div style={{ marginTop: 16, marginBottom: 8 }}>平台反馈（市民端可见）</div>
       <Input.TextArea
