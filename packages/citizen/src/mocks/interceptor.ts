@@ -8,8 +8,9 @@ import {
 import {
   getUserPoints, deductPoints, addPoints,
   addRedemption, getRedemptions, markRedemptionUsed,
-  findAccount, findAccountById, registerAccount, hashPassword,
+  findAccount, findAccountById, registerAccount, hashPassword, updateAccount, updateAccountPassword,
   addReport, getReports, getCarbonRewards, redeemCarbonReward,
+  addNotification, getNotifications, getNotificationSettings, setNotificationSettings, markNotificationsRead,
 } from '../stores/persistence';
 import { DEMO_ACCESSIBLE_FACILITIES } from '../data/accessibilityFacilities';
 import {
@@ -91,6 +92,33 @@ export function fetchInterceptor() {
     const method = (init?.method || (input instanceof Request ? input.method : 'GET')).toUpperCase();
     const pathname = parsedUrl.pathname;
 
+    if (pathname === '/api/notification-settings') {
+      const userId = mockUserId(input, init);
+      if (!userId) return response({ code: 401, message: '请先登录', data: null }, 401);
+      if (method === 'GET') return response(json(getNotificationSettings(userId)));
+      if (method === 'PUT') {
+        const body = await requestBody(input, init);
+        const settings = { carbon: Boolean(body.carbon), weather: Boolean(body.weather), event: Boolean(body.event), system: Boolean(body.system) };
+        setNotificationSettings(settings, userId);
+        return response(json(settings));
+      }
+    }
+
+    if (pathname === '/api/notifications' && method === 'GET') {
+      const userId = mockUserId(input, init);
+      if (!userId) return response({ code: 401, message: '请先登录', data: null }, 401);
+      const notifications = getNotifications(userId);
+      return response(json({ list: notifications, unreadCount: notifications.filter(item => !item.read).length }));
+    }
+
+    if (pathname === '/api/notifications/read' && method === 'POST') {
+      const userId = mockUserId(input, init);
+      if (!userId) return response({ code: 401, message: '请先登录', data: null }, 401);
+      const body = await requestBody(input, init);
+      markNotificationsRead(Array.isArray(body.ids) ? body.ids.map(String) : [], userId);
+      return response(json({ success: true }));
+    }
+
     // 用户作用域接口：身份只从 Bearer Token 中解析，不接受 userId 参数。
     if (pathname === '/api/trips' || pathname.startsWith('/api/trips/')) {
       const userId = mockUserId(input, init);
@@ -113,7 +141,10 @@ export function fetchInterceptor() {
         const before = findMockTrip(userId, tripId);
         const trip = finishMockTrip(userId, tripId, actionMatch[2] === 'complete' ? 'completed' : 'cancelled');
         if (!trip) return response({ code: 404, message: '出行记录不存在', data: null }, 404);
-        if (before?.status === 'in_progress' && actionMatch[2] === 'complete' && trip.earnedPoints > 0) addPoints(trip.earnedPoints, userId);
+        if (before?.status === 'in_progress' && actionMatch[2] === 'complete' && trip.earnedPoints > 0) {
+          addPoints(trip.earnedPoints, userId);
+          addNotification({ id: `carbon_trip_${trip.id}`, userId, type: 'carbon', title: '绿色出行碳积分已到账', content: `本次绿色出行获得 ${trip.earnedPoints} 碳积分。`, createdAt: Date.now(), read: false, relatedId: trip.id, actionPath: '/carbon/points-detail' });
+        }
         return response(json(trip));
       }
 
@@ -451,6 +482,8 @@ export function fetchInterceptor() {
         expires_at: expires.toISOString(),
       }, userId);
 
+      addNotification({ id: `carbon_redeem_${Date.now().toString(36)}`, userId, type: 'carbon', title: '碳积分兑换成功', content: `已使用 ${reward.cost} 碳积分兑换“${reward.name}”，剩余 ${deducted.remaining} 碳积分。`, createdAt: Date.now(), read: false, actionPath: '/carbon/redemptions' });
+
       return new Response(JSON.stringify(json({
         success: true,
         remainingPoints: deducted.remaining,
@@ -604,9 +637,31 @@ export function fetchInterceptor() {
       if (!userId) return response({ code: 401, message: '请先登录', data: null }, 401);
       const acc = findAccountById(userId);
       if (!acc) return response({ code: 404, message: '用户不存在', data: null }, 404);
-      return new Response(JSON.stringify(json({
-        id: acc.id, phone: acc.phone, nickname: acc.nickname || acc.username, realName: acc.nickname || acc.username, isVerified: true, carbonCredits: getUserPoints(userId)
-      })), { headers:{'Content-Type':'application/json'} });
+      if (method === 'PATCH') {
+        const body = await requestBody(input, init);
+        const previousEmail = acc.email;
+        const updated = updateAccount(userId, {
+          ...(typeof body.nickname === 'string' ? { nickname: body.nickname.trim() } : {}),
+          ...(typeof body.phone === 'string' ? { phone: body.phone.trim() } : {}),
+          ...(typeof body.email === 'string' ? { email: body.email.trim().toLowerCase() } : {}),
+          ...(typeof body.avatar === 'string' ? { avatar: body.avatar } : {}),
+        });
+        if (!updated) return response({ code: 404, message: '用户不存在', data: null }, 404);
+        if (typeof body.email === 'string' && updated.email !== previousEmail) addNotification({ id: `system_email_${Date.now().toString(36)}`, userId, type: 'system', title: previousEmail ? '邮箱修改成功' : '邮箱绑定成功', content: `账号邮箱已${previousEmail ? '修改为' : '绑定为'} ${updated.email}。如非本人操作，请立即修改密码。`, createdAt: Date.now(), read: false, actionPath: '/profile/account' });
+        return response(json({ id: updated.id, username: updated.username, phone: updated.phone, email: updated.email, nickname: updated.nickname, avatar: updated.avatar, role: updated.role, isVerified: true, carbonCredits: getUserPoints(userId) }));
+      }
+      return new Response(JSON.stringify(json({ id: acc.id, username: acc.username, phone: acc.phone, email: acc.email, nickname: acc.nickname || acc.username, realName: acc.nickname || acc.username, avatar: acc.avatar, role: acc.role, isVerified: true, carbonCredits: getUserPoints(userId) })), { headers:{'Content-Type':'application/json'} });
+    }
+
+    if (url === '/api/user/password' && method === 'PUT') {
+      const userId = mockUserId(input, init);
+      if (!userId) return response({ code: 401, message: '请先登录', data: null }, 401);
+      const body = await requestBody(input, init);
+      const result = updateAccountPassword(userId, String(body.currentPassword || ''), String(body.newPassword || ''));
+      if (result === 'invalid_password') return response({ code: 'INVALID_CURRENT_PASSWORD', message: '当前密码不正确', data: null }, 400);
+      if (result === 'not_found') return response({ code: 404, message: '用户不存在', data: null }, 404);
+      addNotification({ id: `system_password_${Date.now().toString(36)}`, userId, type: 'system', title: '登录密码修改成功', content: '你的登录密码已修改。如非本人操作，请立即联系平台客服。', createdAt: Date.now(), read: false, actionPath: '/profile/account' });
+      return response(json({ success: true }));
     }
 
     return new Response(JSON.stringify(json(null)), { headers:{'Content-Type':'application/json'} });

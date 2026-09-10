@@ -674,11 +674,20 @@ export async function planAmapRoute(
               if (status === 'complete' && result.routes?.length) {
                 const candidate = routeFromAmapRoute('drive', result.routes[0]);
                 resolve(candidate && routePassesWaypoints(candidate.path, validWaypoints) ? candidate : null);
-              } else resolve(null);
+              } else {
+                // 保留高德原始状态/错误信息，便于区分白名单、配额、参数和确实无路线。
+                console.error('AMap driving failed', {
+                  status,
+                  info: result?.info,
+                  infocode: result?.infocode,
+                  result,
+                });
+                reject(new Error(result?.info || result?.message || `驾车路线规划失败（${status || 'unknown'}）`));
+              }
             });
-          } catch { resolve(null); }
-        });
-      } catch { resolve(null); }
+          } catch (error) {
+            reject(error instanceof Error ? error : new Error(String(error)));
+          }
     }), 'Driving route');
     return driveOnce(AMap.DrivingPolicy.LEAST_TIME).then(route => {
       if (route) return route;

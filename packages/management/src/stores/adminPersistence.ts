@@ -39,7 +39,7 @@ export interface PointTransaction {
 }
 
 export interface AdminNotification {
-  id: string; userId: string; type: 'workorder' | 'points'; title: string; content: string; createdAt: number; read: boolean;
+  id: string; userId: string; type: 'event' | 'carbon' | 'weather' | 'system'; title: string; content: string; createdAt: number; read: boolean;
 }
 
 export interface OperationLog {
@@ -109,7 +109,7 @@ export function adjustUserPoints(userId: string, amount: number, reason: string,
     set('user_points', Math.max(0, current + amount));
   }
   addPointTransaction({ id:'pt_'+Date.now().toString(36), userId, type:'adjust', amount, reason, operator, time:Date.now() });
-  addAdminNotification({ id: 'n_' + Date.now().toString(36), userId, type: 'points', title: amount > 0 ? '积分已到账' : '积分变动提醒', content: `${amount > 0 ? '管理端已向你的账户发放' : '你的账户积分已调整'} ${Math.abs(amount)} 分${reason ? `：${reason}` : ''}`, createdAt: Date.now(), read: false });
+  addAdminNotification({ id: 'n_' + Date.now().toString(36), userId, type: 'carbon', title: amount > 0 ? '碳积分已到账' : '碳积分变动提醒', content: `${amount > 0 ? '你的账户获得' : '你的账户扣减'} ${Math.abs(amount)} 碳积分${reason ? `：${reason}` : ''}`, createdAt: Date.now(), read: false });
 }
 
 const NOTIFICATIONS_KEY = 'notifications';
