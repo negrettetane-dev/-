@@ -7,7 +7,7 @@ import {
 } from './data';
 import {
   getUserPoints, deductPoints, addPoints,
-  addRedemption, getRedemptions,
+  addRedemption, getRedemptions, markRedemptionUsed,
   findAccount, findAccountById, registerAccount, hashPassword,
   addReport, getReports, getCarbonRewards, redeemCarbonReward,
 } from '../stores/persistence';
@@ -457,6 +457,15 @@ export function fetchInterceptor() {
         rewardName: reward.name,
         pointsCost: reward.cost,
       })), { headers:{'Content-Type':'application/json'} });
+    }
+
+    if (url.match(/^\/api\/redemptions\/[^/]+\/use$/) && method === 'POST') {
+      const userId = mockUserId(input, init);
+      if (!userId) return response({ code: 401, message: '请先登录', data: null }, 401);
+      const id = decodeURIComponent(pathname.split('/')[3]);
+      const updated = markRedemptionUsed(id, userId);
+      if (!updated) return response({ code: 404, message: '兑换记录不存在', data: null }, 404);
+      return new Response(JSON.stringify(json(updated)), { headers:{'Content-Type':'application/json'} });
     }
 
     // GET /api/redemptions — 当前用户兑换记录
