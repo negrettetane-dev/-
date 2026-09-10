@@ -2,7 +2,10 @@
 
 > 对应前端改动：管理端「事件详情」状态中文化 + 保存状态按钮移至平台反馈下方，点击后**一次性提交状态与平台反馈**。
 > 后端需将两者一并落库，并同步更新市民端工单状态、向市民推送通知。
-> 前端分支：`feature/incidents-status-i18n-feedback`
+>
+> ⚠️ 命名与数据模型以 `docs/citizen-notification-backend-contract.md` 为准（该文档已定义通知表、
+> 事件表补充字段与可靠投递 outbox）。本文档只描述**管理端保存状态/反馈**这一个入口的具体契约，
+> 通知类型统一为 `event`，不再使用旧称 `workorder`。
 
 ## 一、现状与目标
 
@@ -11,11 +14,15 @@
 | 状态/严重程度 | 后端返回英文枚举，管理端直接展示英文 | 前端已本地映射为中文（待审核/处理中/已完成，**「已关闭」已从可选项中移除**），**后端枚举值保持英文不变** |
 | 平台反馈 | `PUT /api/incidents/:id` 只更新 status，`platformFeedback` 被忽略 | 同时保存 `platformFeedback` |
 | 市民端可见性 | 市民端工单状态/反馈不随管理端更新 | 状态与反馈同步到 `/events/mine`、`/report/detail/:id` |
-| 市民通知 | 无 | 状态变更时向市民推送一条「工单进度」通知 |
+| 市民通知 | 无 | 状态变更时向市民推送一条 `event` 类别通知 |
 
 ## 二、接口调整
 
-### PUT /api/admin/incidents/:id（管理端保存状态）
+### PUT /api/incidents/:id（管理端当前实际调用）
+
+> 管理端 axios baseURL 为 `/api`，前端代码中写作 `PUT /incidents/:id`，故实际路径为 `/api/incidents/:id`。
+> `citizen-notification-backend-contract.md` 中建议的 `/api/admin/workorders/{id}` 为**目标态**命名；
+> 若后端改路径，请同步前端 `packages/management/src/pages/incidents/IncidentDetailPage.tsx`。
 
 前端请求体：
 
@@ -62,41 +69,37 @@
 3. **追加处理进度日志**（供市民端 `processLogs` 时间线展示）：
    - `{ time, action: "状态变更为「处理中」", operator: "管理员", detail: platformFeedback }`
 4. `notifyCitizen=true` 时：
-   - 查询事件的 `reported_by`（市民 user_id）；
-   - 读取该市民的**通知设置**中 `workorder` 开关（见 `backend-notification-settings.md`）；
-   - 开关开启 → 写入一条通知记录（见下文通知表）；关闭 → 跳过推送（状态仍会同步）。
-5. `platformFeedback` 为空且状态为 `resolved`/`closed` 时建议兜底文案：「您上报的事件已办结，感谢您的参与。」
+   - 查询事件的 `reporter_user_id`（市民 user_id，字段定义见 contract 文档 2.3）；
+   - 读取该市民的**通知设置**中 `event` 开关（`GET/PUT /api/notification-settings`）；
+   - 开关开启 → 写入一条 `type='event'` 通知记录（表结构见 contract 文档 2.2）；关闭 → 跳过推送（状态仍会同步）；
+   - 相同状态重复提交应命中幂等键，不重复产生通知。
+5. `platformFeedback` 为空且状态为 `resolved` 时建议兜底文案：「您上报的事件已办结，感谢您的参与。」
 
 ## 三、数据模型调整
 
-### 1. 事件表（incidents / events）新增字段
+### 1. 事件表（incidents / work_orders）
+
+除 contract 文档 2.3 要求的 `reporter_user_id` / `status_version` / `last_status_changed_at` 外，本方案另需：
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | platform_feedback | varchar(500) | 平台反馈文本，NULL 表示尚无反馈 |
-| status_updated_at | datetime | 最近一次状态变更时间 |
+| status_updated_at | datetime | 最近一次状态变更时间（可与 contract 的 `last_status_changed_at` 合并） |
 | status_updated_by | varchar(64) | 最近操作管理员 ID |
 | feedback_updated_at | datetime | 最近一次反馈更新时间（可与 status_updated_at 合并） |
 
-### 2. 新增市民通知表（citizen_notifications）
+### 2. 市民通知表
 
-| 字段 | 类型 | 说明 |
-|---|---|---|
-| id | bigint PK | 通知 ID |
-| user_id | varchar(64) | 接收市民 ID（索引） |
-| incident_id | varchar(64) | 关联事件 ID（索引） |
-| type | varchar(32) | 通知类型：`workorder`（本方案）；预留 `congestion` / `weather` / `control` / `system` |
-| title | varchar(128) | 通知标题，如「上报事件进度更新」 |
-| content | varchar(500) | 通知正文：状态中文描述 + 平台反馈 |
-| is_read | tinyint(1) | 已读标记，默认 0 |
-| created_at | datetime | 创建时间 |
+**不再新增 `citizen_notifications`**，统一使用 contract 文档 2.2 定义的通知表，本方案的写入记录形如：
 
-通知内容生成示例：
-
-```text
-title:   您上报的「路面坑洼」进度更新
-content: 状态已变更为「处理中」。平台反馈：已派维修队伍，预计 2 小时内恢复通行。
-```
+| 列 | 取值示例 |
+|---|---|
+| user_id | 事件 `reporter_user_id` |
+| type | `event` |
+| related_id | 事件 ID（如 `INC-20260910-001`） |
+| title | 您上报的「路面坑洼」进度更新 |
+| content | 状态已变更为「处理中」。平台反馈：已派维修队伍，预计 2 小时内恢复通行。 |
+| is_read | 0 |
 
 （事件 `title` 字段当前存的是分类值如 `pothole`，生成文案时映射为中文分类名。）
 
@@ -158,10 +161,10 @@ content: 状态已变更为「处理中」。平台反馈：已派维修队伍�
 
 ## 六、兼容性与验收清单
 
-- [ ] `PUT /api/admin/incidents/:id` 接受并保存 `platformFeedback`（≤500 字，超长返回 400）
+- [ ] `PUT /api/incidents/:id` 接受并保存 `platformFeedback`（≤500 字，超长返回 400）
 - [ ] 状态枚举不改动（前端映射中文），非法枚举返回 400
 - [ ] `notifyCitizen=false` 时不写通知记录，但状态/反馈仍同步
-- [ ] 市民关闭「工单进度通知」时不产生通知记录，但工单状态照常更新
+- [ ] 市民关闭「事件进度通知（`event`）」时不产生通知记录，但事件状态照常更新
 - [ ] `/events/mine`、`/report/detail/:id` 返回 `platformFeedback` 与最新 `status`
 - [ ] 重复保存相同状态幂等，不重复产生通知（建议以 `status + feedback` 均未变化时跳过通知）
 - [ ] 管理端操作人从 Token 解析，不信任请求体传入的身份字段
