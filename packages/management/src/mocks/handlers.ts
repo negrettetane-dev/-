@@ -62,6 +62,24 @@ const API_HANDLERS: Record<string, Handler> = {
     const found = incidents.find((i) => i.id === id) || incidents[0];
     return { code: 0, data: found, message: 'ok', timestamp: Date.now() };
   },
+  // 管理端保存事件状态 + 平台反馈（同时通知市民端）
+  'PUT /api/incidents/:id': (url: string, options?: RequestInit) => {
+    const id = url.match(/\/incidents\/([^/?]+)/)?.[1];
+    let body: { status?: string; platformFeedback?: string; notifyCitizen?: boolean } = {};
+    try { body = options?.body ? JSON.parse(String(options.body)) : {}; } catch { /* ignore */ }
+    return {
+      code: 0,
+      data: {
+        id: id || 'unknown',
+        status: body.status ?? 'pending',
+        platformFeedback: body.platformFeedback ?? '',
+        notifyCitizen: body.notifyCitizen !== false,
+        notifiedAt: Date.now(),
+      },
+      message: '状态与平台反馈已保存，并已通知市民端',
+      timestamp: Date.now(),
+    };
+  },
 
   // Intersections / Signals
   'GET /api/signals': () => ({

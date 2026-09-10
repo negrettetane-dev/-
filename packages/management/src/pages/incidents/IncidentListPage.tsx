@@ -4,6 +4,14 @@ import { Button, Card, Col, Input, Row, Select, Statistic, Table, Tag } from 'an
 import { EyeOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { apiGet } from '../../services/apiClient';
+import {
+  INCIDENT_STATUS_OPTIONS,
+  INCIDENT_SEVERITY_OPTIONS,
+  incidentStatusLabel,
+  incidentStatusColor,
+  incidentSeverityLabel,
+  incidentSeverityColor,
+} from '../../constants/incidentStatus';
 
 interface Incident {
   id: string;
@@ -18,12 +26,6 @@ interface Incident {
 
 interface IncidentPage { list: Incident[]; total: number; page: number; pageSize: number }
 
-const STATUS_MAP: Record<string, { color: string; label: string }> = {
-  pending: { color: 'orange', label: '待审核' },
-  processing: { color: 'processing', label: '处理中' },
-  resolved: { color: 'green', label: '已完成' },
-  closed: { color: 'default', label: '已关闭' },
-};
 
 export default function IncidentListPage() {
   const navigate = useNavigate();
@@ -53,8 +55,8 @@ export default function IncidentListPage() {
     { title: '类型', dataIndex: 'title', width: 120 },
     { title: '描述', dataIndex: 'description', ellipsis: true },
     { title: '位置', dataIndex: 'roadName', width: 160, ellipsis: true },
-    { title: '严重程度', dataIndex: 'severity', width: 100, render: value => <Tag>{value}</Tag> },
-    { title: '状态', dataIndex: 'status', width: 100, render: value => { const meta = STATUS_MAP[value] || { color: 'default', label: value }; return <Tag color={meta.color}>{meta.label}</Tag>; } },
+    { title: '严重程度', dataIndex: 'severity', width: 100, render: value => <Tag color={incidentSeverityColor(value)}>{incidentSeverityLabel(value)}</Tag> },
+    { title: '状态', dataIndex: 'status', width: 100, render: value => <Tag color={incidentStatusColor(value)}>{incidentStatusLabel(value)}</Tag> },
     { title: '上报人', dataIndex: 'reportedBy', width: 100 },
     { title: '上报时间', dataIndex: 'reportedAt', width: 170, render: value => new Date(value).toLocaleString('zh-CN') },
     { title: '操作', width: 90, render: (_, item) => <Button type="link" icon={<EyeOutlined />} onClick={() => navigate(`/admin/incidents/${item.id}`)}>详情</Button> },
@@ -72,8 +74,8 @@ export default function IncidentListPage() {
       <Col span={8}><Card size="small"><Statistic title="当前页已完成" value={resolved} /></Card></Col>
     </Row>
     <div className="filter-bar">
-      <Select placeholder="状态" allowClear style={{ width: 130 }} value={status} onChange={setStatus} options={Object.entries(STATUS_MAP).map(([value, meta]) => ({ value, label: meta.label }))} />
-      <Select placeholder="严重程度" allowClear style={{ width: 130 }} value={severity} onChange={setSeverity} options={['high','medium','low'].map(value => ({ value, label: value }))} />
+      <Select placeholder="状态" allowClear style={{ width: 130 }} value={status} onChange={setStatus} options={INCIDENT_STATUS_OPTIONS.map(item => ({ value: item.value, label: item.label }))} />
+      <Select placeholder="严重程度" allowClear style={{ width: 130 }} value={severity} onChange={setSeverity} options={INCIDENT_SEVERITY_OPTIONS.map(item => ({ value: item.value, label: item.label }))} />
       <Input placeholder="搜索编号/类型/位置" prefix={<SearchOutlined />} style={{ width: 260 }} value={search} onChange={event => setSearch(event.target.value)} onPressEnter={() => void load(1)} />
       <Button icon={<ReloadOutlined />} onClick={() => void load(1)}>查询</Button>
     </div>

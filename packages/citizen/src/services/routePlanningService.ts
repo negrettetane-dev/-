@@ -663,7 +663,7 @@ export async function planAmapRoute(
 
   if (mode === 'drive') {
     if (validWaypoints.length > 16) throw new Error('TOO_MANY_WAYPOINTS');
-    const driveOnce = (policy: string): Promise<PlannedRoute | null> => withTimeout(new Promise((resolve) => {
+    const driveOnce = (policy: string): Promise<PlannedRoute | null> => withTimeout(new Promise((resolve, reject) => {
       try {
         AMap.plugin(['AMap.Driving'], () => {
           try {
@@ -688,6 +688,10 @@ export async function planAmapRoute(
           } catch (error) {
             reject(error instanceof Error ? error : new Error(String(error)));
           }
+        });
+      } catch (error) {
+        reject(error instanceof Error ? error : new Error(String(error)));
+      }
     }), 'Driving route');
     return driveOnce(AMap.DrivingPolicy.LEAST_TIME).then(route => {
       if (route) return route;
