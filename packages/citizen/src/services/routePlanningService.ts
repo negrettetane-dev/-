@@ -3,6 +3,8 @@ import { loadAMap } from '../lib/amap';
 import { geocodeLocation, isValidCoord, reverseGeocodeDetail } from './locationService';
 import type { RouteTravelMode } from '../components/travel/TravelModeSelector';
 import { pickLowerImpactDrive } from './routeCarbonEstimator';
+import type { UnifiedLocation } from '../stores/travelLocationStore';
+import type { TravelStage, TravelStageKind } from '../types/travelStage';
 
 export interface SegmentData {
   type: 'walk' | 'metro' | 'bus';
@@ -15,7 +17,10 @@ export interface SegmentData {
   nextBusArrival?: number;
   stationCount?: number;
   duration?: number;
+  distance?: number;
   instruction?: string;
+  fromCoord?: [number, number];
+  toCoord?: [number, number];
 }
 
 export interface PlannedRoute {
@@ -130,6 +135,43 @@ function haversineKm(a: [number, number], b: [number, number]): number {
   const h = Math.sin(dLat / 2) ** 2 + Math.cos(la1) * Math.cos(la2) * Math.sin(dLng / 2) ** 2;
   return 2 * R * Math.asin(Math.sqrt(h));
 }
+
+function distanceToSegmentKm(point: [number, number], start: [number, number], end: [number, number]): number {
+  const cosLat = Math.cos((point[1] * Math.PI) / 180);
+  const scaleX = 111.32 * cosLat;
+  const scaleY = 111.32;
+  const px = point[0] * scaleX;
+  const py = point[1] * scaleY;
+  const ax = start[0] * scaleX;
+  const ay = start[1] * scaleY;
+  const bx = end[0] * scaleX;
+  const by = end[1] * scaleY;
+  const dx = bx - ax;
+  const dy = by - ay;
+  const lengthSquared = dx * dx + dy * dy;
+  const t = lengthSquared ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lengthSquared)) : 0;
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+
+function routePassesWaypoints(path: [number, number][], waypoints: [number, number][], thresholdKm = 0.35): boolean {
+  if (!waypoints.length) return true;
+  let segmentStart = 0;
+  return waypoints.every(waypoint => {
+    let nearest = Number.POSITIVE_INFINITY;
+    let nearestIndex = segmentStart;
+    for (let index = segmentStart; index < path.length - 1; index += 1) {
+      const distance = distanceToSegmentKm(waypoint, path[index], path[index + 1]);
+      if (distance < nearest) {
+        nearest = distance;
+        nearestIndex = index;
+      }
+    }
+    if (nearest > thresholdKm) return false;
+    segmentStart = Math.max(segmentStart, nearestIndex);
+    return true;
+  });
+}
+
 
 // ===== 坐标归一化：兼容 [lng,lat] / AMap.LngLat / {lng,lat} / {longitude,latitude} =====
 
@@ -296,6 +338,7 @@ export function parseTransitPlan(plan: any): ParsedTransitPlan {
         type: 'walk',
         instruction: text ? String(text) : `步行 ${formatDistance(dist)}`,
         duration: Number(walk.duration ?? segment?.time ?? segment?.duration ?? 0),
+        distance: dist,
       };
       if (hasSegmentContent(item) || item.instruction) segments.push(item);
       mergedSegmentPath.push(...normalizePath(walk.path));
@@ -324,6 +367,9 @@ export function parseTransitPlan(plan: any): ParsedTransitPlan {
         toStation: line?.arrival_stop?.name || line?.arrivalStop?.name || line?.endStation?.name || transit?.off_station?.name || transit?.offStation?.name || '',
         stationCount: line?.station_count ?? line?.stationCount ?? transit?.via_num ?? transit?.viaNum ?? 0,
         duration: Number(segment?.time ?? segment?.duration ?? transit?.time ?? transit?.duration ?? 0),
+        distance: Number(segment?.distance ?? transit?.distance ?? line?.distance ?? 0) || 0,
+        fromCoord: toLngLatTuple(line?.departure_stop?.location ?? line?.departureStop?.location ?? transit?.on_station?.location ?? transit?.onStation?.location) || undefined,
+        toCoord: toLngLatTuple(line?.arrival_stop?.location ?? line?.arrivalStop?.location ?? transit?.off_station?.location ?? transit?.offStation?.location) || undefined,
       };
       if (hasSegmentContent(item)) segments.push(item);
       const linePath = normalizePath(line?.path ?? line?.polyline ?? transit?.path ?? segment?.bus?.path);
@@ -357,12 +403,86 @@ export function parseTransitPlan(plan: any): ParsedTransitPlan {
 
   // 路径：优先 plan.path（整条方案），否则用分段合并路径
   const path = planPath.length ? planPath : mergedSegmentPath;
-
   return { segments, path, walkingDistance, transferCount, hasRailway };
 }
 
+export function buildTravelStages(
+  route: PlannedRoute,
+  origin: UnifiedLocation,
+  destination: UnifiedLocation,
+): TravelStage[] {
+  const raw = route.segments?.length
+    ? route.segments.map((segment, index) => {
+        const isTransit = segment.type === 'bus' || segment.type === 'metro';
+        const kind: TravelStageKind = segment.type === 'walk'
+          ? (index > 0 && route.segments?.slice(0, index).some(s => s.type === 'bus' || s.type === 'metro') ? 'transfer' : 'walk')
+          : segment.type;
+        const line = segment.lineName?.trim();
+        const from = (segment.fromStation || segment.fromStop || '').trim();
+        const to = (segment.toStation || segment.toStop || '').trim();
+        const name = kind === 'transfer'
+          ? `换乘步行${to ? `至${to}` : ''}`
+          : kind === 'walk'
+            ? (segment.instruction?.trim() || `步行路段${to ? `至${to}` : ''}`)
+            : `${kind === 'metro' ? '乘坐地铁' : '乘坐公交'}${line ? ` ${line}` : ''}`;
+        return {
+          id: `${kind}-${index}-${line || segment.instruction || ''}-${from}-${to}`,
+          index,
+          kind,
+          name,
+          distanceMeters: Number.isFinite(segment.distance) && segment.distance! > 0 ? segment.distance! : null,
+          durationSeconds: Number.isFinite(segment.duration) && segment.duration! > 0 ? segment.duration! : null,
+          nextAction: isTransit ? `到达${to || '下车站'}后确认下车` : '按路线继续步行',
+          status: 'pending' as const,
+          startCoord: segment.fromCoord,
+          endCoord: segment.toCoord,
+          lineName: line || undefined,
+          fromStation: from || undefined,
+          toStation: to || undefined,
+          stationCount: segment.stationCount,
+          autoComplete: kind === 'walk' || kind === 'transfer' ? Boolean(segment.toCoord) : false,
+          requiresConfirmation: isTransit,
+        } satisfies TravelStage;
+      })
+    : [{
+        id: 'walk-0-route', index: 0, kind: 'walk', name: `步行至${destination.name || '目的地'}`,
+        distanceMeters: route.distance > 0 ? route.distance : null,
+        durationSeconds: route.duration > 0 ? route.duration : null,
+        nextAction: '步行导航至目的地', status: 'pending' as const,
+        startCoord: origin.lng != null && origin.lat != null ? [origin.lng, origin.lat] : undefined,
+        endCoord: destination.lng != null && destination.lat != null ? [destination.lng, destination.lat] : undefined,
+        path: route.path, autoComplete: true, requiresConfirmation: false,
+      } satisfies TravelStage];
+
+  const merged: TravelStage[] = [];
+  raw.forEach(stage => {
+    const previous = merged[merged.length - 1];
+    if (previous && (previous.kind === 'walk' || previous.kind === 'transfer') && previous.kind === stage.kind) {
+      previous.distanceMeters = previous.distanceMeters != null && stage.distanceMeters != null ? previous.distanceMeters + stage.distanceMeters : previous.distanceMeters ?? stage.distanceMeters;
+      previous.durationSeconds = previous.durationSeconds != null && stage.durationSeconds != null ? previous.durationSeconds + stage.durationSeconds : previous.durationSeconds ?? stage.durationSeconds;
+      previous.name = stage.name || previous.name;
+      previous.endCoord = stage.endCoord || previous.endCoord;
+      previous.autoComplete = previous.autoComplete && stage.autoComplete;
+      return;
+    }
+    merged.push({ ...stage });
+  });
+
+  merged.push({
+    id: 'arrive-final', index: merged.length, kind: 'arrive', name: `到达${destination.name || '目的地'}`,
+    distanceMeters: 0, durationSeconds: 0, nextAction: '确认已到达目的地', status: 'pending',
+    endCoord: destination.lng != null && destination.lat != null ? [destination.lng, destination.lat] : undefined,
+    autoComplete: false, requiresConfirmation: true,
+  });
+  return merged.map((stage, index) => ({ ...stage, index }));
+}
+
+export function createTravelRouteFingerprint(route: PlannedRoute, origin: UnifiedLocation, destination: UnifiedLocation): string {
+  const coords = (location: UnifiedLocation) => `${location.lng ?? ''},${location.lat ?? ''}`;
+  const segments = (route.segments || []).map(segment => [segment.type, segment.lineName, segment.fromStation, segment.toStation, segment.distance, segment.duration].join(':')).join('|');
+  return [route.mode, coords(origin), coords(destination), route.distance, route.duration, segments, route.path?.[0]?.join(','), route.path?.[route.path.length - 1]?.join(',')].join('|');
+}
 /**
- * 公交/地铁规划：调用高德 Transfer，返回全部真实候选方案（供普通公交取第一个、无障碍取全部重排）。
  * 跨城/长途硬门槛（不依赖高德返回结构）：
  *   - 起终点直线距离 > 100km → 拒绝
  *   - 任一方案含铁路/城际段（hasRailway）→ 该方案判定不可用，跳过
@@ -542,32 +662,41 @@ export async function planAmapRoute(
   }
 
   if (mode === 'drive') {
-    return withTimeout(new Promise((resolve, reject) => {
-      AMap.plugin(['AMap.Driving'], () => {
-        const drivingOptions: any = { policy: AMap.DrivingPolicy.LEAST_TIME };
-        // 驾车途经点：高德原生支持（最多 16 个）
-        if (validWaypoints.length) {
-          drivingOptions.waypoints = validWaypoints.map(wp => new AMap.LngLat(wp[0], wp[1]));
-        }
-        const driving = new AMap.Driving(drivingOptions);
-        driving.search(startLngLat, endLngLat, (status: string, result: any) => {
-          if (status === 'complete' && result.routes?.length) {
-            const route = result.routes[0];
-            const path = extractRoutePath(route);
-            // 空路径/无效结果不静默成功：EMPTY_ROUTE 明确报错
-            if (path.length < 2 || !Number(route.distance) || !Number(route.time)) {
-              reject(new Error('EMPTY_ROUTE'));
-              return;
-            }
-            resolve({
-              mode, distance: route.distance, duration: route.time, path, polyline: path,
-              congestionSegments: [{ level: 'slow', ratio: 0.3 }, { level: 'free', ratio: 0.7 }],
-              aiAdvice: '建议避开长安街东段，走三环辅路可节省约8分钟',
+    if (validWaypoints.length > 16) throw new Error('TOO_MANY_WAYPOINTS');
+    const driveOnce = (policy: string): Promise<PlannedRoute | null> => withTimeout(new Promise((resolve, reject) => {
+      try {
+        AMap.plugin(['AMap.Driving'], () => {
+          try {
+            const drivingOptions: any = { policy };
+            if (validWaypoints.length) drivingOptions.waypoints = validWaypoints.map(wp => new AMap.LngLat(wp[0], wp[1]));
+            const driving = new AMap.Driving(drivingOptions);
+            driving.search(startLngLat, endLngLat, (status: string, result: any) => {
+              if (status === 'complete' && result.routes?.length) {
+                const candidate = routeFromAmapRoute('drive', result.routes[0]);
+                resolve(candidate && routePassesWaypoints(candidate.path, validWaypoints) ? candidate : null);
+              } else {
+                // 保留高德原始状态/错误信息，便于区分白名单、配额、参数和确实无路线。
+                console.error('AMap driving failed', {
+                  status,
+                  info: result?.info,
+                  infocode: result?.infocode,
+                  result,
+                });
+                reject(new Error(result?.info || result?.message || `驾车路线规划失败（${status || 'unknown'}）`));
+              }
             });
-          } else reject(new Error(result.info || '驾车路线规划失败'));
+          } catch (error) {
+            reject(error instanceof Error ? error : new Error(String(error)));
+          }
         });
-      });
+      } catch (error) {
+        reject(error instanceof Error ? error : new Error(String(error)));
+      }
     }), 'Driving route');
+    return driveOnce(AMap.DrivingPolicy.LEAST_TIME).then(route => {
+      if (route) return route;
+      throw new Error('EMPTY_ROUTE');
+    });
   }
 
   if (mode === 'bus') {
@@ -690,18 +819,21 @@ export async function planRouteCandidates(
     throw new Error('TOO_MANY_WAYPOINTS');
   }
 
-  // —— 驾车：两次真实策略规划 ——
+  // —— 驾车：两次完整策略规划（原生 waypoints 保证每条候选覆盖起点→途经点→终点） ——
   if (mode === 'drive') {
     const driveOnce = (policy: string): Promise<PlannedRoute | null> => withTimeout(new Promise((resolve) => {
       try {
         AMap.plugin(['AMap.Driving'], () => {
           try {
             const drivingOptions: any = { policy };
-            if (validWaypoints.length) drivingOptions.waypoints = validWaypoints.map(wp => new AMap.LngLat(wp[0], wp[1]));
+            if (validWaypoints.length) {
+              drivingOptions.waypoints = validWaypoints.map(wp => new AMap.LngLat(wp[0], wp[1]));
+            }
             const driving = new AMap.Driving(drivingOptions);
             driving.search(startLngLat, endLngLat, (status: string, result: any) => {
               if (status === 'complete' && result.routes?.length) {
-                resolve(routeFromAmapRoute('drive', result.routes[0]));
+                const candidate = routeFromAmapRoute('drive', result.routes[0]);
+                resolve(candidate && routePassesWaypoints(candidate.path, validWaypoints) ? candidate : null);
               } else resolve(null);
             });
           } catch { resolve(null); }
@@ -709,9 +841,43 @@ export async function planRouteCandidates(
       } catch { resolve(null); }
     }), 'Driving policy route');
 
+    const planBySegments = async (policy: string): Promise<PlannedRoute | null> => {
+      if (!validWaypoints.length) return null;
+      const points: [number, number][] = [start, ...validWaypoints, end];
+      const segments: PlannedRoute[] = [];
+      for (let index = 0; index < points.length - 1; index += 1) {
+        const segment = await withTimeout(new Promise<PlannedRoute | null>((resolve) => {
+          AMap.plugin(['AMap.Driving'], () => {
+            const driving = new AMap.Driving({ policy });
+            driving.search(new AMap.LngLat(points[index][0], points[index][1]), new AMap.LngLat(points[index + 1][0], points[index + 1][1]), (status: string, result: any) => {
+              resolve(status === 'complete' && result.routes?.length ? routeFromAmapRoute('drive', result.routes[0]) : null);
+            });
+          });
+        }), 'Driving waypoint segment');
+        if (!segment) return null;
+        segments.push(segment);
+      }
+      const path = segments.flatMap((segment, index) => index === 0 ? segment.path : segment.path.slice(1));
+      if (!routePassesWaypoints(path, validWaypoints)) return null;
+      return {
+        mode: 'drive',
+        distance: segments.reduce((sum, segment) => sum + segment.distance, 0),
+        duration: segments.reduce((sum, segment) => sum + segment.duration, 0),
+        path,
+        polyline: path,
+        congestionSegments: [{ level: 'slow', ratio: 0.3 }, { level: 'free', ratio: 0.7 }],
+        aiAdvice: '建议避开拥堵路段',
+      };
+    };
+
+    const completeRoute = async (policy: string): Promise<PlannedRoute | null> => {
+      const nativeRoute = await driveOnce(policy);
+      return nativeRoute || planBySegments(policy);
+    };
+
     const [fastestRoute, shortestRoute] = await Promise.all([
-      driveOnce(AMap.DrivingPolicy.LEAST_TIME),
-      driveOnce(AMap.DrivingPolicy.LEAST_DISTANCE),
+      completeRoute(AMap.DrivingPolicy.LEAST_TIME),
+      completeRoute(AMap.DrivingPolicy.LEAST_DISTANCE),
     ]);
     const candidates: RouteCandidate[] = [];
     if (fastestRoute) candidates.push({ tag: 'fastest', label: '时间最短', icon: CANDIDATE_ICONS.fastest, route: fastestRoute });
