@@ -19,9 +19,11 @@ export interface AccessibleRouteMetrics {
   stairsRiskCount: number;
   /** 设施信息未知的站点数 */
   unknownFacilityCount: number;
+  /** 设施信息未知的站点名称 */
+  unknownFacilityNames?: string[];
 }
 
-export type AccessibleLevel = 'excellent' | 'good' | 'partial' | 'not_recommended';
+export type AccessibleLevel = 'excellent' | 'good' | 'partial' | 'caution' | 'not_recommended';
 
 export interface AccessibleScoreResult {
   score: number;
@@ -58,9 +60,10 @@ export function calculateAccessibleScore(metrics: AccessibleRouteMetrics, durati
 
   score = Math.max(0, Math.min(100, Math.round(score)));
 
-  if (hasStairsOnly || score < 60) {
-    return { score, level: 'not_recommended', levelLabel: '不建议', levelTone: 'red' };
+  if (hasStairsOnly) {
+    return { score, level: 'not_recommended', levelLabel: '不建议：存在楼梯风险', levelTone: 'red' };
   }
+  if (score < 60) return { score, level: 'caution', levelLabel: '谨慎选择', levelTone: 'orange' };
   if (score >= 90) return { score, level: 'excellent', levelLabel: '无障碍条件优秀', levelTone: 'green' };
   if (score >= 75) return { score, level: 'good', levelLabel: '无障碍条件较好', levelTone: 'blue' };
   return { score, level: 'partial', levelLabel: '部分设施待确认', levelTone: 'orange' };

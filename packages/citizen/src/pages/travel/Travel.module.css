@@ -149,7 +149,11 @@
   backdrop-filter: blur(6px);
 }
 
-/* 底部信息卡 */
+/* 阶段时间轴浮层 */
+.navStageOverlay { position: absolute; top: 64px; left: 0; right: 0; z-index: 11; pointer-events: none; }
+.navStageOverlay > * { pointer-events: auto; }
+.navStageOverlay :global(.timeline) { position: relative; top: auto; left: auto; right: auto; }
+
 .navBottomCard {
   position: absolute; bottom: 16px; left: 12px; right: 12px;
   background: rgba(22, 22, 42, 0.92);

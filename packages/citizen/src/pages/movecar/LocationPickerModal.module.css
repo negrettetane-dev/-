@@ -9,6 +9,13 @@
 .mapError { position: absolute; inset: 0; display: grid; place-items: center; background: #f7f9fc; color: #d4380d; padding: 20px; text-align: center; font-size: 14px; }
 .mapHint { position: absolute; left: 10px; bottom: 10px; background: rgba(0,0,0,0.55); color: #fff; font-size: 12px; padding: 3px 10px; border-radius: 4px; }
 
+.searchRow { display: flex; gap: 8px; padding: 10px 20px 4px; border-top: 1px solid #f0f0f0; }
+.searchInput { min-width: 0; flex: 1; padding: 10px 12px; border: 1px solid #d9d9d9; border-radius: 8px; font-size: 14px; outline: none; }
+.searchInput:focus { border-color: #1677ff; }
+.searchBtn { width: 72px; border: none; border-radius: 8px; background: #1677ff; color: #fff; font-size: 14px; cursor: pointer; }
+.searchBtn:disabled { background: #a8c8f8; cursor: wait; }
+.searchError { padding: 2px 20px 6px; color: #d4380d; font-size: 12px; }
+
 .pickerBody { padding: 12px 20px; min-height: 60px; display: flex; flex-direction: column; justify-content: center; gap: 4px; }
 .pickerResolving { color: var(--text-hint, #999); font-size: 13px; }
 .pickerAddress { font-size: 14px; color: #333; line-height: 1.5; }

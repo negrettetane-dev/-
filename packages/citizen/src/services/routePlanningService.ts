@@ -3,6 +3,8 @@ import { loadAMap } from '../lib/amap';
 import { geocodeLocation, isValidCoord, reverseGeocodeDetail } from './locationService';
 import type { RouteTravelMode } from '../components/travel/TravelModeSelector';
 import { pickLowerImpactDrive } from './routeCarbonEstimator';
+import type { UnifiedLocation } from '../stores/travelLocationStore';
+import type { TravelStage, TravelStageKind } from '../types/travelStage';
 
 export interface SegmentData {
   type: 'walk' | 'metro' | 'bus';
@@ -15,7 +17,10 @@ export interface SegmentData {
   nextBusArrival?: number;
   stationCount?: number;
   duration?: number;
+  distance?: number;
   instruction?: string;
+  fromCoord?: [number, number];
+  toCoord?: [number, number];
 }
 
 export interface PlannedRoute {
@@ -333,6 +338,7 @@ export function parseTransitPlan(plan: any): ParsedTransitPlan {
         type: 'walk',
         instruction: text ? String(text) : `步行 ${formatDistance(dist)}`,
         duration: Number(walk.duration ?? segment?.time ?? segment?.duration ?? 0),
+        distance: dist,
       };
       if (hasSegmentContent(item) || item.instruction) segments.push(item);
       mergedSegmentPath.push(...normalizePath(walk.path));
@@ -361,6 +367,9 @@ export function parseTransitPlan(plan: any): ParsedTransitPlan {
         toStation: line?.arrival_stop?.name || line?.arrivalStop?.name || line?.endStation?.name || transit?.off_station?.name || transit?.offStation?.name || '',
         stationCount: line?.station_count ?? line?.stationCount ?? transit?.via_num ?? transit?.viaNum ?? 0,
         duration: Number(segment?.time ?? segment?.duration ?? transit?.time ?? transit?.duration ?? 0),
+        distance: Number(segment?.distance ?? transit?.distance ?? line?.distance ?? 0) || 0,
+        fromCoord: toLngLatTuple(line?.departure_stop?.location ?? line?.departureStop?.location ?? transit?.on_station?.location ?? transit?.onStation?.location) || undefined,
+        toCoord: toLngLatTuple(line?.arrival_stop?.location ?? line?.arrivalStop?.location ?? transit?.off_station?.location ?? transit?.offStation?.location) || undefined,
       };
       if (hasSegmentContent(item)) segments.push(item);
       const linePath = normalizePath(line?.path ?? line?.polyline ?? transit?.path ?? segment?.bus?.path);
@@ -394,12 +403,86 @@ export function parseTransitPlan(plan: any): ParsedTransitPlan {
 
   // 路径：优先 plan.path（整条方案），否则用分段合并路径
   const path = planPath.length ? planPath : mergedSegmentPath;
-
   return { segments, path, walkingDistance, transferCount, hasRailway };
 }
 
+export function buildTravelStages(
+  route: PlannedRoute,
+  origin: UnifiedLocation,
+  destination: UnifiedLocation,
+): TravelStage[] {
+  const raw = route.segments?.length
+    ? route.segments.map((segment, index) => {
+        const isTransit = segment.type === 'bus' || segment.type === 'metro';
+        const kind: TravelStageKind = segment.type === 'walk'
+          ? (index > 0 && route.segments?.slice(0, index).some(s => s.type === 'bus' || s.type === 'metro') ? 'transfer' : 'walk')
+          : segment.type;
+        const line = segment.lineName?.trim();
+        const from = (segment.fromStation || segment.fromStop || '').trim();
+        const to = (segment.toStation || segment.toStop || '').trim();
+        const name = kind === 'transfer'
+          ? `换乘步行${to ? `至${to}` : ''}`
+          : kind === 'walk'
+            ? (segment.instruction?.trim() || `步行路段${to ? `至${to}` : ''}`)
+            : `${kind === 'metro' ? '乘坐地铁' : '乘坐公交'}${line ? ` ${line}` : ''}`;
+        return {
+          id: `${kind}-${index}-${line || segment.instruction || ''}-${from}-${to}`,
+          index,
+          kind,
+          name,
+          distanceMeters: Number.isFinite(segment.distance) && segment.distance! > 0 ? segment.distance! : null,
+          durationSeconds: Number.isFinite(segment.duration) && segment.duration! > 0 ? segment.duration! : null,
+          nextAction: isTransit ? `到达${to || '下车站'}后确认下车` : '按路线继续步行',
+          status: 'pending' as const,
+          startCoord: segment.fromCoord,
+          endCoord: segment.toCoord,
+          lineName: line || undefined,
+          fromStation: from || undefined,
+          toStation: to || undefined,
+          stationCount: segment.stationCount,
+          autoComplete: kind === 'walk' || kind === 'transfer' ? Boolean(segment.toCoord) : false,
+          requiresConfirmation: isTransit,
+        } satisfies TravelStage;
+      })
+    : [{
+        id: 'walk-0-route', index: 0, kind: 'walk', name: `步行至${destination.name || '目的地'}`,
+        distanceMeters: route.distance > 0 ? route.distance : null,
+        durationSeconds: route.duration > 0 ? route.duration : null,
+        nextAction: '步行导航至目的地', status: 'pending' as const,
+        startCoord: origin.lng != null && origin.lat != null ? [origin.lng, origin.lat] : undefined,
+        endCoord: destination.lng != null && destination.lat != null ? [destination.lng, destination.lat] : undefined,
+        path: route.path, autoComplete: true, requiresConfirmation: false,
+      } satisfies TravelStage];
+
+  const merged: TravelStage[] = [];
+  raw.forEach(stage => {
+    const previous = merged[merged.length - 1];
+    if (previous && (previous.kind === 'walk' || previous.kind === 'transfer') && previous.kind === stage.kind) {
+      previous.distanceMeters = previous.distanceMeters != null && stage.distanceMeters != null ? previous.distanceMeters + stage.distanceMeters : previous.distanceMeters ?? stage.distanceMeters;
+      previous.durationSeconds = previous.durationSeconds != null && stage.durationSeconds != null ? previous.durationSeconds + stage.durationSeconds : previous.durationSeconds ?? stage.durationSeconds;
+      previous.name = stage.name || previous.name;
+      previous.endCoord = stage.endCoord || previous.endCoord;
+      previous.autoComplete = previous.autoComplete && stage.autoComplete;
+      return;
+    }
+    merged.push({ ...stage });
+  });
+
+  merged.push({
+    id: 'arrive-final', index: merged.length, kind: 'arrive', name: `到达${destination.name || '目的地'}`,
+    distanceMeters: 0, durationSeconds: 0, nextAction: '确认已到达目的地', status: 'pending',
+    endCoord: destination.lng != null && destination.lat != null ? [destination.lng, destination.lat] : undefined,
+    autoComplete: false, requiresConfirmation: true,
+  });
+  return merged.map((stage, index) => ({ ...stage, index }));
+}
+
+export function createTravelRouteFingerprint(route: PlannedRoute, origin: UnifiedLocation, destination: UnifiedLocation): string {
+  const coords = (location: UnifiedLocation) => `${location.lng ?? ''},${location.lat ?? ''}`;
+  const segments = (route.segments || []).map(segment => [segment.type, segment.lineName, segment.fromStation, segment.toStation, segment.distance, segment.duration].join(':')).join('|');
+  return [route.mode, coords(origin), coords(destination), route.distance, route.duration, segments, route.path?.[0]?.join(','), route.path?.[route.path.length - 1]?.join(',')].join('|');
+}
 /**
- * 公交/地铁规划：调用高德 Transfer，返回全部真实候选方案（供普通公交取第一个、无障碍取全部重排）。
  * 跨城/长途硬门槛（不依赖高德返回结构）：
  *   - 起终点直线距离 > 100km → 拒绝
  *   - 任一方案含铁路/城际段（hasRailway）→ 该方案判定不可用，跳过

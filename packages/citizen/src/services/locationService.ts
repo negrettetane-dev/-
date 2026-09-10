@@ -96,12 +96,20 @@ export function getCurrentLocation(timeout = 10000): Promise<LocatedPosition> {
 export function reverseGeocode(lng: number, lat: number): Promise<string> {
   return loadAMap().then((AMap: any) => new Promise<string>((resolve, reject) => {
     const geocoder = new AMap.Geocoder();
+    let settled = false;
+    const finish = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeoutId);
+      callback();
+    };
+    const timeoutId = window.setTimeout(() => finish(() => reject(new Error('geocode-timeout'))), 8000);
     geocoder.getAddress([lng, lat], (status: string, result: any) => {
       const address = result?.regeocode?.formattedAddress;
       if (status === 'complete' && address) {
-        resolve(address);
+        finish(() => resolve(address));
       } else {
-        reject(new Error('geocode-failed'));
+        finish(() => reject(new Error('geocode-failed')));
       }
     });
   }));
@@ -160,14 +168,22 @@ export function geocodeLocation(keyword: string, city = '北京'): Promise<Geoco
   if (!query) return Promise.reject(new Error('empty-location'));
 
   return loadAMap().then((AMap: any) => new Promise<GeocodedLocation>((resolve, reject) => {
-    const geocoder = new AMap.Geocoder({ city });
+    const geocoder = new AMap.Geocoder(city && city !== '全国' ? { city } : undefined);
+    let settled = false;
+    const finish = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeoutId);
+      callback();
+    };
+    const timeoutId = window.setTimeout(() => finish(() => reject(new Error('geocode-timeout'))), 8000);
     geocoder.getLocation(query, (status: string, result: any) => {
       const item = result?.geocodes?.[0];
       const location = item?.location;
       const lng = Number(location?.lng);
       const lat = Number(location?.lat);
       if (status === 'complete' && isValidCoord(lng, lat)) {
-        resolve({
+        finish(() => resolve({
           name: query,
           address: String(item.formattedAddress || query),
           lng,
@@ -177,9 +193,9 @@ export function geocodeLocation(keyword: string, city = '北京'): Promise<Geoco
           cityCode: item.citycode ? String(item.citycode) : undefined,
           adcode: item.adcode ? String(item.adcode) : undefined,
           district: item.district ? String(item.district) : undefined,
-        });
+        }));
       } else {
-        reject(new Error('location-not-found'));
+        finish(() => reject(new Error('location-not-found')));
       }
     });
   }));

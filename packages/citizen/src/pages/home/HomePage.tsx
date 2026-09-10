@@ -358,7 +358,7 @@ const HomePage: React.FC = () => {
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', background: '#fff7e6', borderBottom: '1px solid #ffe7ba', fontSize: 15 }}>
           <span style={{ fontWeight: 700 }}>👴 关怀模式已开启</span>
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-            <button onClick={() => navigate('/elderly')} style={{ padding: '8px 16px', borderRadius: 10, border: '1px solid #d9a94e', background: '#fff', color: '#8a5a00', fontSize: 14, cursor: 'pointer' }}>返回长辈首页</button>
+            <button onClick={() => navigate('/elderly')} style={{ padding: '8px 16px', borderRadius: 10, border: '1px solid #d9a94e', background: '#fff', color: '#8a5a00', fontSize: 14, cursor: 'pointer' }}>返回关怀首页</button>
             <button onClick={disableElderlyMode} style={{ padding: '8px 16px', borderRadius: 10, border: 'none', background: '#faad14', color: '#fff', fontSize: 14, cursor: 'pointer' }}>退出关怀模式</button>
           </span>
         </div>

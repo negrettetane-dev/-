@@ -28,6 +28,16 @@ const AccessibleRouteCard: React.FC<AccessibleRouteCardProps> = ({ option, activ
   const tone = option.score.levelTone;
   const fmtDuration = (s: number) => (s < 3600 ? `${Math.floor(s / 60)}分钟` : `${Math.floor(s / 3600)}h${Math.floor((s % 3600) / 60)}min`);
 
+  const riskMessage = option.metrics.stairsRiskCount > 0
+    ? `存在 ${option.metrics.stairsRiskCount} 处楼梯风险，可能影响轮椅或婴儿车通行，建议更换方案。`
+    : option.score.level === 'caution'
+      ? option.metrics.unknownFacilityCount > 0
+        ? `未发现明确楼梯风险，但步行距离较长，且有 ${option.metrics.unknownFacilityCount} 个站点设施状态待确认。`
+        : '未发现明确楼梯风险，但步行距离较长，请结合现场情况选择。'
+      : option.metrics.unknownFacilityCount > 0
+        ? `部分无障碍设施信息待确认（${option.metrics.unknownFacilityCount} 个站点未覆盖），请根据现场标识通行。`
+        : '';
+
   return (
     <div className={`${styles.card} ${active ? styles.cardActive : ''}`} onClick={onSelect}>
       {/* 方案名 + 角色 */}
@@ -59,10 +69,12 @@ const AccessibleRouteCard: React.FC<AccessibleRouteCardProps> = ({ option, activ
         </div>
       )}
 
-      {/* 设施信息待确认提示 */}
-      {option.metrics.unknownFacilityCount > 0 && (
-        <div className={styles.unknown}>
-          ⚠ 部分无障碍设施信息待确认（{option.metrics.unknownFacilityCount} 个站点未覆盖）
+      {riskMessage && (
+        <div className={styles.unknown} style={{ color: '#ad6800' }}>
+          ⚠ {riskMessage}
+          {option.metrics.unknownFacilityNames?.length ? (
+            <div style={{ marginTop: 4, fontSize: 12 }}>待确认站点：{option.metrics.unknownFacilityNames.join('、')}</div>
+          ) : null}
         </div>
       )}
 
