@@ -179,7 +179,7 @@
 }
 
 .navTurnText { font-size: 17px; font-weight: 600; }
-.navTurnSub { font-size: 13px; color: rgba(255,255,255,0.6); margin-top: 2px; }
+.navTurnLive { font-size: 11px; color: #52c41a; margin-top: 4px; }
 
 .navStats {
   display: flex; align-items: center;
@@ -212,6 +212,21 @@
   font-size: 11px; color: rgba(255,255,255,0.35);
   text-align: center;
 }
+
+.navStageConfirmBtn {
+  width: 100%;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 9px;
+  background: #1677ff;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.navStageConfirmBtn:disabled { opacity: .6; cursor: wait; }
+.navStageConfirmBtn:focus-visible { outline: 2px solid #91caff; outline-offset: 2px; }
 
 /* ===== 已到达卡片 ===== */
 .navArrivedCard {

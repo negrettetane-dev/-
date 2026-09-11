@@ -41,6 +41,16 @@ export interface NavigationSessionRemote {
   version?: number;
 }
 
+export interface NavigationLocationResponse {
+  accepted?: boolean;
+  offRoute?: boolean;
+  off_route?: boolean;
+  arrivedAtStage?: boolean;
+  arrived_at_stage?: boolean;
+  distanceToStageEndMeters?: number | null;
+  distance_to_stage_end_meters?: number | null;
+}
+
 export interface NavigationSessionResponse {
   sessionId?: string;
   serverSessionId?: string;
@@ -84,8 +94,11 @@ function normalizeStage(stage: any, index: number): TravelStage {
     startCoord: stage.startCoord || stage.start_coord,
     endCoord: stage.endCoord || stage.end_coord,
     lineName: stage.lineName || stage.line_name,
+    lineId: stage.lineId || stage.line_id,
     fromStation: stage.fromStation || stage.from_station,
+    fromStationId: stage.fromStationId || stage.from_station_id,
     toStation: stage.toStation || stage.to_station,
+    toStationId: stage.toStationId || stage.to_station_id,
     stationCount: stage.stationCount ?? stage.station_count,
     autoComplete: Boolean(stage.autoComplete ?? stage.auto_complete),
     requiresConfirmation: Boolean(stage.requiresConfirmation ?? stage.requires_confirmation),
@@ -95,7 +108,8 @@ function normalizeStage(stage: any, index: number): TravelStage {
 export function normalizeNavigationSession(data: NavigationSessionResponse, fallback?: NavigationSessionInput): NavigationSessionRemote {
   const stages = (data.stages || fallback?.stages || []).map(normalizeStage);
   const completedStageIds = data.completedStageIds || data.completed_stage_ids || stages.filter(stage => stage.status === 'completed').map(stage => stage.id);
-  const currentStageIndex = data.currentStageIndex ?? data.current_stage_index ?? Math.max(0, stages.findIndex(stage => !completedStageIds.includes(stage.id)));
+  const rawCurrentStageIndex = data.currentStageIndex ?? data.current_stage_index ?? Math.max(0, stages.findIndex(stage => !completedStageIds.includes(stage.id)));
+  const currentStageIndex = stages.length ? Math.min(Math.max(0, rawCurrentStageIndex), stages.length - 1) : 0;
   return {
     serverSessionId: String(data.serverSessionId || data.sessionId || fallback?.clientSessionId || ''),
     clientSessionId: String(data.clientSessionId || fallback?.clientSessionId || ''),
@@ -139,9 +153,9 @@ export async function getNavigationSession(sessionId: string, fallback?: Navigat
   return normalizeNavigationSession(data, fallback);
 }
 
-export async function patchNavigationProgress(sessionId: string, patch: { currentStageIndex: number; completedStageIds: string[]; status: NavigationServerStatus; completionSource?: string; location?: NavigationLocationInput }): Promise<NavigationSessionRemote> {
+export async function patchNavigationProgress(sessionId: string, patch: { currentStageIndex: number; completedStageIds: string[]; status: NavigationServerStatus; completionSource?: string; location?: NavigationLocationInput }, fallback?: NavigationSessionInput): Promise<NavigationSessionRemote> {
   const data = await apiPatch<NavigationSessionResponse>(`/navigation-sessions/${encodeURIComponent(sessionId)}/progress`, patch);
-  return normalizeNavigationSession(data);
+  return normalizeNavigationSession(data, fallback);
 }
 
 export async function pauseNavigationSession(sessionId: string): Promise<NavigationSessionRemote> {
@@ -156,8 +170,13 @@ export async function endNavigationSession(sessionId: string, reason = 'user_exi
   return normalizeNavigationSession(await apiPost<NavigationSessionResponse>(`/navigation-sessions/${encodeURIComponent(sessionId)}/end`, { reason }));
 }
 
-export async function reportNavigationLocation(sessionId: string, location: NavigationLocationInput, currentStageIndex: number): Promise<void> {
-  await apiPatch(`/navigation-sessions/${encodeURIComponent(sessionId)}/progress`, { location, currentStageIndex });
+export async function reportNavigationLocation(sessionId: string, location: NavigationLocationInput, currentStageIndex: number): Promise<NavigationLocationResponse> {
+  const data = await apiPost<NavigationLocationResponse>(`/navigation-sessions/${encodeURIComponent(sessionId)}/locations`, {
+    eventId: typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `location_${Date.now()}`,
+    stageIndex: currentStageIndex,
+    ...location,
+  });
+  return data;
 }
 
 export async function reportNavigationOffRoute(sessionId: string, payload: { stageId: string; location: NavigationLocationInput; distanceFromRouteMeters?: number }): Promise<NavigationSessionRemote | null> {

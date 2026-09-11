@@ -83,6 +83,40 @@ function getTransportLabel(type?: string): string {
   return '';
 }
 
+function getStageTransportIcon(kind?: string): string {
+  if (kind === 'walk' || kind === 'transfer') return '🚶';
+  if (kind === 'metro') return '🚇';
+  if (kind === 'bus') return '🚌';
+  if (kind === 'bike') return '🚲';
+  if (kind === 'drive') return '🚗';
+  return '📍';
+}
+
+function getNearestPathIndex(path: [number, number][], point?: [number, number]): number | null {
+  if (!point || !path.length) return null;
+  let nearestIndex = 0;
+  let nearestDistance = Number.POSITIVE_INFINITY;
+  path.forEach((candidate, index) => {
+    const distance = distanceBetweenMeters({ lng: candidate[0], lat: candidate[1] }, { lng: point[0], lat: point[1] });
+    if (distance < nearestDistance) { nearestDistance = distance; nearestIndex = index; }
+  });
+  return nearestIndex;
+}
+
+function getStageMapPath(stage: { path?: [number, number][]; startCoord?: [number, number]; endCoord?: [number, number] }, routePath: [number, number][]): [number, number][] {
+  const startIndex = getNearestPathIndex(routePath, stage.startCoord);
+  const endIndex = getNearestPathIndex(routePath, stage.endCoord);
+  if (startIndex != null && endIndex != null && startIndex !== endIndex) {
+    const from = Math.min(startIndex, endIndex);
+    const to = Math.max(startIndex, endIndex);
+    const slice = routePath.slice(from, to + 1);
+    if (slice.length >= 2) return startIndex <= endIndex ? slice : slice.reverse();
+  }
+  if (stage.path && stage.path.length >= 2) return stage.path;
+  if (stage.startCoord && stage.endCoord) return [stage.startCoord, stage.endCoord];
+  return routePath;
+}
+
 const RouteResultPage: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -178,6 +212,8 @@ const RouteResultPage: React.FC = () => {
   const [navMode, setNavMode] = useState<TravelMode | null>(null);
   const [navDistance, setNavDistance] = useState(0);
   const [navRouteError, setNavRouteError] = useState('');
+  const [stageArrivalPending, setStageArrivalPending] = useState(false);
+  const [stageActionBusy, setStageActionBusy] = useState(false);
   const [transitRealtime, setTransitRealtime] = useState<TransitRealtimeStatus | null>(null);
   const isLoggedIn = useAuthStore(state => state.isLoggedIn);
 
@@ -198,6 +234,7 @@ const RouteResultPage: React.FC = () => {
   const [arrivedTrip, setArrivedTrip] = useState<Trip | null>(null);
   const hasCompletedTripRef = useRef(false);
   const navDistanceRef = useRef(0);
+  const navDurationRef = useRef(0);
   const navigationLocationCleanupRef = useRef<(() => void) | null>(null);
   const walkArrivalCountRef = useRef(0);
 
@@ -353,11 +390,11 @@ const RouteResultPage: React.FC = () => {
 
     // 公交：真实候选方案按普通出行目标重排，首个候选作为默认路线
     const planBus = async (): Promise<PlannedRoute> => {
-      await resolveWp();
-      if (waypoints.some(point => point.trim())) {
-        throw new Error('TRANSIT_WAYPOINTS_UNSUPPORTED');
+      const waypointCoords = await resolveWp();
+      if (waypoints.some(point => point.trim()) && waypointCoords.length !== waypoints.filter(point => point.trim()).length) {
+        throw new Error('TRANSIT_WAYPOINT_RESOLVE_FAILED');
       }
-      const candidates = await planTransitCandidates(s, e, transitCity);
+      const candidates = await planTransitCandidates(s, e, transitCity, waypointCoords);
       const options = buildTransitRouteOptions(candidates);
       if (!options.length) throw new Error('transit-no-valid-segment');
       setTransitOptions(options);
@@ -628,6 +665,10 @@ const RouteResultPage: React.FC = () => {
     if (!stage.autoComplete || !stage.endCoord) return;
     navigationLocationCleanupRef.current = watchNavigationLocation((position) => {
       if (position.accuracy > 100) return;
+      if (position.timestamp - lastReportedLocationRef.current >= 10000) {
+        lastReportedLocationRef.current = position.timestamp;
+        void reportStageLocation(position);
+      }
       const distance = distanceBetweenMeters({ lng: position.lng, lat: position.lat }, { lng: stage.endCoord![0], lat: stage.endCoord![1] });
       if (distance <= 60) walkArrivalCountRef.current += 1;
       else walkArrivalCountRef.current = 0;
@@ -656,6 +697,7 @@ const RouteResultPage: React.FC = () => {
       const level = distance <= 80 ? 'arriving' : distance <= 220 ? 'near' : null;
       if (level && !stageSnapshot.reminderKeys.includes(`${stage.id}:${level}`)) {
         addStageReminder(`${stage.id}:${level}`);
+        if (level === 'arriving') setStageArrivalPending(true);
         setNavRouteError(level === 'arriving' ? `已接近${stage.toStation || '下车站'}，请准备下车并确认` : `即将到达${stage.toStation || '下车站'}`);
       }
     });
@@ -700,15 +742,82 @@ const RouteResultPage: React.FC = () => {
     }
     setNavRouteError('');
 
-    // 阶段导航由时间轴和定位推进，不能让旧的整条路线模拟计时器直接完成全程。
+    // 阶段导航保留车辆 Marker 和运动轨迹，但不让旧逻辑直接把整条路线判定为到达。
     if (stageSnapshot) {
       Object.entries(routePolylineRefs.current).forEach(([m, pl]) => {
         if (pl) pl.setOptions({ visible: m === navMode });
       });
+      if (moveTimerRef.current) { clearInterval(moveTimerRef.current); moveTimerRef.current = null; }
+      if (carMarkerRef.current) { map.remove(carMarkerRef.current); carMarkerRef.current = null; }
+      const AMap = (window as any).AMap;
+      if (!AMap) return;
+      const stage = stageSnapshot.stages[stageSnapshot.currentStageIndex];
+      if (stageSnapshot.navStatus === 'completed' || stageSnapshot.navStatus === 'ended') return;
+      const stagePath = stage?.kind === 'arrive' ? null : getStageMapPath(stage || {}, navRoute.path);
+      if (stage?.kind === 'arrive') {
+        void completeStage('system');
+        setNavStatus('arrived');
+        navStatusRef.current = 'arrived';
+        return;
+      }
+      if (!stagePath?.length) return;
+      const modeIcon = getStageTransportIcon(stage?.kind);
+      const markerColor = accessibleActive ? '#722ed1' : MODE_META[navMode].color;
+      const carMarker = new AMap.Marker({
+        position: stagePath[0], anchor: 'center',
+        icon: new AMap.Icon({
+          image: 'data:image/svg+xml,' + encodeURIComponent(
+            `<svg xmlns="http://www.w3.org/2000/svg" width="44" height="44"><circle cx="22" cy="22" r="20" fill="${markerColor}" stroke="#fff" stroke-width="3"/><text x="22" y="29" text-anchor="middle" fill="#fff" font-size="20">${modeIcon}</text></svg>`
+          ), size: new AMap.Size(44, 44),
+        }),
+      });
+      map.add(carMarker);
+      carMarkerRef.current = carMarker;
+      movePathRef.current = stagePath;
+      pathIdxRef.current = 0;
+      navDistanceRef.current = Math.round(stage?.distanceMeters || navRoute.distance);
+      navDurationRef.current = Math.round(stage?.durationSeconds || navRoute.duration);
+      setNavDistance(navDistanceRef.current);
       map.setZoom(16);
       map.setPitch(0);
-      map.setCenter(resolvedStart);
-      return;
+      map.setRotation(0);
+      map.setCenter(stagePath[0]);
+      map.resize?.();
+      const moveTimer = setInterval(() => {
+        const path = movePathRef.current;
+        if (!path.length || !carMarkerRef.current) return;
+        const nextIndex = pathIdxRef.current + 1;
+        if (nextIndex >= path.length) {
+          clearInterval(moveTimer);
+          if (moveTimerRef.current === moveTimer) moveTimerRef.current = null;
+          const end = path[path.length - 1];
+          carMarkerRef.current.setPosition(end);
+          map.setCenter(end);
+          setNavDistance(0);
+          if (stage?.kind === 'walk' || stage?.kind === 'transfer') {
+            void completeStage('system');
+          } else if (stage?.kind === 'bus' || stage?.kind === 'metro') {
+            setStageArrivalPending(true);
+            setNavRouteError(`已到达${stage.toStation || '下车站'}，请确认下车`);
+          }
+          return;
+        }
+        pathIdxRef.current = nextIndex;
+        const next = path[pathIdxRef.current];
+        carMarkerRef.current.setPosition(next);
+        map.setCenter(next);
+        setNavDistance(Math.max(0, navDistanceRef.current - Math.ceil((stage?.distanceMeters || navRoute.distance) / path.length)));
+        navDurationRef.current = Math.max(0, navDurationRef.current - 1);
+      }, 250);
+      moveTimerRef.current = moveTimer;
+      return () => {
+        Object.values(routePolylineRefs.current).forEach(pl => { if (pl) pl.setOptions({ visible: true }); });
+        if (moveTimerRef.current === moveTimer) { clearInterval(moveTimer); moveTimerRef.current = null; }
+        if (carMarkerRef.current && map) map.remove(carMarkerRef.current);
+        carMarkerRef.current = null;
+        movePathRef.current = [];
+        pathIdxRef.current = 0;
+      };
     }
 
     // 导航时只显示当前路线，隐藏其他方案的 Polyline
@@ -782,7 +891,7 @@ const RouteResultPage: React.FC = () => {
       movePathRef.current = [];
       pathIdxRef.current = 0;
     };
-  }, [navActive, navMode, mapReady]);
+  }, [navActive, navMode, mapReady, stageSnapshot?.currentStageIndex, stageSnapshot?.navStatus]);
 
   // ===== 到达处理：停止一切导航逻辑，只保留地图/终点Marker/路线 =====
   // 到达判定：车辆走完路径（剩余距离 ≤ ARRIVAL_THRESHOLD_METERS=50m）。幂等。
@@ -805,6 +914,27 @@ const RouteResultPage: React.FC = () => {
         .catch(() => undefined);
     }
   };
+
+  const completeCurrentStage = async () => {
+    const current = stageSnapshot?.stages[stageSnapshot.currentStageIndex];
+    if (!current || stageSnapshot?.navStatus !== 'navigating' || stageActionBusy) return;
+    setStageActionBusy(true);
+    try {
+      if (current.kind === 'arrive') await confirmStage();
+      else await completeStage(current.requiresConfirmation ? 'confirmation' : 'manual');
+      setStageArrivalPending(false);
+      setNavRouteError('');
+    } finally {
+      setStageActionBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    if (stageSnapshot?.navStatus !== 'completed') return;
+    setStageArrivalPending(false);
+    setNavRouteError('');
+    handleArrived();
+  }, [stageSnapshot?.navStatus]);
 
   // ===== 开始导航：先校验路线有效性（最终一道防线），再置状态机 + 登录用户创建 Trip =====
   const startNavigation = (mode: TravelMode) => {
@@ -1144,10 +1274,8 @@ const RouteResultPage: React.FC = () => {
               navStatus={stageSnapshot.navStatus}
               syncState={stageSnapshot.syncState}
               transitStatus={transitRealtime}
-              onComplete={() => {
-                if (stageSnapshot.stages[stageSnapshot.currentStageIndex]?.kind === 'arrive') confirmStage();
-                else completeStage('manual');
-              }}
+              actionBusy={stageActionBusy}
+              onComplete={completeCurrentStage}
               onResume={resumeStageNavigation}
             />
             </div>
@@ -1174,18 +1302,19 @@ const RouteResultPage: React.FC = () => {
               <div className={styles.navNextAction}>
                 <span className={styles.navTurnIcon}>↗️</span>
                 <div>
-                  <div className={styles.navTurnText}>沿当前路线行驶</div>
-                  <div className={styles.navTurnSub}>{Math.round(navDistance)}m 后继续前行</div>
+                  <div className={styles.navTurnText}>{navRouteError ? '已到达当前站点' : '沿当前路线行驶'}</div>
+                  <div className={styles.navTurnSub}>{navRouteError ? '请确认下车，进入下一阶段' : `${Math.round(navDistance)}m 后继续前行`}</div>
+              <div className={styles.navTurnLive}>当前阶段 · 实时更新</div>
                 </div>
               </div>
               <div className={styles.navStats}>
                 <div className={styles.navStatItem}>
-                  <span className={styles.navStatVal}>{(navDistance / 1000).toFixed(1)}</span>
+                  <span className={styles.navStatVal}>{navRouteError ? '—' : (navDistance / 1000).toFixed(1)}</span>
                   <span className={styles.navStatLabel}>剩余 km</span>
                 </div>
                 <div className={styles.navStatDivider} />
                 <div className={styles.navStatItem}>
-                  <span className={styles.navStatVal}>{navRoute ? formatDuration(navRoute.duration) : '--'}</span>
+                  <span className={styles.navStatVal}>{navRouteError ? '—' : formatDuration(navDurationRef.current)}</span>
                   <span className={styles.navStatLabel}>预计到达</span>
                 </div>
                 <div className={styles.navStatDivider} />
@@ -1197,9 +1326,21 @@ const RouteResultPage: React.FC = () => {
                 </div>
               </div>
               {navRouteError ? (
-                <div style={{ fontSize: 12, color: '#faad14', textAlign: 'center', padding: '6px 8px', background: 'rgba(250,173,20,0.1)', borderRadius: 6 }}>
-                  ⚠️ {navRouteError}
-                </div>
+                <>
+                  <div style={{ fontSize: 12, color: '#faad14', textAlign: 'center', padding: '6px 8px', background: 'rgba(250,173,20,0.1)', borderRadius: 6 }}>
+                    ⚠️ {navRouteError}
+                  </div>
+                  {stageArrivalPending && stageSnapshot?.navStatus === 'navigating' && (
+                    <button
+                      type="button"
+                      className={styles.navStageConfirmBtn}
+                      disabled={stageActionBusy}
+                      onClick={completeCurrentStage}
+                    >
+                      {stageActionBusy ? '处理中…' : '确认已到站，进入下一阶段'}
+                    </button>
+                  )}
+                </>
               ) : (
                 <div className={styles.navSimTip}>📍 {navMode ? MODE_META[navMode].label : ''}模式 · 高德路线 + 3D 导航</div>
               )}

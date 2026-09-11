@@ -6,7 +6,7 @@ import AIAssistant from '../../components/AIAssistant';
 import TravelModeSelector, { normalizeTravelMode, TRAVEL_MODE_OPTIONS, type TravelModeOption } from '../../components/travel/TravelModeSelector';
 import styles from './HomePage.module.css';
 import { apiGet } from '../../services/apiClient';
-import { planAmapRoute, planRouteCandidates, resolveRouteLocations, resolveWaypointCoords } from '../../services/routePlanningService';
+import { planAmapRoute, planRouteCandidates, planTransitCandidates, buildTransitRouteOptions, resolveRouteLocations, resolveWaypointCoords } from '../../services/routePlanningService';
 import { useTravelLocationStore } from '../../stores/travelLocationStore';
 import { useTravelPlanStore } from '../../stores/travelPlanStore';
 import DepartureTimeSelect from '../../components/travel/DepartureTimeSelect';
@@ -197,12 +197,17 @@ const HomePage: React.FC = () => {
         const routeWaypointCoords: [number, number][] = waypoints.length
           ? (await resolveWaypointCoords(waypoints, origin.city || origin.province || null)).map(item => item.coord)
           : [];
-        if (routeMode === 'bus' && waypoints.some(point => point.trim())) {
-          throw new Error('TRANSIT_WAYPOINTS_UNSUPPORTED');
-        }
         if (routeMode === 'bus') {
-          return planAmapRoute(routeMode, start, end, origin.city || origin.province || null, routeWaypointCoords)
-            .then(route => ({ route, waypointCoords: routeWaypointCoords }));
+          const namedWaypoints = waypoints.filter(point => point.trim());
+          if (namedWaypoints.length && routeWaypointCoords.length !== namedWaypoints.length) {
+            throw new Error('TRANSIT_WAYPOINT_RESOLVE_FAILED');
+          }
+          return planTransitCandidates(start, end, origin.city || origin.province || null, routeWaypointCoords)
+            .then(candidates => {
+              const route = buildTransitRouteOptions(candidates)[0]?.route || null;
+              if (!route) throw new Error('EMPTY_ROUTE');
+              return { route, waypointCoords: routeWaypointCoords };
+            });
         }
         return planRouteCandidates(routeMode, start, end, origin.city || origin.province || null, routeWaypointCoords)
           .then(candidates => (candidates[0]?.route || null))
@@ -258,6 +263,8 @@ const HomePage: React.FC = () => {
             ? '起终点距离过远，建议换乘公交或驾车'
             : rawMsg.includes('TOO_MANY_WAYPOINTS')
             ? '驾车路线最多支持 16 个途经点，请删除部分途经点后重试'
+          : rawMsg.includes('TRANSIT_WAYPOINT_RESOLVE_FAILED')
+            ? '有途经点无法识别，请检查途经点名称'
           : rawMsg.includes('TRANSIT_WAYPOINTS_UNSUPPORTED')
             ? '公交/地铁路线暂不支持途经点，请删除途经点后继续'
           : rawMsg.includes('CROSS_CITY_TRANSIT_UNSUPPORTED')

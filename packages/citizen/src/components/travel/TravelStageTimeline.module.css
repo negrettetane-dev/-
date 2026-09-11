@@ -1,5 +1,5 @@
-.timeline { background: rgba(255,255,255,.96); border-radius: 16px; padding: 16px; margin: 12px; max-height: 46vh; overflow: auto; box-shadow: 0 6px 24px rgba(0,0,0,.18); }
-.stage { display: flex; min-height: 62px; }
+.timeline { background: rgba(255,255,255,.82); border: 1px solid rgba(255,255,255,.72); backdrop-filter: blur(12px); border-radius: 16px; padding: 12px 14px; margin: 8px 12px; max-height: 29vh; overflow: auto; box-shadow: 0 6px 24px rgba(0,0,0,.16); }
+.stage { display: flex; min-height: 44px; }
 .rail { width: 30px; display: flex; flex-direction: column; align-items: center; flex-shrink: 0; }
 .dot { width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; background: #bfbfbf; font-size: 12px; font-weight: 700; z-index: 1; }
 .line { width: 2px; flex: 1; background: #e5e5e5; }
@@ -19,4 +19,4 @@
 .stageCompleted .dot { background: #52c41a; }
 .stageCompleted .content { color: #8c8c8c; }
 .stageCompleted .line { background: #b7eb8f; }
-@media (max-width: 600px) { .timeline { margin: 8px; padding: 12px; max-height: 52vh; } }
+@media (max-width: 600px) { .timeline { margin: 6px 8px; padding: 10px 12px; max-height: 32vh; } .content { padding-bottom: 10px; } .header { font-size: 14px; } }

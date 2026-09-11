@@ -246,7 +246,7 @@ const AccessibilityManagePage: React.FC = () => {
           <DeploymentUnitOutlined style={{ marginRight: 8 }} />
           无障碍设施管理
         </h2>
-        <p className="page-desc">维护地铁/公交站点的无障碍入口、电梯、坡道与障碍状态；平民端无障碍路线据此计算</p>
+        <p className="page-desc">维护地铁/公交站点的无障碍入口、电梯、坡道与障碍状态；状态为人工维护记录，未表示自动实时核验；平民端无障碍路线据此计算</p>
       </div>
 
       <div className="filter-bar">

@@ -139,10 +139,13 @@ export const useTravelStageNavigationStore = create<TravelStageNavigationState>(
         status: optimistic.navStatus,
         completionSource: source,
         location,
-      });
+      }, makeInput(optimistic));
       const synced = snapshotFromRemote(remote, makeInput(optimistic), optimistic);
-      writeSnapshot(synced);
-      set({ snapshot: synced });
+      const merged = synced.currentStageIndex < optimistic.currentStageIndex
+        ? { ...synced, currentStageIndex: optimistic.currentStageIndex, stages: optimistic.stages, navStatus: optimistic.navStatus }
+        : synced;
+      writeSnapshot(merged);
+      set({ snapshot: merged });
     } catch (error) {
       set({ snapshot: syncFailure(optimistic, error) });
     }

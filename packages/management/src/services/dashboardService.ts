@@ -8,6 +8,8 @@ export interface DistrictCongestionData {
   trend: 'up' | 'down' | 'stable';
 }
 
+export type DashboardDataSource = 'pattern' | 'backend' | 'third_party';
+
 export interface RealTimeMetrics {
   timestamp: number;
   activeVehicles: number;
@@ -16,6 +18,7 @@ export interface RealTimeMetrics {
   incidentCount: number;
   congestedRoadCount: number;
   deviceOnlineRate: number;
+  dataSource: DashboardDataSource;
 }
 
 export const dashboardService = {
@@ -36,6 +39,7 @@ export const dashboardService = {
       incidentCount: latest?.incidentCount ?? alerts.length,
       congestedRoadCount: roads.filter(road => road.congestionLevel === 'congested' || road.congestionLevel === 'blocked').length,
       deviceOnlineRate: metrics?.deviceOnlineRate ?? 0,
+      dataSource: 'pattern' as const,
     };
   },
   getHourlyTraffic: () => apiGet<HourlyMetrics[]>('/dashboard/hourly'),

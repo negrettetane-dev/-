@@ -1,7 +1,7 @@
 import type { UnifiedLocation } from '../stores/travelLocationStore';
 import type { PlannedRoute } from '../services/routePlanningService';
 
-export type TravelStageKind = 'walk' | 'bus' | 'metro' | 'transfer' | 'arrive';
+export type TravelStageKind = 'walk' | 'bus' | 'metro' | 'transfer' | 'drive' | 'bike' | 'arrive';
 export type TravelStageStatus = 'pending' | 'current' | 'completed';
 export type StageCompletionSource = 'manual' | 'location' | 'confirmation' | 'system';
 
@@ -20,8 +20,11 @@ export interface TravelStage {
   endCoord?: [number, number];
   path?: [number, number][];
   lineName?: string;
+  lineId?: string;
   fromStation?: string;
+  fromStationId?: string;
   toStation?: string;
+  toStationId?: string;
   stationCount?: number;
   autoComplete: boolean;
   requiresConfirmation: boolean;

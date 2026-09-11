@@ -9,6 +9,9 @@ import type { TravelStage, TravelStageKind } from '../types/travelStage';
 export interface SegmentData {
   type: 'walk' | 'metro' | 'bus';
   lineName?: string;
+  lineId?: string;
+  fromStationId?: string;
+  toStationId?: string;
   fromStation?: string;
   toStation?: string;
   fromStop?: string;
@@ -21,6 +24,7 @@ export interface SegmentData {
   instruction?: string;
   fromCoord?: [number, number];
   toCoord?: [number, number];
+  path?: [number, number][];
 }
 
 export interface PlannedRoute {
@@ -339,6 +343,7 @@ export function parseTransitPlan(plan: any): ParsedTransitPlan {
         instruction: text ? String(text) : `步行 ${formatDistance(dist)}`,
         duration: Number(walk.duration ?? segment?.time ?? segment?.duration ?? 0),
         distance: dist,
+        path: normalizePath(walk.path ?? segment?.path),
       };
       if (hasSegmentContent(item) || item.instruction) segments.push(item);
       mergedSegmentPath.push(...normalizePath(walk.path));
@@ -370,6 +375,7 @@ export function parseTransitPlan(plan: any): ParsedTransitPlan {
         distance: Number(segment?.distance ?? transit?.distance ?? line?.distance ?? 0) || 0,
         fromCoord: toLngLatTuple(line?.departure_stop?.location ?? line?.departureStop?.location ?? transit?.on_station?.location ?? transit?.onStation?.location) || undefined,
         toCoord: toLngLatTuple(line?.arrival_stop?.location ?? line?.arrivalStop?.location ?? transit?.off_station?.location ?? transit?.offStation?.location) || undefined,
+        path: normalizePath(line?.path ?? line?.polyline ?? transit?.path ?? segment?.bus?.path),
       };
       if (hasSegmentContent(item)) segments.push(item);
       const linePath = normalizePath(line?.path ?? line?.polyline ?? transit?.path ?? segment?.bus?.path);
@@ -402,7 +408,7 @@ export function parseTransitPlan(plan: any): ParsedTransitPlan {
   const transferCount = Math.max(0, transitSegments.length - 1);
 
   // 路径：优先 plan.path（整条方案），否则用分段合并路径
-  const path = planPath.length ? planPath : mergedSegmentPath;
+  const path = mergedSegmentPath.length >= 2 ? mergedSegmentPath : planPath;
   return { segments, path, walkingDistance, transferCount, hasRailway };
 }
 
@@ -414,7 +420,7 @@ export function buildTravelStages(
   const raw = route.segments?.length
     ? route.segments.map((segment, index) => {
         const isTransit = segment.type === 'bus' || segment.type === 'metro';
-        const kind: TravelStageKind = segment.type === 'walk'
+        const kind: TravelStageKind = route.mode === 'drive' ? 'drive' : route.mode === 'bike' ? 'bike' : segment.type === 'walk'
           ? (index > 0 && route.segments?.slice(0, index).some(s => s.type === 'bus' || s.type === 'metro') ? 'transfer' : 'walk')
           : segment.type;
         const line = segment.lineName?.trim();
@@ -436,19 +442,23 @@ export function buildTravelStages(
           status: 'pending' as const,
           startCoord: segment.fromCoord,
           endCoord: segment.toCoord,
+          path: segment.path?.length ? segment.path : segment.fromCoord && segment.toCoord ? [segment.fromCoord, segment.toCoord] : undefined,
           lineName: line || undefined,
+          lineId: (segment as SegmentData & { lineId?: string }).lineId,
           fromStation: from || undefined,
+          fromStationId: (segment as SegmentData & { fromStationId?: string }).fromStationId,
           toStation: to || undefined,
+          toStationId: (segment as SegmentData & { toStationId?: string }).toStationId,
           stationCount: segment.stationCount,
           autoComplete: kind === 'walk' || kind === 'transfer' ? Boolean(segment.toCoord) : false,
           requiresConfirmation: isTransit,
         } satisfies TravelStage;
       })
     : [{
-        id: 'walk-0-route', index: 0, kind: 'walk', name: `步行至${destination.name || '目的地'}`,
+        id: 'walk-0-route', index: 0, kind: route.mode === 'drive' ? 'drive' : route.mode === 'bike' ? 'bike' : 'walk', name: `步行至${destination.name || '目的地'}`,
         distanceMeters: route.distance > 0 ? route.distance : null,
         durationSeconds: route.duration > 0 ? route.duration : null,
-        nextAction: '步行导航至目的地', status: 'pending' as const,
+        nextAction: route.mode === 'drive' ? '驾车前往目的地' : route.mode === 'bike' ? '骑行前往目的地' : '步行导航至目的地', status: 'pending' as const,
         startCoord: origin.lng != null && origin.lat != null ? [origin.lng, origin.lat] : undefined,
         endCoord: destination.lng != null && destination.lat != null ? [destination.lng, destination.lat] : undefined,
         path: route.path, autoComplete: true, requiresConfirmation: false,
@@ -462,6 +472,7 @@ export function buildTravelStages(
       previous.durationSeconds = previous.durationSeconds != null && stage.durationSeconds != null ? previous.durationSeconds + stage.durationSeconds : previous.durationSeconds ?? stage.durationSeconds;
       previous.name = stage.name || previous.name;
       previous.endCoord = stage.endCoord || previous.endCoord;
+      previous.path = previous.path?.length && stage.path?.length ? [...previous.path, ...stage.path] : previous.path || stage.path;
       previous.autoComplete = previous.autoComplete && stage.autoComplete;
       return;
     }
@@ -493,8 +504,13 @@ export async function planTransitCandidates(
   start: [number, number],
   end: [number, number],
   city?: string | null,
+  waypoints?: [number, number][],
 ): Promise<TransitCandidate[]> {
-  if (haversineKm(start, end) > CROSS_CITY_TRANSIT_KM) {
+  const validWaypoints = (waypoints || []).filter(wp => Array.isArray(wp) && wp.length === 2 && Number.isFinite(wp[0]) && Number.isFinite(wp[1]));
+  const points: [number, number][] = [start, ...validWaypoints, end];
+  const distinctPoints = points.filter((point, index) => index === 0 || haversineKm(point, points[index - 1]) > 0.02);
+  if (distinctPoints.length < 2) throw new Error('EMPTY_ROUTE');
+  if (distinctPoints.some((point, index) => index > 0 && haversineKm(distinctPoints[index - 1], point) > CROSS_CITY_TRANSIT_KM)) {
     throw new Error('CROSS_CITY_TRANSIT_UNSUPPORTED');
   }
   const AMap = await withTimeout(loadAMap(), 'AMap load');
@@ -515,7 +531,7 @@ export async function planTransitCandidates(
     { policy: 'least-walk', amapPolicy: AMap.TransferPolicy.LEAST_WALK },
   ];
 
-  const searchByPolicy = (policy: TransitPolicy, amapPolicy: any): Promise<TransitCandidate | null> => {
+  const searchOne = (from: [number, number], to: [number, number], policy: TransitPolicy, amapPolicy: any): Promise<TransitCandidate | null> => {
     const transferOptions: any = { policy: amapPolicy, nightflag: false };
     if (transferCity) transferOptions.city = transferCity;
     return withTimeout(new Promise<TransitCandidate | null>((resolve, reject) => {
@@ -527,43 +543,50 @@ export async function planTransitCandidates(
               return;
             }
             const transfer = new AMap.Transfer(transferOptions);
-            transfer.search(startLngLat, endLngLat, (status: string, data: any) => {
-              if (status !== 'complete' || !data?.plans?.length) {
-                resolve(null);
-                return;
-              }
+            transfer.search(new AMap.LngLat(from[0], from[1]), new AMap.LngLat(to[0], to[1]), (status: string, data: any) => {
+              if (status !== 'complete' || !data?.plans?.length) { resolve(null); return; }
               const valid = (data.plans as any[]).map(plan => {
                 const parsed = parseTransitPlan(plan);
                 if (parsed.hasRailway || parsed.path.length < 2) return null;
-                const hasValidSegment = parsed.segments.some(s => s.type === 'bus' || s.type === 'metro' || s.type === 'walk');
-                if (!hasValidSegment) return null;
+                if (!parsed.segments.some(s => s.type === 'bus' || s.type === 'metro' || s.type === 'walk')) return null;
+                const segments = parsed.segments.map(segment => {
+                  const path = segment.path?.length ? segment.path : segment.fromCoord && segment.toCoord ? [segment.fromCoord, segment.toCoord] : undefined;
+                  return { ...segment, fromCoord: segment.fromCoord || path?.[0] || from, toCoord: segment.toCoord || path?.[path.length - 1] || to, path };
+                });
                 return {
-                  plan,
-                  policy,
-                  segments: parsed.segments,
-                  walkingDistance: parsed.walkingDistance,
-                  transferCount: parsed.transferCount,
-                  route: {
-                    mode: 'bus' as const,
-                    distance: Number(plan.distance) || 0,
-                    duration: Number(plan.time) || 0,
-                    path: parsed.path,
-                    polyline: parsed.path,
-                    segments: parsed.segments,
-                    cost: Number(plan.cost) || 0,
-                  },
+                  plan, policy, segments, walkingDistance: parsed.walkingDistance, transferCount: parsed.transferCount,
+                  route: { mode: 'bus' as const, distance: Number(plan.distance) || 0, duration: Number(plan.time) || 0, path: parsed.path, polyline: parsed.path, segments, cost: Number(plan.cost) || 0 },
                 } satisfies TransitCandidate;
               }).filter(candidate => candidate !== null) as TransitCandidate[];
               resolve(valid[0] || null);
             });
-          } catch (e) {
-            reject(e instanceof Error ? e : new Error(String(e)));
-          }
+          } catch (error) { reject(error instanceof Error ? error : new Error(String(error))); }
         });
-      } catch (e) {
-        reject(e instanceof Error ? e : new Error(String(e)));
-      }
+      } catch (error) { reject(error instanceof Error ? error : new Error(String(error))); }
     }), `Transit ${policy}`);
+  };
+
+  const searchByPolicy = async (policy: TransitPolicy, amapPolicy: any): Promise<TransitCandidate | null> => {
+    const parts: TransitCandidate[] = [];
+    for (let index = 0; index < distinctPoints.length - 1; index += 1) {
+      const part = await searchOne(distinctPoints[index], distinctPoints[index + 1], policy, amapPolicy);
+      if (!part) return null;
+      parts.push(part);
+    }
+    const segments = parts.flatMap(part => part.segments);
+    const path = parts.flatMap((part, index) => index === 0 ? part.route.path : part.route.path.slice(1));
+    const route = {
+      mode: 'bus' as const,
+      distance: parts.reduce((sum, part) => sum + part.route.distance, 0),
+      duration: parts.reduce((sum, part) => sum + part.route.duration, 0),
+      path, polyline: path, segments,
+      cost: parts.reduce((sum, part) => sum + (part.route.cost || 0), 0),
+    };
+    return {
+      plan: parts.map(part => part.plan), policy, segments, route,
+      walkingDistance: parts.reduce((sum, part) => sum + part.walkingDistance, 0),
+      transferCount: parts.reduce((sum, part) => sum + part.transferCount, 0),
+    };
   };
 
   const results = await Promise.all(policyMap.map(({ policy, amapPolicy }) => searchByPolicy(policy, amapPolicy)));
@@ -701,7 +724,7 @@ export async function planAmapRoute(
 
   if (mode === 'bus') {
     try {
-      const candidates = await planTransitCandidates(start, end, city);
+      const candidates = await planTransitCandidates(start, end, city, validWaypoints);
       return candidates[0].route;
     } catch (error) {
       // 高德 Transfer 失败（开发隧道/白名单未生效、服务限流、或该起终点无公交方案）。

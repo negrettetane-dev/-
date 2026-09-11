@@ -170,12 +170,18 @@ export function getRedemptionRecords(): any[] { return get<any[]>('redemptions',
 
 // ====== 管理员 ======
 
+const DEFAULT_ADMIN_USERS: AdminUser[] = [
+  { id:'a1', username:'admin', realName:'系统管理员', role:'super_admin', department:'信息中心', phone:'13800000001', email:'admin@zhitu.com', status:'active', lastLogin:Date.now() },
+  { id:'a2', username:'handler', realName:'张伟', role:'event_handler', department:'运营部', phone:'13800000002', email:'zhangwei@zhitu.com', status:'active', lastLogin:Date.now() },
+  { id:'a3', username:'content', realName:'李明', role:'content_admin', department:'宣传部', phone:'13800000003', email:'liming@zhitu.com', status:'active', lastLogin:Date.now() },
+];
+
 export function getAdminUsers(): AdminUser[] {
-  return get<AdminUser[]>('admin_users', [
-    { id:'a1', username:'admin', realName:'系统管理员', role:'super_admin', department:'信息中心', phone:'13800000001', email:'admin@zhitu.com', status:'active', lastLogin:Date.now() },
-    { id:'a2', username:'handler', realName:'张伟', role:'event_handler', department:'运营部', phone:'13800000002', email:'zhangwei@zhitu.com', status:'active', lastLogin:Date.now() },
-    { id:'a3', username:'content', realName:'李明', role:'content_admin', department:'宣传部', phone:'13800000003', email:'liming@zhitu.com', status:'active', lastLogin:Date.now() },
-  ]);
+  return get<AdminUser[]>('admin_users', DEFAULT_ADMIN_USERS);
+}
+
+export function setAdminUsers(users: AdminUser[]): void {
+  set('admin_users', users);
 }
 
 // ====== 操作日志 ======
