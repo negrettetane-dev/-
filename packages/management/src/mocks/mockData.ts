@@ -133,79 +133,106 @@ export function generateDistrictCongestion() {
 }
 
 // ---- Traffic incidents ----
-export interface MockIncident {
+export interface IncidentProcessLog {
   id: string;
-  source: 'ai_detection' | 'citizen_report' | 'patrol' | 'sensor';
-  type: string;
-  title: string;
-  description: string;
-  position: [number, number];
-  roadName: string;
-  severity: 'normal' | 'serious' | 'critical';
-  status: 'new' | 'dispatched' | 'processing' | 'resolved' | 'archived';
-  assignedTo?: string;
-  createTime: number;
-  resolveTime?: number;
-  images: string[];
+  time: number;
+  action: string;
+  operator: string;
+  fromStatus?: string;
+  toStatus?: string;
+  detail: string;
 }
 
-const INCIDENT_TYPES = [
-  '交通事故', '车辆故障', '道路施工', '临时管制', '交通拥堵',
-  '信号灯故障', '路面塌陷', '落石/障碍', '行人闯入', '逆行车辆',
+export interface MockIncident {
+  id: string;
+  title: string;
+  description: string;
+  roadName: string;
+  severity: 'high' | 'medium' | 'low';
+  status: 'pending' | 'processing' | 'resolved' | 'closed';
+  reportedAt: string;
+  reportedBy: string;
+  platformFeedback?: string;
+  processLogs: IncidentProcessLog[];
+}
+
+const INCIDENT_TEMPLATES: Array<{ type: string; severity: 'high' | 'medium' | 'low'; roadName: string; position: [number, number] }> = [
+  { type: '交通事故', severity: 'high', roadName: '长安街东段', position: [116.41, 39.91] },
+  { type: '交通事故', severity: 'medium', roadName: '二环路东段', position: [116.44, 39.92] },
+  { type: '交通事故', severity: 'low', roadName: '平安大街', position: [116.40, 39.93] },
+  { type: '道路施工', severity: 'medium', roadName: '三环路南段', position: [116.40, 39.87] },
+  { type: '道路施工', severity: 'low', roadName: '中关村大街', position: [116.32, 39.96] },
+  { type: '临时管制', severity: 'medium', roadName: '长安街西段', position: [116.34, 39.91] },
+  { type: '交通拥堵', severity: 'medium', roadName: '建国路', position: [116.46, 39.91] },
+  { type: '交通拥堵', severity: 'low', roadName: '学院路', position: [116.35, 39.98] },
+  { type: '信号灯故障', severity: 'high', roadName: '东三环中路', position: [116.45, 39.91] },
+  { type: '信号灯故障', severity: 'medium', roadName: '复兴路', position: [116.32, 39.90] },
+  { type: '路面塌陷', severity: 'high', roadName: '广渠路', position: [116.46, 39.90] },
+  { type: '车辆故障', severity: 'low', roadName: '两广路', position: [116.40, 39.89] },
+  { type: '落石/障碍', severity: 'medium', roadName: '京通快速路', position: [116.50, 39.91] },
+  { type: '行人闯入', severity: 'low', roadName: '崇文门外大街', position: [116.42, 39.89] },
+  { type: '逆行车辆', severity: 'high', roadName: '朝阳路', position: [116.48, 39.92] },
 ];
 
-const INCIDENT_TEMPLATES: Array<Partial<MockIncident>> = [
-  { type: '交通事故', severity: 'critical', roadName: '长安街东段', position: [116.41, 39.91] },
-  { type: '交通事故', severity: 'serious', roadName: '二环路东段', position: [116.44, 39.92] },
-  { type: '交通事故', severity: 'normal', roadName: '平安大街', position: [116.40, 39.93] },
-  { type: '道路施工', severity: 'serious', roadName: '三环路南段', position: [116.40, 39.87] },
-  { type: '道路施工', severity: 'normal', roadName: '中关村大街', position: [116.32, 39.96] },
-  { type: '临时管制', severity: 'serious', roadName: '长安街西段', position: [116.34, 39.91] },
-  { type: '交通拥堵', severity: 'serious', roadName: '建国路', position: [116.46, 39.91] },
-  { type: '交通拥堵', severity: 'normal', roadName: '学院路', position: [116.35, 39.98] },
-  { type: '信号灯故障', severity: 'critical', roadName: '东三环中路', position: [116.45, 39.91] },
-  { type: '信号灯故障', severity: 'serious', roadName: '复兴路', position: [116.32, 39.90] },
-  { type: '路面塌陷', severity: 'critical', roadName: '广渠路', position: [116.46, 39.90] },
-  { type: '车辆故障', severity: 'normal', roadName: '两广路', position: [116.40, 39.89] },
-  { type: '落石/障碍', severity: 'serious', roadName: '京通快速路', position: [116.50, 39.91] },
-  { type: '行人闯入', severity: 'normal', roadName: '崇文门外大街', position: [116.42, 39.89] },
-  { type: '逆行车辆', severity: 'critical', roadName: '朝阳路', position: [116.48, 39.92] },
-];
+const INCIDENT_REPORTERS = ['张先生', '李女士', '王师傅', '赵师傅', '陈先生', '刘女士', '周先生', '吴女士'];
 
-const SOURCES: Array<'ai_detection' | 'citizen_report' | 'patrol' | 'sensor'> = [
-  'ai_detection', 'citizen_report', 'patrol', 'sensor',
-];
-
-const STATUSES: Array<'new' | 'dispatched' | 'processing' | 'resolved' | 'archived'> = [
-  'new', 'dispatched', 'processing', 'resolved', 'archived',
-];
-
-const ASSIGNEES = [
-  '交警东城支队', '市政工程处', '路桥维护中心', '信号控制中心',
-  '海淀区交管局', '朝阳区城管局', '西城区交警大队',
-];
+export const INCIDENT_STATUS_LABELS: Record<string, string> = {
+  pending: '待审核',
+  processing: '处理中',
+  resolved: '已完成',
+  closed: '已关闭',
+};
 
 export function generateIncidents(): MockIncident[] {
+  const now = Date.now();
   return INCIDENT_TEMPLATES.map((tpl, i) => {
-    const now = Date.now();
-    const createOffset = Math.random() * 86400000 * 3; // within 3 days
-    const status = STATUSES[i % STATUSES.length];
+    const statuses: Array<MockIncident['status']> = ['pending', 'processing', 'resolved'];
+    const status = statuses[i % statuses.length];
+    const createOffset = Math.random() * 86400000 * 3;
+    const reportedAt = new Date(now - createOffset).toISOString();
+    const reporter = INCIDENT_REPORTERS[i % INCIDENT_REPORTERS.length];
+
+    const logs: IncidentProcessLog[] = [{
+      id: `pl-${i}-1`,
+      time: now - createOffset,
+      action: '创建事件',
+      operator: `市民 ${reporter}`,
+      detail: `上报${tpl.type}问题`,
+    }];
+    if (status === 'processing' || status === 'resolved') {
+      logs.push({
+        id: `pl-${i}-2`,
+        time: now - createOffset + 1800000,
+        action: '状态变更为「处理中」',
+        operator: '管理员',
+        fromStatus: 'pending',
+        toStatus: 'processing',
+        detail: '已派单处置',
+      });
+    }
+    if (status === 'resolved') {
+      logs.push({
+        id: `pl-${i}-3`,
+        time: now - createOffset + 3600000,
+        action: '状态变更为「已完成」',
+        operator: '管理员',
+        fromStatus: 'processing',
+        toStatus: 'resolved',
+        detail: '现场已处置完成',
+      });
+    }
+
     return {
       id: `INC-${(i + 1).toString().padStart(4, '0')}`,
-      source: SOURCES[i % SOURCES.length],
-      type: tpl.type!,
       title: `${tpl.roadName}${tpl.type}`,
-      description: `在${tpl.roadName}检测到${
-        tpl.type
-      }事件，建议立即处置。${i % 3 === 0 ? '可能影响周边2公里范围交通。' : ''}`,
-      position: tpl.position!,
-      roadName: tpl.roadName!,
-      severity: tpl.severity!,
+      description: `在${tpl.roadName}检测到${tpl.type}事件，建议立即处置。${i % 3 === 0 ? '可能影响周边2公里范围交通。' : ''}`,
+      roadName: tpl.roadName,
+      severity: tpl.severity,
       status,
-      assignedTo: status !== 'new' && status !== 'archived' ? ASSIGNEES[i % ASSIGNEES.length] : undefined,
-      createTime: now - createOffset,
-      resolveTime: (status === 'resolved' || status === 'archived') ? now - createOffset + 3600000 : undefined,
-      images: i % 3 === 0 ? ['/images/incident-sample.jpg'] : [],
+      reportedAt,
+      reportedBy: reporter,
+      platformFeedback: status === 'resolved' ? '已处置完成，感谢您的上报。' : undefined,
+      processLogs: logs,
     };
   });
 }
@@ -315,127 +342,6 @@ export function generateDevices(): MockDevice[] {
       uptime: status === 'online' ? 95 + Math.random() * 5 : 60 + Math.random() * 30,
       installDate: now - Math.floor(Math.random() * 365 * 2 * 86400000),
       model: DEVICE_MODELS[type],
-    };
-  });
-}
-
-// ---- Work orders (25) ----
-export interface MockWorkOrder {
-  id: string;
-  workOrderNo: string;
-  category: string;
-  description: string;
-  images: string[];
-  position: [number, number];
-  address: string;
-  contactPhone?: string;
-  status: 'pending' | 'received' | 'processing' | 'completed' | 'rejected';
-  createTime: number;
-  updateTime: number;
-  processLogs: Array<{ time: number; action: string; operator: string; detail: string }>;
-  reporterName?: string;
-  rating?: number;
-}
-
-const WORK_ORDER_CATEGORIES = [
-  'pothole', 'streetlight', 'illegal_park', 'manhole', 'signal_fault',
-  'accident_clue', 'barrier', 'other',
-];
-
-const CATEGORY_LABELS: Record<string, string> = {
-  pothole: '路面坑洼',
-  streetlight: '路灯损坏',
-  illegal_park: '违停占道',
-  manhole: '井盖破损',
-  signal_fault: '信号灯故障',
-  accident_clue: '交通事故线索',
-  barrier: '道路障碍',
-  other: '其他问题',
-};
-
-const LOCATIONS = [
-  { address: '东城区东单北大街99号', position: [116.419, 39.914] as [number, number] },
-  { address: '西城区西单北大街27号', position: [116.374, 39.907] as [number, number] },
-  { address: '朝阳区建国门外大街15号', position: [116.450, 39.910] as [number, number] },
-  { address: '海淀区中关村大街688号', position: [116.316, 39.984] as [number, number] },
-  { address: '西城区长安街西段5号', position: [116.340, 39.910] as [number, number] },
-  { address: '朝阳区三里屯路22号', position: [116.452, 39.937] as [number, number] },
-  { address: '丰台区北京南站路', position: [116.379, 39.865] as [number, number] },
-  { address: '通州区新华大街888号', position: [116.660, 39.910] as [number, number] },
-  { address: '大兴区京开高速辅路', position: [116.340, 39.780] as [number, number] },
-  { address: '昌平区回龙观大街', position: [116.350, 40.060] as [number, number] },
-  { address: '朝阳区望京街12号', position: [116.481, 39.996] as [number, number] },
-  { address: '东城区王府井大街', position: [116.411, 39.913] as [number, number] },
-];
-
-const REPORTERS = [
-  '张三', '李四', '王五', '赵六', '陈七', '刘先生', '周女士', '吴先生',
-  '郑先生', '黄女士', '孙先生', '孟女士', '冯先生', '曹女士', '韩先生',
-];
-
-const OPERATORS = ['管理员 刘工', '值班员 陈工', '指挥中心 杨工', '系统AI', '调度员 马工'];
-
-export function generateWorkOrders(): MockWorkOrder[] {
-  const now = Date.now();
-  return Array.from({ length: 25 }, (_, i) => {
-    const cat = WORK_ORDER_CATEGORIES[i % WORK_ORDER_CATEGORIES.length];
-    const loc = LOCATIONS[i % LOCATIONS.length];
-    const statuses: Array<'pending' | 'received' | 'processing' | 'completed' | 'rejected'> = [
-      'pending', 'received', 'processing', 'completed', 'rejected',
-    ];
-    const status = statuses[i % statuses.length];
-    const createOffset = Math.random() * 86400000 * 5;
-    const createTime = now - createOffset;
-
-    const logs = [];
-    logs.push({
-      time: createTime,
-      action: '创建工单',
-      operator: `市民 ${REPORTERS[i]}`,
-      detail: `通过APP上报${CATEGORY_LABELS[cat]}问题`,
-    });
-    if (status !== 'pending') {
-      logs.push({
-        time: createTime + 600000,
-        action: '受理',
-        operator: randomElement(OPERATORS),
-        detail: '确认并受理该工单',
-      });
-    }
-    if (status === 'processing' || status === 'completed') {
-      logs.push({
-        time: createTime + 1800000,
-        action: '派发',
-        operator: randomElement(OPERATORS),
-        detail: '已派发至市政维护班组',
-      });
-    }
-    if (status === 'completed') {
-      logs.push({
-        time: createTime + 7200000,
-        action: '办结',
-        operator: randomElement(OPERATORS),
-        detail: '现场已处置完成，拍照确认',
-      });
-    }
-
-    return {
-      id: `WO-${(i + 1).toString().padStart(4, '0')}`,
-      workOrderNo: `GD2026${(801 + i).toString()}`,
-      category: cat,
-      description: `市民反映${loc.address}附近存在${CATEGORY_LABELS[cat]}问题，${
-        i % 3 === 0 ? '严重影响通行安全，' : ''
-      }请相关部门尽快处理。`,
-      images: i % 5 === 0 ? ['/images/report-sample.jpg'] : [],
-      position: loc.position,
-      address: loc.address,
-      contactPhone: i % 3 === 0 ? `138${(10000000 + i).toString()}` : undefined,
-      status,
-      createTime,
-      updateTime: now - Math.floor(Math.random() * 3600000),
-      processLogs: logs,
-      reporterName: REPORTERS[i % REPORTERS.length],
-      rating: status === 'completed' ? 3 + Math.floor(Math.random() * 3) : undefined,
     };
   });
 }
@@ -649,3 +555,72 @@ export const MOCK_ACCESSIBILITY_STATIONS: MockStationFacility[] = [
     ],
   },
 ];
+
+// ---- Admin notifications（管理端通知中心）----
+export interface MockAdminNotification {
+  id: string;
+  type: 'event' | 'user' | 'stock';
+  title: string;
+  content: string;
+  relatedId?: string;
+  read: boolean;
+  createdAt: number;
+}
+
+export function generateAdminNotifications(): MockAdminNotification[] {
+  const now = Date.now();
+  const hour = 3600000;
+  const pending = generateIncidents().filter((i) => i.status === 'pending').slice(0, 2);
+  const recentUsers = [
+    { id: 'u5', nickname: '新用户', username: 'sunqi', phone: '13512345678' },
+    { id: 'u6', nickname: '骑行爱好者', username: 'zhouba', phone: '13412345678' },
+  ];
+
+  const list: MockAdminNotification[] = [];
+
+  pending.forEach((inc, i) => {
+    list.push({
+      id: `an-event-${i}`,
+      type: 'event',
+      title: '新事件上报',
+      content: `${inc.reportedBy} 上报了「${inc.title}」，请及时审核。`,
+      relatedId: inc.id,
+      read: false,
+      createdAt: now - (i + 1) * hour,
+    });
+  });
+
+  recentUsers.forEach((u, i) => {
+    list.push({
+      id: `an-user-${i}`,
+      type: 'user',
+      title: '新用户注册',
+      content: `${u.nickname || u.username}（${u.phone}）刚刚注册成为新用户。`,
+      relatedId: u.id,
+      read: false,
+      createdAt: now - (i + 2) * hour,
+    });
+  });
+
+  list.push({
+    id: 'an-stock-0',
+    type: 'stock',
+    title: '兑换商品库存预警',
+    content: '「共享单车月卡」库存仅剩 8 件，低于安全阈值 10，请及时补货。',
+    relatedId: 'rw3',
+    read: false,
+    createdAt: now - 30 * 60000,
+  });
+
+  list.push({
+    id: 'an-event-read',
+    type: 'event',
+    title: '事件已办结',
+    content: '「长安街东段交通事故」已完成处置。',
+    relatedId: 'INC-0001',
+    read: true,
+    createdAt: now - 24 * hour,
+  });
+
+  return list;
+}
