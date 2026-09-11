@@ -1,16 +1,27 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeftOutlined } from '@ant-design/icons';
-import { Button, Card, Descriptions, message, Select, Space, Tag, Input } from 'antd';
+import { Button, Card, Descriptions, message, Select, Space, Tag, Input, Timeline } from 'antd';
 import { apiGet, apiPut } from '../../services/apiClient';
 import {
   INCIDENT_STATUS_OPTIONS,
   INCIDENT_SEVERITY_OPTIONS,
   incidentStatusLabel,
   incidentStatusColor,
+  normalizeIncidentStatus,
   incidentSeverityLabel,
   incidentSeverityColor,
 } from '../../constants/incidentStatus';
+
+interface IncidentProcessLog {
+  id?: string;
+  time: number | string;
+  action: string;
+  operator: string;
+  fromStatus?: string;
+  toStatus?: string;
+  detail?: string;
+}
 
 interface IncidentDetail {
   id: string;
@@ -21,6 +32,7 @@ interface IncidentDetail {
   status?: string;
   reportedAt?: string;
   reportedBy?: string;
+  processLogs?: IncidentProcessLog[];
   [key: string]: unknown;
 }
 
@@ -37,8 +49,9 @@ export default function IncidentDetailPage() {
     setLoading(true);
     try {
       const result = await apiGet<IncidentDetail>(`/incidents/${id}`);
-      setIncident(result);
-      setStatus(String(result.status || ''));
+      const normalizedStatus = normalizeIncidentStatus(String(result.status || ''));
+      setIncident({ ...result, status: normalizedStatus });
+      setStatus(normalizedStatus);
       setFeedback(String(result.platformFeedback || result.feedback || ''));
     } catch (error) {
       message.error(error instanceof Error ? error.message : '事件详情加载失败');
@@ -108,16 +121,31 @@ export default function IncidentDetailPage() {
         <span style={{ marginLeft: 12, color: '#999', fontSize: 12 }}>保存后将同步更新市民端工单状态，并向市民推送进度通知</span>
       </div>
     </Card>
-    <Card title="状态说明" style={{ marginTop: 16 }} size="small">
-      <Space wrap size={[16, 8]}>
-        {INCIDENT_STATUS_OPTIONS.map(item => (
-          <Tag key={item.value} color={item.color}>{item.label}（{item.value}）</Tag>
-        ))}
-        <span style={{ color: '#999', fontSize: 12 }}>严重程度：</span>
-        {INCIDENT_SEVERITY_OPTIONS.map(item => (
-          <Tag key={item.value} color={item.color}>{item.label}（{item.value}）</Tag>
-        ))}
-      </Space>
+    <Card title="处理历史记录" style={{ marginTop: 16 }}>
+      {incident.processLogs && incident.processLogs.length > 0 ? (
+        <Timeline
+          items={[...incident.processLogs]
+            .sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime())
+            .map((log) => ({
+              color: log.fromStatus && log.toStatus ? 'blue' : 'gray',
+              children: (
+                <div>
+                  <div style={{ fontWeight: 600 }}>{log.action}</div>
+                  <div style={{ color: 'rgba(0,0,0,0.45)', fontSize: 13 }}>
+                    {log.operator}
+                    {log.fromStatus && log.toStatus ? ` · ${incidentStatusLabel(log.fromStatus)} → ${incidentStatusLabel(log.toStatus)}` : ''}
+                    {log.detail ? ` · ${log.detail}` : ''}
+                  </div>
+                  <div style={{ color: 'rgba(0,0,0,0.35)', fontSize: 12 }}>
+                    {new Date(log.time).toLocaleString('zh-CN')}
+                  </div>
+                </div>
+              ),
+            }))}
+        />
+      ) : (
+        <div style={{ color: '#999' }}>暂无处理记录</div>
+      )}
     </Card>
   </div>;
 }

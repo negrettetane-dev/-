@@ -63,8 +63,8 @@ function BasicSettings() {
             </Form.Item>
           </Col>
           <Col span={12}>
-            <Form.Item label="自动派发工单">
-              <Switch defaultChecked /> <Text type="secondary">市民上报工单自动派发至对应部门</Text>
+            <Form.Item label="自动派发事件">
+              <Switch defaultChecked /> <Text type="secondary">市民上报事件自动派发至对应部门</Text>
             </Form.Item>
           </Col>
         </Row>

@@ -9,17 +9,47 @@ import {
   generateIntersections,
   generatePhases,
   generateDevices,
-  generateWorkOrders,
   SIMULATION_SCENARIOS,
   generateAiAlerts,
   generateRealTimeMetrics,
   MOCK_USERS,
   generateSystemLogs,
   MOCK_ACCESSIBILITY_STATIONS,
+  generateAdminNotifications,
+  INCIDENT_STATUS_LABELS,
   type MockStationFacility,
+  type MockIncident,
+  type IncidentProcessLog,
+  type MockAdminNotification,
 } from './mockData';
 
 type Handler = (url: string, options?: RequestInit) => unknown;
+
+// 内存中缓存事件（模拟后端持久化）：GET / PUT 共享同一份数据，保存状态后追加处理历史
+let incidentCache: MockIncident[] | null = null;
+const incidentExtraLogs = new Map<string, IncidentProcessLog[]>();
+
+function getIncidentCache(): MockIncident[] {
+  if (!incidentCache) incidentCache = generateIncidents();
+  return incidentCache;
+}
+
+function getIncident(id: string | undefined): MockIncident | null {
+  return getIncidentCache().find((i) => i.id === id) || null;
+}
+
+// 管理端通知：内存缓存 + 已读集合（模拟后端持久化）
+let adminNotificationCache: MockAdminNotification[] | null = null;
+const adminNotificationReadIds = new Set<string>();
+
+function getAdminNotificationCache(): MockAdminNotification[] {
+  if (!adminNotificationCache) adminNotificationCache = generateAdminNotifications();
+  return adminNotificationCache;
+}
+
+function withReadState(list: MockAdminNotification[]): MockAdminNotification[] {
+  return list.map((n) => ({ ...n, read: n.read || adminNotificationReadIds.has(n.id) }));
+}
 
 const API_HANDLERS: Record<string, Handler> = {
   // Dashboard
@@ -46,7 +76,7 @@ const API_HANDLERS: Record<string, Handler> = {
     const pageSize = parseInt(params.get('pageSize') || '10');
     const status = params.get('status');
     const severity = params.get('severity');
-    let list = generateIncidents();
+    let list = getIncidentCache();
     if (status) list = list.filter((i) => i.status === status);
     if (severity) list = list.filter((i) => i.severity === severity);
     return {
@@ -58,21 +88,43 @@ const API_HANDLERS: Record<string, Handler> = {
   },
   'GET /api/incidents/:id': (url: string) => {
     const id = url.match(/\/incidents\/([^/?]+)/)?.[1];
-    const incidents = generateIncidents();
-    const found = incidents.find((i) => i.id === id) || incidents[0];
-    return { code: 0, data: found, message: 'ok', timestamp: Date.now() };
+    const found = getIncident(id) || getIncidentCache()[0];
+    const extra = incidentExtraLogs.get(found.id) || [];
+    return {
+      code: 0,
+      data: { ...found, processLogs: [...found.processLogs, ...extra] },
+      message: 'ok',
+      timestamp: Date.now(),
+    };
   },
-  // 管理端保存事件状态 + 平台反馈（同时通知市民端）
+  // 管理端保存事件状态 + 平台反馈（追加处理历史，同时通知市民端）
   'PUT /api/incidents/:id': (url: string, options?: RequestInit) => {
     const id = url.match(/\/incidents\/([^/?]+)/)?.[1];
     let body: { status?: string; platformFeedback?: string; notifyCitizen?: boolean } = {};
     try { body = options?.body ? JSON.parse(String(options.body)) : {}; } catch { /* ignore */ }
+    const found = getIncident(id);
+    if (found && body.status) {
+      const fromStatus = found.status;
+      found.status = body.status as MockIncident['status'];
+      if (body.platformFeedback !== undefined) found.platformFeedback = body.platformFeedback;
+      const logs = incidentExtraLogs.get(found.id) || [];
+      logs.push({
+        id: `pl-extra-${Date.now()}`,
+        time: Date.now(),
+        action: `状态变更为「${INCIDENT_STATUS_LABELS[found.status] || found.status}」`,
+        operator: '管理员',
+        fromStatus,
+        toStatus: found.status,
+        detail: body.platformFeedback || '',
+      });
+      incidentExtraLogs.set(found.id, logs);
+    }
     return {
       code: 0,
       data: {
         id: id || 'unknown',
-        status: body.status ?? 'pending',
-        platformFeedback: body.platformFeedback ?? '',
+        status: body.status ?? found?.status ?? 'pending',
+        platformFeedback: body.platformFeedback ?? found?.platformFeedback ?? '',
         notifyCitizen: body.notifyCitizen !== false,
         notifiedAt: Date.now(),
       },
@@ -146,31 +198,6 @@ const API_HANDLERS: Record<string, Handler> = {
     return { code: 0, data: found, message: 'ok', timestamp: Date.now() };
   },
 
-  // Work Orders
-  'GET /api/workorders': (url: string) => {
-    const params = new URLSearchParams(url.split('?')[1] || '');
-    const page = parseInt(params.get('page') || '1');
-    const pageSize = parseInt(params.get('pageSize') || '10');
-    const status = params.get('status');
-    let list = generateWorkOrders();
-    if (status) list = list.filter((w) => w.status === status);
-    return {
-      code: 0,
-      data: { list: list.slice((page - 1) * pageSize, page * pageSize), total: list.length, page, pageSize },
-      message: 'ok',
-      timestamp: Date.now(),
-    };
-  },
-  'GET /api/workorders/:id': (url: string) => {
-    const id = url.match(/\/workorders\/([^/?]+)/)?.[1];
-    const orders = generateWorkOrders();
-    const found = orders.find((o) => o.id === id || o.workOrderNo === id) || orders[0];
-    return { code: 0, data: found, message: 'ok', timestamp: Date.now() };
-  },
-  'PUT /api/workorders/:id': () => ({
-    code: 0, data: { success: true }, message: '工单状态已更新', timestamp: Date.now(),
-  }),
-
   // Analytics
   'GET /api/analytics/incident-trend': () => {
     const days = Array.from({ length: 30 }, (_, i) => ({
@@ -201,6 +228,30 @@ const API_HANDLERS: Record<string, Handler> = {
     message: 'ok',
     timestamp: Date.now(),
   }),
+
+  // Admin notifications（管理端通知中心）
+  'GET /api/notifications': (url: string) => {
+    const params = new URLSearchParams(url.split('?')[1] || '');
+    const unreadOnly = params.get('unreadOnly') === 'true';
+    let list = withReadState(getAdminNotificationCache()).sort((a, b) => b.createdAt - a.createdAt);
+    if (unreadOnly) list = list.filter((n) => !n.read);
+    const unreadCount = getAdminNotificationCache().filter((n) => !n.read && !adminNotificationReadIds.has(n.id)).length;
+    return { code: 0, data: { list, unreadCount, total: list.length }, message: 'ok', timestamp: Date.now() };
+  },
+  'GET /api/notifications/unread-count': () => {
+    const count = getAdminNotificationCache().filter((n) => !n.read && !adminNotificationReadIds.has(n.id)).length;
+    return { code: 0, data: { count }, message: 'ok', timestamp: Date.now() };
+  },
+  'POST /api/notifications/read': (_url: string, options?: RequestInit) => {
+    let body: { ids?: string[] } = {};
+    try { body = options?.body ? JSON.parse(String(options.body)) : {}; } catch { /* ignore */ }
+    if (!Array.isArray(body.ids) || body.ids.length === 0) {
+      getAdminNotificationCache().forEach((n) => adminNotificationReadIds.add(n.id));
+    } else {
+      body.ids.forEach((id) => adminNotificationReadIds.add(id));
+    }
+    return { code: 0, data: { success: true }, message: 'ok', timestamp: Date.now() };
+  },
 
   // Settings
   'GET /api/settings/users': () => ({

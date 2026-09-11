@@ -7,30 +7,61 @@ export interface StatusMeta {
   color: string;
 }
 
-/** 事件状态枚举：pending/processing/resolved/closed */
+/** 事件状态（管理员可保存的状态，用于详情页下拉） */
 export const INCIDENT_STATUS_OPTIONS: StatusMeta[] = [
-  { value: 'pending', label: '待审核', color: 'orange' },
-  { value: 'processing', label: '处理中', color: 'processing' },
-  { value: 'resolved', label: '已完成', color: 'green' },
+  { value: 'pending', label: '待审核', color: 'warning' },
+  { value: 'processing', label: '处理中', color: 'orange' },
+  { value: 'resolved', label: '已完成', color: 'success' },
 ];
 
-/** closed 不再作为可选状态，仅保留展示映射，用于兼容历史数据 */
-const ALL_STATUS_META: StatusMeta[] = [
-  ...INCIDENT_STATUS_OPTIONS,
+/** 完整状态映射（含后端可能返回的全部状态，用于列表展示与筛选） */
+export const ALL_INCIDENT_STATUS_OPTIONS: StatusMeta[] = [
+  { value: 'pending', label: '待审核', color: 'warning' },
+  { value: 'received', label: '已受理', color: 'processing' },
+  { value: 'processing', label: '处理中', color: 'orange' },
+  { value: 'resolved', label: '已完成', color: 'success' },
+  { value: 'rejected', label: '已驳回', color: 'error' },
   { value: 'closed', label: '已关闭', color: 'default' },
 ];
 
-const STATUS_INDEX = new Map(ALL_STATUS_META.map(item => [item.value, item]));
+const STATUS_INDEX = new Map(ALL_INCIDENT_STATUS_OPTIONS.map(item => [item.value, item]));
+
+const STATUS_ALIASES: Record<string, string> = {
+  pending: 'pending',
+  new: 'pending',
+  '待审核': 'pending',
+  received: 'received',
+  dispatched: 'received',
+  '已受理': 'received',
+  processing: 'processing',
+  '处理中': 'processing',
+  resolved: 'resolved',
+  completed: 'resolved',
+  '已完成': 'resolved',
+  '已解决': 'resolved',
+  rejected: 'rejected',
+  '已驳回': 'rejected',
+  closed: 'closed',
+  archived: 'closed',
+  '已关闭': 'closed',
+};
+
+/** 将后端历史英文值、大小写值和中文值统一为管理端状态枚举 */
+export function normalizeIncidentStatus(value: string | undefined | null): string {
+  if (!value) return '';
+  const normalizedValue = value.trim();
+  return STATUS_ALIASES[normalizedValue] ?? STATUS_ALIASES[normalizedValue.toLowerCase()] ?? normalizedValue;
+}
 
 /** 根据英文枚举取中文 label，未知值原样返回 */
 export function incidentStatusLabel(value: string | undefined | null): string {
   if (!value) return '-';
-  return STATUS_INDEX.get(value)?.label ?? value;
+  return STATUS_INDEX.get(normalizeIncidentStatus(value))?.label ?? value;
 }
 
 /** 根据英文枚举取 Tag 颜色，未知值返回 default */
 export function incidentStatusColor(value: string | undefined | null): string {
-  return (value && STATUS_INDEX.get(value)?.color) || 'default';
+  return STATUS_INDEX.get(normalizeIncidentStatus(value))?.color || 'default';
 }
 
 /** 严重程度枚举：high/medium/low */
