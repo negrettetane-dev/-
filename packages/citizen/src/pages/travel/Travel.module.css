@@ -82,6 +82,10 @@
 .forecastSection { border-radius: 12px; padding: 14px 18px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); margin: 14px 0; }
 .forecastTitle { font-size: 14px; font-weight: 700; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px; }
 .forecastReason { font-size: 14px; color: var(--text-primary); }
+.compareScroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.compareTable { width: 100%; min-width: 900px; border-collapse: collapse; font-size: 12px; }
+.compareTable th { white-space: nowrap; }
+.compareTable small { display: block; margin-top: 2px; color: var(--text-hint); font-size: 10px; font-weight: 400; }
 .scoreHeader { display: inline-flex; align-items: center; justify-content: center; gap: 4px; white-space: nowrap; }
 .scoreHelp { position: relative; display: inline-flex; color: var(--text-hint); cursor: help; outline: none; }
 .scoreHelp::after {

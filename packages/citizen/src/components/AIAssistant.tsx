@@ -21,6 +21,21 @@ const SOURCE_META: Record<AssistantDataSource, { label: string; color: string; b
 
 const MAX_HISTORY_MESSAGES = 50;
 const historyKey = (userId: string) => `zhitu_ai_history:v1:${encodeURIComponent(userId)}`;
+const conversationKey = (userId: string) => `zhitu_ai_conversation:v1:${encodeURIComponent(userId)}`;
+
+function getConversationId(userId: string | null): string {
+  const owner = userId || 'guest';
+  const key = conversationKey(owner);
+  try {
+    const existing = sessionStorage.getItem(key);
+    if (existing) return existing;
+    const next = typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `conversation_${Date.now()}`;
+    sessionStorage.setItem(key, next);
+    return next;
+  } catch {
+    return `conversation_${owner}_${Date.now()}`;
+  }
+}
 
 function greeting(): AssistantMessage {
   return {
@@ -39,15 +54,19 @@ const AIAssistant: React.FC = () => {
   const userId = user?.id || null;
   const identityRef = useRef(userId);
   const identityVersionRef = useRef(0);
+  const conversationIdRef = useRef(getConversationId(userId));
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<AssistantMessage[]>([greeting()]);
   const [input, setInput] = useState('');
   const [thinking, setThinking] = useState('');
+  const [pendingAction, setPendingAction] = useState<AssistantCardAction | null>(null);
+  const [lastRequest, setLastRequest] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     identityRef.current = userId;
     identityVersionRef.current += 1;
+    conversationIdRef.current = getConversationId(userId);
     setThinking('');
     if (!userId) {
       setMessages([greeting()]);
@@ -98,12 +117,18 @@ const AIAssistant: React.FC = () => {
       return next;
     });
     setInput('');
+    setLastRequest(t);
     setThinking(thinkingLabel(t));
     try {
       const ctx = {
         isLoggedIn,
         originName: origin.lng != null ? origin.address || origin.name : undefined,
         currentPage: location.pathname,
+        conversationId: conversationIdRef.current,
+        conversation: messages.slice(-12).map(message => ({
+          role: message.role === 'ai' ? 'assistant' as const : 'user' as const,
+          content: message.text,
+        })),
       };
       const reply = await respond(t, ctx);
       if (identityRef.current !== ownerId || identityVersionRef.current !== requestVersion) return;
@@ -118,6 +143,7 @@ const AIAssistant: React.FC = () => {
         id: `e_${Date.now()}`,
         role: 'ai',
         text: '抱歉，处理你的请求时出了点问题，请稍后重试。',
+        retryText: t,
         createdAt: Date.now(),
       };
       setMessages(prev => {
@@ -130,8 +156,17 @@ const AIAssistant: React.FC = () => {
     }
   };
 
+  const executeAction = (action: AssistantCardAction) => {
+    if (action.prompt) send(action.prompt);
+    else if (action.path) navigate(action.path, { state: action.state });
+  };
+
   const runAction = (action: AssistantCardAction) => {
-    if (action.path) navigate(action.path, { state: action.state });
+    if (action.requiresConfirmation) {
+      setPendingAction(action);
+      return;
+    }
+    executeAction(action);
   };
 
   const quickQuestions = isLoggedIn
@@ -154,9 +189,17 @@ const AIAssistant: React.FC = () => {
       {open && (
         <div className={styles.panel}>
           <div className={styles.header}>
-            <span>🤖 小枢出行助手</span>
-            <span className={styles.subtitle}>可信数据 · 结果可执行</span>
-            <button type="button" onClick={clearHistory} style={{ marginLeft: 'auto', border: 0, background: 'transparent', color: '#fff', cursor: 'pointer', fontSize: 13 }}>清空对话</button>
+            <div>
+              <span>🤖 小枢出行助手</span>
+              <span className={styles.subtitle}>理解条件 · 比较方案 · 风险可解释</span>
+            </div>
+            <button type="button" className={styles.clearButton} onClick={clearHistory}>清空对话</button>
+          </div>
+
+          <div className={styles.sessionBar}>
+            <span className={styles.sessionDot} />
+            <span>前端演示会话</span>
+            <span className={styles.sessionHint}>后端会话与业务工具待接入</span>
           </div>
 
           <div className={styles.body}>
@@ -169,6 +212,11 @@ const AIAssistant: React.FC = () => {
                     <>
                       <div className={styles.bubble}>{m.text}</div>
                       {m.cards?.map(card => <AssistantCardView key={card.id} card={card} onAction={runAction} />)}
+                      {m.retryText && (
+                        <button type="button" className={styles.retryButton} onClick={() => send(m.retryText || lastRequest)}>
+                          重新尝试
+                        </button>
+                      )}
                     </>
                   )}
                 </div>
@@ -218,6 +266,19 @@ const AIAssistant: React.FC = () => {
           </div>
         </div>
       )}
+      {pendingAction && (
+        <div className={styles.confirmBackdrop} role="presentation" onClick={() => setPendingAction(null)}>
+          <div className={styles.confirmDialog} role="dialog" aria-modal="true" aria-labelledby="assistant-confirm-title" onClick={event => event.stopPropagation()}>
+            <div className={styles.confirmIcon}>!</div>
+            <h3 id="assistant-confirm-title">{pendingAction.confirmTitle || '确认执行此操作？'}</h3>
+            <p>{pendingAction.confirmDescription || '该操作会修改业务数据，请确认后继续。'}</p>
+            <div className={styles.confirmActions}>
+              <button type="button" onClick={() => setPendingAction(null)}>取消</button>
+              <button type="button" className={styles.confirmPrimary} onClick={() => { const action = pendingAction; setPendingAction(null); executeAction(action); }}>确认执行</button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 };
@@ -247,7 +308,7 @@ const AssistantCardView: React.FC<{ card: AssistantCard; onAction: (a: Assistant
         <div className={styles.cardActions}>
           {card.actions.map((a, i) => (
             <button
-              key={i}
+              key={`${a.label}-${i}`}
               className={a.primary ? styles.cardActionPrimary : styles.cardAction}
               onClick={() => onAction(a)}
             >

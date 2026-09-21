@@ -54,6 +54,16 @@ export interface NotificationSettings {
   system: boolean;
 }
 
+export type CarePreference = 'wheelchair' | 'visual' | 'hearing' | 'elderly' | 'stroller';
+
+export function getCarePreferences(userId = 'legacy'): CarePreference[] {
+  return get<CarePreference[]>(userScopedKey('care_preferences', userId), []);
+}
+
+export function setCarePreferences(preferences: CarePreference[], userId = 'legacy'): void {
+  set(userScopedKey('care_preferences', userId), preferences);
+}
+
 export type NotificationType = 'carbon' | 'weather' | 'event' | 'system';
 
 export interface UserNotification {

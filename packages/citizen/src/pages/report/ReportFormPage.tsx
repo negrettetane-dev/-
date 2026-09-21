@@ -8,6 +8,14 @@ import styles from './Report.module.css';
 
 const MAX_PHOTOS = 6;
 
+interface AiAssessment {
+  category: string;
+  severity: 'low' | 'medium' | 'high';
+  location: string;
+  department: string;
+  confidence: number;
+}
+
 const CATEGORIES = [
   { value:'pothole', label:'路面坑洼', icon:'🕳️' },
   { value:'streetlight', label:'路灯损坏', icon:'💡' },
@@ -33,6 +41,8 @@ const ReportFormPage: React.FC = () => {
   const [phone, setPhone] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [validationError, setValidationError] = useState('');
+  const [aiAssessment, setAiAssessment] = useState<AiAssessment | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
 
   // ===== 事件位置：设备当前位置 与 用户确认的事件位置 分离 =====
   // deviceLocation：设备原始定位（保留审核用）
@@ -132,12 +142,30 @@ const ReportFormPage: React.FC = () => {
           : { locationStatus: 'failed' as const }),
         // 设备原始定位（保留审核追溯）
         ...(deviceLocation ? { deviceLocation } : {}),
+        aiAssessment: aiAssessment || undefined,
+        imageUploadStatus: photoFiles.length ? 'pending_backend_upload' : 'none',
       });
       revokeAllPreviews();
       setSubmitted(true);
     } catch (error) {
       setValidationError(error instanceof Error ? error.message : '提交失败，请检查网络后重试');
     }
+  };
+
+  const analyzeReport = () => {
+    if (!category || !description.trim()) { setValidationError('请先选择问题类型并填写描述，再进行 AI 识别'); return; }
+    setAnalyzing(true);
+    window.setTimeout(() => {
+      const high = ['signal_fault', 'accident_clue', 'accessibility_elevator'].includes(category);
+      setAiAssessment({
+        category,
+        severity: high ? 'high' : ['barrier', 'accessibility_path'].includes(category) ? 'medium' : 'low',
+        location: eventLocation?.address || '位置待确认',
+        department: category.startsWith('accessibility') ? '无障碍设施维护部门' : category === 'signal_fault' ? '交通信号管理部门' : '城市道路设施维护部门',
+        confidence: high ? 0.88 : 0.76,
+      });
+      setAnalyzing(false);
+    }, 450);
   };
 
   return (
@@ -197,7 +225,7 @@ const ReportFormPage: React.FC = () => {
         </div>
         {photoFiles.length > 0 && (
           <div style={{fontSize:12,color:'#ad6800',marginTop:6}}>
-            当前后端尚未提供图片上传接口，本次只提交事件文字与位置，所选图片不会上传。
+            已选 {photoFiles.length} 张图片，等待上传接口接入后随工单提交；当前不会伪装为已上传。
           </div>
         )}
       </div>
@@ -206,6 +234,22 @@ const ReportFormPage: React.FC = () => {
       <div className={styles.formSection}>
         <div className={styles.formTitle}>📝 问题描述</div>
         <textarea className={styles.descInput} placeholder="请详细描述您发现的交通问题..." value={description} onChange={e=>setDescription(e.target.value)}/>
+      </div>
+
+      <div className={styles.formSection}>
+        <div className={styles.formTitle}>✨ AI 识别结果</div>
+        {!aiAssessment ? (
+          <><p className={styles.aiHint}>根据问题文字、类别和位置生成事件类型、严重程度、地点与推荐处理部门。当前为前端演示识别，提交前可修改。</p><button type="button" className={styles.locationBtn} onClick={analyzeReport} disabled={analyzing}>{analyzing ? '正在识别…' : '开始 AI 识别'}</button></>
+        ) : (
+          <div className={styles.aiResult}>
+            <label>事件类型<select value={aiAssessment.category} onChange={event => setAiAssessment(current => current ? { ...current, category: event.target.value } : current)}>{CATEGORIES.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
+            <label>严重程度<select value={aiAssessment.severity} onChange={event => setAiAssessment(current => current ? { ...current, severity: event.target.value as AiAssessment['severity'] } : current)}><option value="low">低</option><option value="medium">中</option><option value="high">高</option></select></label>
+            <label>识别地点<input value={aiAssessment.location} onChange={event => setAiAssessment(current => current ? { ...current, location: event.target.value } : current)} /></label>
+            <label>推荐处理部门<input value={aiAssessment.department} onChange={event => setAiAssessment(current => current ? { ...current, department: event.target.value } : current)} /></label>
+            <div className={styles.aiConfidence}>识别置信度 {Math.round(aiAssessment.confidence * 100)}% · 前端演示结果，正式提交前请核对</div>
+            <button type="button" className={styles.reanalyzeBtn} onClick={analyzeReport}>重新识别</button>
+          </div>
+        )}
       </div>
 
       {/* Location：设备当前位置 与 事件发生位置 分离 */}

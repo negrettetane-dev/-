@@ -21,7 +21,11 @@ export interface AssistantCardAction {
   label: string;
   path?: string;                        // 跳转路由
   state?: Record<string, unknown>;      // 路由 state
+  prompt?: string;                      // 作为下一轮对话发送
   primary?: boolean;                    // 主按钮样式
+  requiresConfirmation?: boolean;       // 写操作执行前二次确认
+  confirmTitle?: string;
+  confirmDescription?: string;
 }
 
 export interface AssistantCardRow {
@@ -32,7 +36,7 @@ export interface AssistantCardRow {
 
 export interface AssistantCard {
   id: string;
-  kind: 'route' | 'transit' | 'parking' | 'charging' | 'account' | 'forecast' | 'info' | 'error';
+  kind: 'condition' | 'route' | 'accessibility' | 'transit' | 'parking' | 'charging' | 'account' | 'workOrder' | 'forecast' | 'info' | 'error';
   title: string;
   subtitle?: string;
   rows?: AssistantCardRow[];
@@ -46,6 +50,7 @@ export interface AssistantMessage {
   role: 'user' | 'ai';
   text: string;
   cards?: AssistantCard[];
+  retryText?: string;
   createdAt: number;
 }
 
@@ -54,6 +59,8 @@ export interface AssistantContext {
   isLoggedIn: boolean;
   originName?: string;
   currentPage?: string;
+  conversationId?: string;
+  conversation?: Array<{ role: 'user' | 'assistant'; content: string }>;
 }
 
 export interface IntentParseResult {

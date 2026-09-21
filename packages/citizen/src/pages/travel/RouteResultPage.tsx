@@ -19,6 +19,7 @@ import { useTravelLocationStore } from '../../stores/travelLocationStore';
 import { isTransitSupported } from '../../services/transitEligibility';
 import { estimateDriveImpact } from '../../services/routeCarbonEstimator';
 import { fromLegacyRouteMode } from '../../types/travelMode';
+import { getCarePreferences } from '../../stores/persistence';
 import { buildTravelStages, createTravelRouteFingerprint } from '../../services/routePlanningService';
 import { useTravelStageNavigationStore } from '../../stores/travelStageNavigationStore';
 import TravelStageTimeline from '../../components/travel/TravelStageTimeline';
@@ -179,6 +180,7 @@ const RouteResultPage: React.FC = () => {
   const [recommendationId, setRecommendationId] = useState<TravelMode | null>(null);
   const [departureAdvice, setDepartureAdvice] = useState('');
   const [compareOpen, setCompareOpen] = useState(false);
+  const [comparisonStatus, setComparisonStatus] = useState<Partial<Record<TravelMode, 'loading' | 'ready' | 'unavailable'>>>({});
 
   // 无障碍出行：从高德真实多方案中按无障碍目标重排出的候选
   const [accessibleOptions, setAccessibleOptions] = useState<AccessibleRouteOption[]>([]);
@@ -189,8 +191,13 @@ const RouteResultPage: React.FC = () => {
   const [accessibilityPreferences, setAccessibilityPreferences] = useState<AccessibilityPreference[]>(() => {
     try {
       const saved = JSON.parse(sessionStorage.getItem('zhitu_accessibility_preferences') || 'null');
-      return Array.isArray(saved) && saved.length ? saved : ['wheelchair'];
-    } catch { return ['wheelchair']; }
+      if (Array.isArray(saved) && saved.length) return saved;
+      const profilePreferences = getCarePreferences(useAuthStore.getState().user?.id || 'legacy');
+      return profilePreferences.length ? profilePreferences : ['wheelchair'];
+    } catch {
+      const profilePreferences = getCarePreferences(useAuthStore.getState().user?.id || 'legacy');
+      return profilePreferences.length ? profilePreferences : ['wheelchair'];
+    }
   });
   const accessibleSelected = accessibleOptions.find(o => o.id === accessibleSelectedId) || accessibleOptions[0] || null;
 
@@ -282,6 +289,7 @@ const RouteResultPage: React.FC = () => {
     setLocationsReady(false);
     setLocationError('');
     setRouteResults({});
+    setComparisonStatus(Object.fromEntries(VALID_MODES.map(mode => [mode, 'loading'])) as Partial<Record<TravelMode, 'loading'>>);
 
     resolveRouteLocations(origin, destination, originCoords, destinationCoords)
       .then(({ start, end, originLabel, destinationLabel }) => {
@@ -410,8 +418,38 @@ const RouteResultPage: React.FC = () => {
       .then((route) => {
         if (requestId !== routeRequestIdRef.current) return;
         setRouteResults({ [route.mode]: route });
+        setComparisonStatus(current => ({ ...current, [route.mode]: 'ready' }));
         setUnavailableNote('');
         setIsPlanning(false);
+
+        if (accessibleActive) return;
+        const planComparisonRoute = async (mode: TravelMode): Promise<PlannedRoute> => {
+          if (mode === 'bus') {
+            const transitCheck = isTransitSupported(useTravelLocationStore.getState().origin, useTravelPlanStore.getState().destination);
+            if (!transitCheck.supported || waypoints.some(point => point.trim())) throw new Error('TRANSIT_UNAVAILABLE');
+            const candidates = await planTransitCandidates(s, e, transitCity);
+            const option = buildTransitRouteOptions(candidates)[0];
+            if (!option) throw new Error('EMPTY_ROUTE');
+            return option.route;
+          }
+          const waypointCoords = mode === 'drive' ? await resolveWp() : [];
+          const candidates = await planRouteCandidates(mode, s, e, transitCity, waypointCoords);
+          if (!candidates.length) throw new Error('EMPTY_ROUTE');
+          return candidates[0].route;
+        };
+        void Promise.allSettled(VALID_MODES.filter(mode => mode !== route.mode).map(async mode => ({ mode, route: await planComparisonRoute(mode) })))
+          .then(results => {
+            if (requestId !== routeRequestIdRef.current) return;
+            const nextRoutes: Partial<Record<TravelMode, PlannedRoute>> = {};
+            const nextStatuses: Partial<Record<TravelMode, 'ready' | 'unavailable'>> = {};
+            results.forEach((result, index) => {
+              const mode = VALID_MODES.filter(candidate => candidate !== route.mode)[index];
+              if (result.status === 'fulfilled') { nextRoutes[result.value.mode] = result.value.route; nextStatuses[result.value.mode] = 'ready'; }
+              else nextStatuses[mode] = 'unavailable';
+            });
+            setRouteResults(current => ({ ...current, ...nextRoutes }));
+            setComparisonStatus(current => ({ ...current, ...nextStatuses }));
+          });
       })
       .catch((error) => {
         if (requestId !== routeRequestIdRef.current) return;
@@ -1292,7 +1330,7 @@ const RouteResultPage: React.FC = () => {
               </div>
               <div className={styles.navArrivedActions}>
                 {isLoggedIn && arrivedTrip && (
-                  <button className={styles.navArrivedBtn} onClick={() => navigate(`/profile/trips/${arrivedTrip.id}`)}>查看本次出行</button>
+                  <button className={styles.navArrivedBtn} onClick={() => navigate(`/travel/settlement/${arrivedTrip.id}`)}>查看结算结果</button>
                 )}
                 <button className={styles.navArrivedBtnPrimary} onClick={endNavigation}>结束导航</button>
               </div>
@@ -1676,45 +1714,53 @@ const RouteResultPage: React.FC = () => {
       )}
 
       {/* ===== 路线横向比较（折叠） ===== */}
-      {!navActive && !isPlanning && availableModes.length > 1 && (
+      {!navActive && !isPlanning && !accessibleActive && (
         <div className={styles.forecastSection} style={{ background: '#fff' }}>
           <div className={styles.forecastTitle} style={{ cursor: 'pointer' }} onClick={() => setCompareOpen(!compareOpen)}>
             📊 路线比较 {compareOpen ? '▾' : '▸'}
           </div>
           {compareOpen && (
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <div className={styles.compareScroll}><table className={styles.compareTable}>
               <thead>
                 <tr style={{ borderBottom: '1px solid #f0f0f0', color: 'var(--text-hint)' }}>
                   <th style={{ padding: 6, textAlign: 'left' }}>方案</th>
-                  <th style={{ padding: 6 }}>当前耗时</th>
-                  <th style={{ padding: 6 }}>距离</th>
-                  <th style={{ padding: 6 }}>收费</th>
-                  <th style={{ padding: 6 }}>30m预计</th>
-                  <th style={{ padding: 6 }}>未来趋势</th>
+                  <th style={{ padding: 6 }}>预计用时</th>
+                  <th style={{ padding: 6 }}>总距离</th>
+                  <th style={{ padding: 6 }}>步行距离</th>
+                  <th style={{ padding: 6 }}>换乘次数</th>
+                  <th style={{ padding: 6 }}>预计费用</th>
+                  <th style={{ padding: 6 }}>拥堵风险</th>
+                  <th style={{ padding: 6 }}>碳排放</th>
                   <th style={{ padding: 6 }}>综合评分</th>
+                  <th style={{ padding: 6 }}>数据来源</th>
                 </tr>
               </thead>
               <tbody>
-                {availableModes.map(m => {
-                  const r = routeResults[m]!;
+                {VALID_MODES.map(m => {
+                  const r = routeResults[m];
+                  if (!r) return <tr key={m} style={{ borderBottom: '1px solid #f5f5f5' }}><td style={{ padding: 8 }}>{MODE_META[m].icon} {MODE_META[m].label}</td><td colSpan={9} style={{ padding: 8, color: 'var(--text-hint)' }}>{comparisonStatus[m] === 'loading' ? '正在规划…' : '当前条件下暂无可用方案'}</td></tr>;
                   const fc = forecasts[m];
-                  const fc30 = fc?.find(f => f.offsetMinutes === 30);
-                  const trend = fc && fc.length ? (fc[fc.length - 1].index - fc[0].index).toFixed(1) : '暂无预测';
+                  const risk = fc?.[0]?.level === 'congested' || fc?.[0]?.level === 'blocked' ? '高' : fc?.[0]?.level === 'slow' ? '中' : fc?.length ? '低' : '待更新';
+                  const walkingDistance = (r.segments || []).filter(segment => segment.type === 'walk').reduce((sum, segment) => sum + Number((segment as SegmentData & { distance?: number }).distance || 0), 0);
+                  const transferCount = Math.max(0, (r.segments || []).filter(segment => segment.type === 'bus' || segment.type === 'metro').length - 1);
                   const score = calculateRouteScore({ mode: m, label: MODE_META[m].label, distance: r.distance, duration: r.duration, toll: r.cost ?? 0, forecast: fc });
                   return (
                     <tr key={m} style={{ borderBottom: '1px solid #f5f5f5', background: selectedMode === m ? '#f0f5ff' : '#fff' }}>
                       <td style={{ padding: 6, textAlign: 'left' }}>{MODE_META[m].icon} {MODE_META[m].label}</td>
                       <td style={{ padding: 6, textAlign: 'center' }}>{formatDuration(r.duration)}</td>
                       <td style={{ padding: 6, textAlign: 'center' }}>{(r.distance / 1000).toFixed(1)}km</td>
+                      <td style={{ padding: 6, textAlign: 'center' }}>{walkingDistance ? `${Math.round(walkingDistance)}m` : '-'}</td>
+                      <td style={{ padding: 6, textAlign: 'center' }}>{m === 'bus' ? `${transferCount} 次` : '-'}</td>
                       <td style={{ padding: 6, textAlign: 'center' }}>{r.cost ? `¥${r.cost}` : '-'}</td>
-                      <td style={{ padding: 6, textAlign: 'center' }}>{fc30 ? formatDuration(fc30.estimatedDuration) : '暂无预测'}</td>
-                      <td style={{ padding: 6, textAlign: 'center' }}>{trend === '暂无预测' ? trend : `${trend} 指数`}</td>
+                      <td style={{ padding: 6, textAlign: 'center' }}>{risk}</td>
+                      <td style={{ padding: 6, textAlign: 'center' }}>{m === 'drive' ? '较高' : m === 'walk' || m === 'bike' ? '很低' : '较低'}<small>估算</small></td>
                       <td style={{ padding: 6, textAlign: 'center', fontWeight: 600 }}>{score}</td>
+                      <td style={{ padding: 6, textAlign: 'center' }}>高德路线<br/><small>拥堵为模拟预测</small></td>
                     </tr>
                   );
                 })}
               </tbody>
-            </table>
+            </table></div>
           )}
         </div>
       )}
