@@ -37,6 +37,7 @@ const AccessibleRouteCard: React.FC<AccessibleRouteCardProps> = ({ option, activ
       : option.metrics.unknownFacilityCount > 0
         ? `部分无障碍设施信息待确认（${option.metrics.unknownFacilityCount} 个站点未覆盖），请根据现场标识通行。`
         : '';
+  const confirmedCount = Math.max(0, option.metrics.stationNames.length - option.metrics.unknownFacilityCount - option.metrics.stairsRiskCount);
 
   return (
     <div className={`${styles.card} ${active ? styles.cardActive : ''}`} onClick={onSelect}>
@@ -68,6 +69,13 @@ const AccessibleRouteCard: React.FC<AccessibleRouteCardProps> = ({ option, activ
           ))}
         </div>
       )}
+
+      <div className={styles.statusList} aria-label="无障碍设施状态">
+        {confirmedCount > 0 && <span className={`${styles.statusTag} ${styles.statusVerified}`}>已确认可用 {confirmedCount}</span>}
+        {option.metrics.unknownFacilityCount > 0 && <span className={`${styles.statusTag} ${styles.statusUnknown}`}>状态未知 {option.metrics.unknownFacilityCount}</span>}
+        {option.metrics.stairsRiskCount > 0 && <span className={`${styles.statusTag} ${styles.statusObstacle}`}>当前障碍 {option.metrics.stairsRiskCount}</span>}
+        {!confirmedCount && !option.metrics.unknownFacilityCount && !option.metrics.stairsRiskCount && <span className={`${styles.statusTag} ${styles.statusUnknown}`}>状态未知</span>}
+      </div>
 
       {riskMessage && (
         <div className={styles.unknown} style={{ color: '#ad6800' }}>

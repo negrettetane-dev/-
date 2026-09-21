@@ -7,6 +7,8 @@ import TransitSearchPanel from '../../components/travel/TransitSearchPanel';
 import ModeAssistPanel from '../../components/travel/ModeAssistPanel';
 import { parseTravelMode } from '../../types/travelMode';
 import type { AccessibilityPreference } from '../../services/accessibilityService';
+import { getCarePreferences } from '../../stores/persistence';
+import { useAuthStore } from '../../stores/authStore';
 import { getNearbyStations, getBusLines, getMetroLines } from '../../services/transitService';
 import type { TransitLine, NearbyStation } from '../../types/transit';
 import styles from './Travel.module.css';
@@ -17,7 +19,11 @@ const TravelPlanPage: React.FC = () => {
   const [mode, setMode] = useState<TravelModeOption>(() => parseTravelMode(new URLSearchParams(window.location.search).get('mode')) || 'driving');
   const [busLines, setBusLines] = useState<TransitLine[]>([]);
   const [metroLines, setMetroLines] = useState<TransitLine[]>([]);
-  const [accessibilityPreferences, setAccessibilityPreferences] = useState<AccessibilityPreference[]>(['wheelchair']);
+  const userId = useAuthStore(state => state.user?.id || 'legacy');
+  const [accessibilityPreferences, setAccessibilityPreferences] = useState<AccessibilityPreference[]>(() => {
+    const saved = getCarePreferences(userId);
+    return saved.length ? saved : ['wheelchair'];
+  });
 
   const ACCESSIBILITY_PREFERENCES: Array<{ value: AccessibilityPreference; label: string; icon: string }> = [
     { value: 'wheelchair', label: '轮椅出行', icon: '♿' },

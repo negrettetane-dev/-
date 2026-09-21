@@ -43,6 +43,7 @@ function modeLabel(mode?: string): string {
 
 /** 入口：根据输入返回一条可信回复 */
 export async function respond(input: string, ctx: AssistantContext): Promise<AssistantMessage> {
+  if (isRouteDecisionRequest(input)) return handleRouteDecisionShell(input, ctx);
   const parsed = recognizeIntent(input);
   switch (parsed.intent) {
     case 'route_plan': return handleRoutePlan(parsed, ctx);
@@ -55,8 +56,113 @@ export async function respond(input: string, ctx: AssistantContext): Promise<Ass
     case 'report_help': return handleReport(input, ctx);
     case 'route_forecast': return handleForecast(parsed);
     case 'platform_help': return handlePlatformHelp();
-    default: return handleUnknown(input);
+    default: return handleUnknown(input, ctx);
   }
+}
+
+function isRouteDecisionRequest(input: string): boolean {
+  return /(老人|轮椅|视障|听障|婴儿车|少走路|少换乘|不换乘|低碳|环保|便宜|费用优先|时间优先|不想堵车|确认条件并生成方案)/.test(input)
+    && /(去|到|路线|方案|出行|确认条件并生成方案)/.test(input);
+}
+
+function handleRouteDecisionShell(input: string, ctx: AssistantContext): AssistantMessage {
+  const parsed = recognizeIntent(input);
+  const isConfirmed = input.includes('确认条件并生成方案');
+  const destination = parsed.destination || '目的地待确认';
+  const traveler = /轮椅/.test(input) ? '轮椅用户'
+    : /老人|老年/.test(input) ? '老年人'
+      : /视障/.test(input) ? '视障用户'
+        : /听障/.test(input) ? '听障用户'
+          : /婴儿车/.test(input) ? '携带婴儿车' : '普通用户';
+  const priorities = [
+    /快|时间优先/.test(input) && '时间优先',
+    /便宜|费用优先/.test(input) && '费用优先',
+    /低碳|环保/.test(input) && '低碳优先',
+    /少走路/.test(input) && '少步行',
+    /少换乘|不换乘/.test(input) && '少换乘',
+    traveler !== '普通用户' && '无障碍优先',
+  ].filter(Boolean).join('、') || '综合均衡';
+
+  if (!isConfirmed) {
+    return msg('我先把这次出行条件整理出来。请确认或继续补充，确认后再进入路线规划。', [{
+      id: nextId('c'),
+      kind: 'condition',
+      title: '出行条件确认',
+      subtitle: '本次临时需求 · 不会覆盖长期偏好',
+      rows: [
+        { label: '起点', value: parsed.origin || ctx.originName || '使用当前位置' },
+        { label: '目的地', value: destination },
+        { label: '出行人群', value: traveler },
+        { label: '优先条件', value: priorities },
+        { label: '出发时间', value: parsed.targetTime || '现在' },
+      ],
+      source: SRC.unknown,
+      sourceLabel: 'AI 条件识别 · 待确认',
+      actions: [
+        { label: '确认并生成方案', prompt: `确认条件并生成方案：去${destination}，${traveler}，${priorities}`, primary: true },
+        { label: '改为少走路', prompt: `去${destination}，${traveler}，少走路并尽量少换乘` },
+        { label: '改为低碳优先', prompt: `去${destination}，${traveler}，低碳优先` },
+      ],
+    }]);
+  }
+
+  return msg('下面先展示前端方案壳子。路线指标均为比赛演示数据，后端接入后将替换为真实多模式规划结果。', [
+    {
+      id: nextId('c'),
+      kind: 'route',
+      title: 'AI 推荐 · 地铁 + 步行',
+      subtitle: `前往${destination} · 推荐理由：时间稳定，并兼顾${priorities}`,
+      rows: [
+        { label: '预计用时', value: '38 分钟' },
+        { label: '预计费用', value: '4 元' },
+        { label: '步行距离', value: '520 米' },
+        { label: '换乘次数', value: '1 次' },
+        { label: '拥堵风险', value: '低', valueColor: '#389e0d' },
+        { label: '预计碳排放', value: '较低 · 模型估算' },
+        { label: '综合评分', value: '92 分', valueColor: '#1677ff' },
+      ],
+      source: SRC.demo,
+      sourceLabel: '比赛演示数据 · 估算',
+      actions: [
+        { label: '采用此方案', path: buildPlannerPath({ ...parsed, destination }), primary: true },
+        { label: '我更在意价格', prompt: `去${destination}，费用优先` },
+        { label: '我不想换乘', prompt: `去${destination}，不要换乘` },
+      ],
+    },
+    {
+      id: nextId('c'),
+      kind: 'accessibility',
+      title: '无障碍风险检查',
+      subtitle: traveler === '普通用户' ? '可继续补充老人、轮椅或婴儿车等需求' : `${traveler}适配检查`,
+      rows: [
+        { label: '综合适配度', value: traveler === '普通用户' ? '未启用专项检查' : '95 分' },
+        { label: '电梯', value: '3 部 · 状态待核验' },
+        { label: '无障碍通道', value: '演示数据：全程可用' },
+        { label: '楼梯', value: traveler === '普通用户' ? '未设为硬约束' : '0 处' },
+        { label: '风险提示', value: '换乘站电梯状态暂无法确认', valueColor: '#d46b08' },
+      ],
+      source: SRC.demo,
+      sourceLabel: '比赛演示数据 · 状态未知',
+      actions: [{ label: '按无障碍条件重规划', prompt: `去${destination}，按${traveler}无障碍条件重新规划` }],
+    },
+    {
+      id: nextId('c'),
+      kind: 'route',
+      title: '低碳备选 · 公交 + 步行',
+      subtitle: '比推荐方案多 12 分钟，预计碳排放更低',
+      rows: [
+        { label: '预计用时', value: '50 分钟' },
+        { label: '预计费用', value: '2 元' },
+        { label: '步行距离', value: '860 米' },
+        { label: '换乘次数', value: '0 次' },
+        { label: '预计碳排放', value: '很低 · 模型估算', valueColor: '#389e0d' },
+        { label: '综合评分', value: '84 分' },
+      ],
+      source: SRC.demo,
+      sourceLabel: '比赛演示数据 · 估算',
+      actions: [{ label: '选择低碳方案', path: buildPlannerPath({ ...parsed, destination, mode: 'bus' }) }],
+    },
+  ]);
 }
 
 /** 输入对应的「处理中」状态文案（不统一显示「正在思考」） */
@@ -352,7 +458,14 @@ function handleReport(input: string, ctx: AssistantContext): AssistantMessage {
       ],
     }]);
   }
-  const actions: AssistantCardAction[] = [{ label: '去上报', path: '/report', primary: true }];
+  const actions: AssistantCardAction[] = [{
+    label: '填写并确认上报',
+    path: '/report',
+    primary: true,
+    requiresConfirmation: true,
+    confirmTitle: '开始填写事件上报？',
+    confirmDescription: '当前仅进入上报填写页，不会直接提交。后端接入后，正式提交工单仍需再次确认。',
+  }];
   if (personal && ctx.isLoggedIn) actions.push({ label: '我的上报进度', path: '/profile/reports' });
   actions.push({ label: '免登录查工单', path: '/report/query' });
   return msg('你可以通过「事件上报」提交交通问题，并在「我的上报」查看处理进度：', [{
@@ -406,10 +519,10 @@ function handlePlatformHelp(): AssistantMessage {
   }]);
 }
 
-function handleUnknown(input: string): Promise<AssistantMessage> {
+function handleUnknown(input: string, ctx: AssistantContext): Promise<AssistantMessage> {
   // 工具类意图已在前面处理（走真实 Service，不编造数据）。
   // 识别不到意图的开放问题，交给大模型自然回复；失败回退到能力说明。
-  return aiChat([{ role: 'user', content: input }])
+  return aiChat([...(ctx.conversation || []), { role: 'user', content: input }], ctx.conversationId)
     .then(content => msg(content))
     .catch(() => msg('我主要帮助你处理城市出行、路线、路况、停车、充电、公交地铁和平台账户相关问题。你可以问我：「去北京南站怎么走？」「附近哪里有停车场？」「我的积分还有多少？」', [{
       id: nextId('c'),

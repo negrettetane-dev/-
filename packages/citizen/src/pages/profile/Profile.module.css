@@ -45,6 +45,7 @@
 .settingsLabel { font-size: 15px; font-weight: 500; }
 .settingsDescription { display: block; margin-top: 4px; color: var(--text-hint); font-size: 12px; font-weight: 400; }
 .settingsSaved { padding-top: 10px; color: var(--primary); font-size: 12px; text-align: right; }
+.careHint { margin: 8px 0 4px; padding: 10px 12px; border-radius: 8px; background: #f7fbff; color: #5f7085; font-size: 12px; line-height: 1.6; }
 
 .accountPage { max-width: 860px; margin: 0 auto; }
 .pageHeader { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }

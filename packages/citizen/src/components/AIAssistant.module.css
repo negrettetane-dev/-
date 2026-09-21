@@ -58,6 +58,10 @@
   background: linear-gradient(135deg, #1677ff, #69b1ff);
   color: #fff;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .header span {
@@ -71,6 +75,42 @@
   font-weight: 400 !important;
   opacity: 0.8;
   margin-top: 2px;
+}
+
+.clearButton {
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 14px;
+  white-space: nowrap;
+}
+
+.sessionBar {
+  min-height: 34px;
+  padding: 7px 16px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border-bottom: 1px solid #edf1f5;
+  background: #f8fbff;
+  color: #41536a;
+  font-size: 11px;
+}
+
+.sessionDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #faad14;
+  box-shadow: 0 0 0 3px rgba(250, 173, 20, 0.14);
+}
+
+.sessionHint {
+  margin-left: auto;
+  color: #8795a7;
 }
 
 /* 消息区 */
@@ -306,6 +346,85 @@
   border-color: #4096ff;
 }
 
+.retryButton {
+  align-self: flex-start;
+  border: 1px solid #91caff;
+  background: #fff;
+  color: #1677ff;
+  border-radius: 16px;
+  padding: 6px 14px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.confirmBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(15, 28, 45, 0.42);
+  backdrop-filter: blur(2px);
+}
+
+.confirmDialog {
+  width: min(360px, 100%);
+  padding: 24px;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 20px 60px rgba(15, 28, 45, 0.24);
+  text-align: center;
+}
+
+.confirmIcon {
+  width: 42px;
+  height: 42px;
+  margin: 0 auto 12px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #fff7e6;
+  color: #d46b08;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.confirmDialog h3 {
+  margin: 0;
+  color: #1a1a2e;
+  font-size: 17px;
+}
+
+.confirmDialog p {
+  margin: 10px 0 20px;
+  color: #667085;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.confirmActions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.confirmActions button {
+  border: 1px solid #d9d9d9;
+  background: #fff;
+  color: #344054;
+  border-radius: 10px;
+  padding: 10px 14px;
+  cursor: pointer;
+}
+
+.confirmActions .confirmPrimary {
+  border-color: #1677ff;
+  background: #1677ff;
+  color: #fff;
+}
+
 @media (max-width: 480px) {
   .panel {
     right: 8px;
@@ -320,5 +439,8 @@
     width: 48px;
     height: 48px;
     font-size: 24px;
+  }
+  .sessionHint {
+    display: none;
   }
 }

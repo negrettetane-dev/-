@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useElderly } from '../../App';
 import { useAuthStore } from '../../stores/authStore';
-import { getNotificationSettings, setNotificationSettings, type NotificationSettings } from '../../stores/persistence';
+import { getCarePreferences, getNotificationSettings, setCarePreferences, setNotificationSettings, type CarePreference, type NotificationSettings } from '../../stores/persistence';
 import { apiGet, apiPut } from '../../services/apiClient';
 import styles from './Profile.module.css';
 
@@ -12,12 +12,32 @@ const SettingsPage: React.FC = () => {
   const userId = useAuthStore(state => state.user?.id || 'legacy');
   const [settings, setSettings] = useState<NotificationSettings>(() => getNotificationSettings(userId));
   const [saveMessage, setSaveMessage] = useState('');
+  const [carePreferences, setCarePreferenceState] = useState<CarePreference[]>(() => getCarePreferences(userId));
 
   useEffect(() => {
     apiGet<NotificationSettings>('/notification-settings')
       .then(data => { setSettings(data); setNotificationSettings(data, userId); })
       .catch(() => setSettings(getNotificationSettings(userId)));
   }, [userId]);
+
+  useEffect(() => { setCarePreferenceState(getCarePreferences(userId)); }, [userId]);
+
+  const careOptions: Array<{ value: CarePreference; label: string; description: string }> = [
+    { value: 'elderly', label: '老年人', description: '优先更简单的提示与少步行路线' },
+    { value: 'wheelchair', label: '轮椅出行', description: '优先电梯、坡道，避开已知楼梯风险' },
+    { value: 'visual', label: '视障出行', description: '强化语音和分段提示' },
+    { value: 'hearing', label: '听障出行', description: '强化视觉提醒和状态标识' },
+    { value: 'stroller', label: '携带婴儿车', description: '优先坡道、电梯和无障碍入口' },
+  ];
+
+  const toggleCarePreference = (preference: CarePreference) => {
+    setCarePreferenceState(current => {
+      const next = current.includes(preference) ? current.filter(item => item !== preference) : [...current, preference];
+      setCarePreferences(next, userId);
+      setSaveMessage('关怀偏好已保存到当前设备');
+      return next;
+    });
+  };
 
   const items: Array<{ key: keyof NotificationSettings; label: string; description: string }> = [
     { key:'carbon', label:'碳积分推送', description:'积分获取、扣减、兑换及奖励到账提醒' },
@@ -63,6 +83,15 @@ const SettingsPage: React.FC = () => {
             <span className={styles.toggleBall}/>
           </button>
         </div>
+        <div className={styles.careHint}>这些偏好会用于无障碍路线和小枢推荐；后端偏好同步接口待接入。</div>
+        {careOptions.map(option => (
+          <div key={option.value} className={styles.settingsItem}>
+            <span><span className={styles.settingsLabel}>{option.label}</span><small className={styles.settingsDescription}>{option.description}</small></span>
+            <button type="button" role="switch" aria-checked={carePreferences.includes(option.value)} aria-label={option.label} className={`${styles.toggle} ${carePreferences.includes(option.value) ? styles.toggleOn : ''}`} onClick={() => toggleCarePreference(option.value)}>
+              <span className={styles.toggleBall}/>
+            </button>
+          </div>
+        ))}
       </div>
 
       <div style={{textAlign:'center',padding:20,color:'var(--text-hint)',fontSize:13}}>

@@ -10,8 +10,8 @@ export interface ChatMessage {
 }
 
 /** 调用大模型，返回回复文本。失败时向上抛错，由调用方回退到规则兜底。 */
-export async function aiChat(messages: ChatMessage[]): Promise<string> {
-  const data = await apiPost<{ content: string }>('/ai/chat', { messages });
+export async function aiChat(messages: ChatMessage[], conversationId?: string): Promise<string> {
+  const data = await apiPost<{ content: string }>('/ai/chat', { messages, conversationId });
   if (!data?.content) throw new Error('AI 返回为空');
   return data.content;
 }
