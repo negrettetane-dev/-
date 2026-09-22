@@ -111,6 +111,32 @@ export function getFacilitySource(): 'demo' | 'backend' {
   return facilitySource;
 }
 
+function normalizeFacility(raw: Record<string, unknown>): StationFacility | null {
+  const stationName = String(raw.stationName ?? raw.station_name ?? '').trim();
+  const lng = Number(raw.lng ?? raw.longitude);
+  const lat = Number(raw.lat ?? raw.latitude);
+  if (!stationName) return null;
+  const entrances = Array.isArray(raw.entrances) ? raw.entrances.map((entrance: Record<string, unknown>) => ({
+    id: entrance.id ? String(entrance.id) : undefined,
+    name: String(entrance.name ?? entrance.entranceName ?? entrance.entrance_name ?? '入口'),
+    elevator: Boolean(entrance.elevator),
+    ramp: Boolean(entrance.ramp),
+    stairsOnly: Boolean(entrance.stairsOnly ?? entrance.stairs_only),
+    wheelchairAccessible: Boolean(entrance.wheelchairAccessible ?? entrance.wheelchair_accessible),
+    status: String(entrance.status || 'unknown') as FacilityStatus,
+  })) : [];
+  return {
+    stationId: String(raw.stationId ?? raw.station_id ?? raw.id ?? stationName),
+    stationName,
+    // 设施评估按站名和入口字段完成；缺坐标只是不绘制地图标记，不能丢弃真实设施记录。
+    lng: Number.isFinite(lng) ? lng : 0,
+    lat: Number.isFinite(lat) ? lat : 0,
+    entrances,
+    accessibleRestroom: Boolean(raw.accessibleRestroom ?? raw.accessible_restroom),
+    source: 'backend',
+  };
+}
+
 /**
  * 从后端拉取无障碍设施数据并替换本地 Map（幂等，只拉一次）。
  * - 成功：source 标记为 backend，真实数据生效。
@@ -119,19 +145,29 @@ export function getFacilitySource(): 'demo' | 'backend' {
  */
 export function loadAccessibilityFacilities(): Promise<boolean> {
   if (loadPromise) return loadPromise;
-  loadPromise = apiGet<StationFacility[]>('/accessibility/stations')
+  loadPromise = apiGet<StationFacility[] | { list?: unknown; items?: unknown }>('/accessibility/stations')
     .then((data) => {
       const list = Array.isArray(data)
         ? data
         : data && typeof data === 'object' && Array.isArray((data as { list?: unknown }).list)
-          ? (data as { list: StationFacility[] }).list
+          ? (data as { list: unknown[] }).list
+          : data && typeof data === 'object' && Array.isArray((data as { items?: unknown }).items)
+            ? (data as { items: unknown[] }).items
           : [];
-      if (list.length === 0) return false;
-      facilityMap = new Map(list.map(f => [normalizeFacilityName(f.stationName), { ...f, source: 'backend' as const }]));
+      const facilities = list
+        .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'))
+        .map(normalizeFacility)
+        .filter((item): item is StationFacility => item !== null);
+      if (facilities.length === 0) return false;
+      facilityMap = new Map(facilities.map(f => [normalizeFacilityName(f.stationName), f]));
       facilitySource = 'backend';
       facilityListeners.forEach(listener => listener());
       return true;
     })
-    .catch(() => false);
+    .catch(() => {
+      // 请求失败不能永久缓存失败结果；用户进入无障碍规划时允许重新拉取。
+      loadPromise = null;
+      return false;
+    });
   return loadPromise;
 }

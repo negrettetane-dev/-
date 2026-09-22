@@ -1,6 +1,6 @@
 import { formatDistance } from '@zhitu/shared';
 import { loadAMap } from '../lib/amap';
-import { geocodeLocation, isValidCoord, reverseGeocodeDetail } from './locationService';
+import { geocodeLocation, getCurrentResolvedLocation, isValidCoord, reverseGeocodeDetail } from './locationService';
 import type { RouteTravelMode } from '../components/travel/TravelModeSelector';
 import { pickLowerImpactDrive } from './routeCarbonEstimator';
 import type { UnifiedLocation } from '../stores/travelLocationStore';
@@ -286,6 +286,10 @@ export async function resolveRouteLocations(
   const resolveOrigin = async () => {
     if (originCoords && isValidCoord(originCoords.lng, originCoords.lat)) {
       return { coord: [originCoords.lng, originCoords.lat] as [number, number], label: origin || '当前位置' };
+    }
+    if (/^(当前位置|我的位置|当前位置附近)$/.test(origin.trim())) {
+      const current = await getCurrentResolvedLocation();
+      return { coord: [current.lng, current.lat] as [number, number], label: current.address || '当前位置' };
     }
     const known = Object.entries(KNOWN_COORDS).find(([key]) => origin.includes(key) || key.includes(origin));
     if (known) return { coord: known[1], label: origin || known[0] };
@@ -705,7 +709,11 @@ export async function planAmapRoute(
                   infocode: result?.infocode,
                   result,
                 });
-                reject(new Error(result?.info || result?.message || `驾车路线规划失败（${status || 'unknown'}）`));
+                const amapCode = result?.result || result?.infocode;
+                const message = amapCode === 'INVALID_USER_SCODE'
+                  ? '高德安全密钥无效，请检查 VITE_AMAP_SECURITY_CODE 配置'
+                  : result?.info || result?.message || `驾车路线规划失败（${status || 'unknown'}）`;
+                reject(new Error(message));
               }
             });
           } catch (error) {
@@ -799,10 +807,16 @@ function routeFromAmapRoute(mode: 'drive' | 'bike' | 'walk', route: any): Planne
   const path = extractRoutePath(route);
   if (path.length < 2 || !Number(route.distance) || !Number(route.time)) return null;
   const isBike = mode === 'bike';
+  const trafficSegments = (Array.isArray(route.tmcs) ? route.tmcs : Array.isArray(route.steps) ? route.steps.flatMap((step: any) => Array.isArray(step?.tmcs) ? step.tmcs : []) : [])
+    .map((segment: any) => ({
+      level: /严重拥堵|堵塞|拥堵|heavy|blocked/i.test(String(segment?.status || segment?.description || '')) ? 'congested' : /缓行|slow/i.test(String(segment?.status || segment?.description || '')) ? 'slow' : 'free',
+      ratio: Number(segment?.distance) > 0 ? Number(segment.distance) / Number(route.distance) : 0,
+    }))
+    .filter((segment: { ratio: number }) => segment.ratio > 0);
   return {
     mode, distance: route.distance, duration: route.time, path, polyline: path,
     ...(mode === 'drive'
-      ? { congestionSegments: [{ level: 'slow', ratio: 0.3 }, { level: 'free', ratio: 0.7 }], aiAdvice: '建议避开拥堵路段' }
+      ? (trafficSegments.length ? { congestionSegments: trafficSegments } : {})
       : { calories: Math.round(route.distance / 1000 * (isBike ? 30 : 45)) }),
   };
 }

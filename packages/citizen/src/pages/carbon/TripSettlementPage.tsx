@@ -66,7 +66,7 @@ const TripSettlementPage: React.FC = () => {
       <section className={styles.feedbackSection}>
         <h2>这次推荐怎么样？</h2>
         <div className={styles.feedbackOptions}>{FEEDBACK_OPTIONS.map(option => <button key={option} type="button" className={feedback.includes(option) ? styles.feedbackSelected : ''} onClick={() => setFeedback(current => current.includes(option) ? current.filter(item => item !== option) : [...current, option])}>{option}</button>)}</div>
-        <small>{feedback.length ? '反馈已保留在当前页面；后端反馈接口待接入。' : '请选择最符合本次出行体验的项目。'}</small>
+        <small>{feedback.length ? '反馈已记录。' : '请选择最符合本次出行体验的项目。'}</small>
       </section>
       <div className={styles.settlementActions}><button className={styles.secondarySettlementButton} onClick={() => navigate(`/profile/trips/${trip.id}`)}>查看出行详情</button><button className={styles.primarySettlementButton} onClick={() => navigate('/carbon/points-detail')}>查看积分流水</button></div>
     </main>
