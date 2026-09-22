@@ -1,4 +1,6 @@
 // ===== 智途云枢 · Mock Data (北京) =====
+import { createDemoAccessibilityFacilities } from '@zhitu/shared';
+import type { StationFacility } from '@zhitu/shared';
 
 // ---- Districts ----
 export const DISTRICTS = [
@@ -514,87 +516,9 @@ export function generateSystemLogs(): MockSystemLog[] {
 }
 
 // ---- 无障碍设施（管理端 mock）----
-export interface MockFacilityEntrance {
-  id: string;
-  name: string;
-  elevator: boolean;
-  ramp: boolean;
-  stairsOnly: boolean;
-  wheelchairAccessible: boolean;
-  status: 'verified' | 'unknown' | 'obstacle';
-  lastVerifiedAt?: string;
-  updatedAt?: string;
-  note?: string;
-}
+export type MockStationFacility = StationFacility;
 
-export interface MockStationFacility {
-  stationId: string;
-  stationName: string;
-  lng: number;
-  lat: number;
-  entrances: MockFacilityEntrance[];
-  accessibleRestroom: boolean;
-  source: 'backend' | 'demo';
-  lastVerifiedAt?: string;
-  updatedAt?: string;
-}
-
-export const MOCK_ACCESSIBILITY_STATIONS: MockStationFacility[] = [
-  {
-    stationId: 'bj_tiananmen_east', stationName: '天安门东', lng: 116.404, lat: 39.909, accessibleRestroom: true, source: 'backend',
-    entrances: [
-      { id: 'ent-1', name: 'A口', elevator: true, ramp: true, stairsOnly: false, wheelchairAccessible: true, status: 'verified' },
-      { id: 'ent-2', name: 'B口', elevator: false, ramp: true, stairsOnly: false, wheelchairAccessible: true, status: 'verified' },
-      { id: 'ent-3', name: 'C口', elevator: false, ramp: false, stairsOnly: true, wheelchairAccessible: false, status: 'obstacle' },
-    ],
-  },
-  {
-    stationId: 'bj_wangfujing', stationName: '王府井', lng: 116.410, lat: 39.914, accessibleRestroom: true, source: 'backend',
-    entrances: [
-      { id: 'ent-4', name: 'A口', elevator: true, ramp: true, stairsOnly: false, wheelchairAccessible: true, status: 'verified' },
-      { id: 'ent-5', name: 'B口', elevator: true, ramp: false, stairsOnly: false, wheelchairAccessible: true, status: 'verified' },
-      { id: 'ent-6', name: 'C口', elevator: false, ramp: false, stairsOnly: true, wheelchairAccessible: false, status: 'verified' },
-    ],
-  },
-  {
-    stationId: 'bj_xidan', stationName: '西单', lng: 116.380, lat: 39.913, accessibleRestroom: false, source: 'backend',
-    entrances: [
-      { id: 'ent-7', name: 'A口', elevator: true, ramp: true, stairsOnly: false, wheelchairAccessible: true, status: 'verified' },
-      { id: 'ent-8', name: 'B口', elevator: false, ramp: false, stairsOnly: false, wheelchairAccessible: true, status: 'unknown' },
-      { id: 'ent-9', name: 'C口', elevator: false, ramp: false, stairsOnly: true, wheelchairAccessible: false, status: 'obstacle' },
-    ],
-  },
-  {
-    stationId: 'bj_guomao', stationName: '国贸', lng: 116.461, lat: 39.909, accessibleRestroom: true, source: 'backend',
-    entrances: [
-      { id: 'ent-10', name: 'A口', elevator: true, ramp: true, stairsOnly: false, wheelchairAccessible: true, status: 'verified' },
-      { id: 'ent-11', name: 'D口', elevator: false, ramp: false, stairsOnly: true, wheelchairAccessible: false, status: 'obstacle' },
-    ],
-  },
-  {
-    stationId: 'bj_beijing_station', stationName: '北京站', lng: 116.433, lat: 39.903, accessibleRestroom: true, source: 'backend', lastVerifiedAt: '2026-09-10T09:00:00+08:00', updatedAt: '2026-09-10T09:00:00+08:00',
-    entrances: [
-      { id: 'ent-12', name: '北广场入口', elevator: true, ramp: true, stairsOnly: false, wheelchairAccessible: true, status: 'verified', lastVerifiedAt: '2026-09-10T09:00:00+08:00', updatedAt: '2026-09-10T09:00:00+08:00', note: '推荐轮椅和婴儿车使用' },
-      { id: 'ent-13', name: '南侧通道', elevator: false, ramp: true, stairsOnly: false, wheelchairAccessible: true, status: 'verified', lastVerifiedAt: '2026-09-10T09:00:00+08:00', updatedAt: '2026-09-10T09:00:00+08:00' },
-    ],
-  },
-  {
-    stationId: 'bj_xuanwumen', stationName: '宣武门', lng: 116.374, lat: 39.899, accessibleRestroom: false, source: 'backend', lastVerifiedAt: '2026-09-18T10:30:00+08:00', updatedAt: '2026-09-18T10:30:00+08:00',
-    entrances: [
-      { id: 'ent-14', name: 'A口', elevator: true, ramp: true, stairsOnly: false, wheelchairAccessible: true, status: 'verified', lastVerifiedAt: '2026-09-18T10:30:00+08:00', updatedAt: '2026-09-18T10:30:00+08:00', note: '推荐使用，电梯与坡道均已确认' },
-      { id: 'ent-15', name: 'B口', elevator: false, ramp: false, stairsOnly: true, wheelchairAccessible: false, status: 'obstacle', lastVerifiedAt: '2026-09-18T10:30:00+08:00', updatedAt: '2026-09-18T10:30:00+08:00', note: '仅楼梯入口，轮椅和婴儿车请避开' },
-      { id: 'ent-16', name: 'G口', elevator: true, ramp: false, stairsOnly: false, wheelchairAccessible: true, status: 'unknown', updatedAt: '2026-09-18T10:30:00+08:00', note: '电梯状态待现场复核' },
-    ],
-  },
-  {
-    stationId: 'bj_beijing_south', stationName: '北京南站', lng: 116.385, lat: 39.863, accessibleRestroom: true, source: 'backend', lastVerifiedAt: '2026-09-16T14:20:00+08:00', updatedAt: '2026-09-16T14:20:00+08:00',
-    entrances: [
-      { id: 'ent-17', name: '北广场入口', elevator: true, ramp: true, stairsOnly: false, wheelchairAccessible: true, status: 'verified', lastVerifiedAt: '2026-09-16T14:20:00+08:00', updatedAt: '2026-09-16T14:20:00+08:00', note: '推荐进站入口，电梯直达站厅' },
-      { id: 'ent-18', name: '东进站口', elevator: true, ramp: true, stairsOnly: false, wheelchairAccessible: true, status: 'verified', lastVerifiedAt: '2026-09-16T14:20:00+08:00', updatedAt: '2026-09-16T14:20:00+08:00' },
-      { id: 'ent-19', name: '南侧地下通道', elevator: false, ramp: false, stairsOnly: true, wheelchairAccessible: false, status: 'obstacle', lastVerifiedAt: '2026-09-16T14:20:00+08:00', updatedAt: '2026-09-16T14:20:00+08:00', note: '仅楼梯，已标记避开' },
-    ],
-  },
-];
+export const MOCK_ACCESSIBILITY_STATIONS: MockStationFacility[] = createDemoAccessibilityFacilities();
 
 // ---- Admin notifications（管理端通知中心）----
 export interface MockAdminNotification {

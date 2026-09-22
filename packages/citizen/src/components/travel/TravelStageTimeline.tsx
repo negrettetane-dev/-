@@ -33,6 +33,16 @@ function statusFor(stage: TravelStage, index: number, current: number): TravelSt
   return 'pending';
 }
 
+const STAGE_ICONS: Record<TravelStage['kind'], string> = {
+  walk: '🚶',
+  transfer: '🚶',
+  bus: '🚌',
+  metro: '🚇',
+  drive: '🚗',
+  bike: '🚲',
+  arrive: '📍',
+};
+
 const TravelStageTimeline: React.FC<TravelStageTimelineProps> = ({ stages, currentStageIndex, navStatus, onComplete, onResume, syncState, transitStatus, actionBusy, accessibleMode }) => (
   <section className={styles.timeline} aria-label="路线阶段">
     {syncState && <div className={styles.syncState}>{syncState === 'synced' ? '已同步' : syncState === 'pending' ? '同步中…' : syncState === 'offline' ? '离线模式' : '同步失败'}</div>}
@@ -47,7 +57,7 @@ const TravelStageTimeline: React.FC<TravelStageTimelineProps> = ({ stages, curre
           </div>
           <div className={styles.content}>
             <div className={styles.header}>
-              <strong>{stage.name}</strong>
+              <strong className={styles.title}><span className={styles.icon} aria-hidden="true">{STAGE_ICONS[stage.kind]}</span>{stage.name}</strong>
               <span className={styles.status}>{status === 'completed' ? '已完成' : status === 'current' ? '进行中' : '待开始'}</span>
             </div>
             <div className={styles.meta}>{formatDistance(stage.distanceMeters)} · {formatDuration(stage.durationSeconds)}</div>

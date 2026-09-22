@@ -1,13 +1,34 @@
 // ===== 智途云枢 · API Client =====
 import axios from 'axios';
+import type { AxiosResponse, InternalAxiosRequestConfig } from 'axios';
 import type { ApiResponse } from '@zhitu/shared';
+
+async function fetchAdapter(config: InternalAxiosRequestConfig): Promise<AxiosResponse> {
+  const query = config.params ? new URLSearchParams(Object.entries(config.params).flatMap(([key, value]) => value == null ? [] : [[key, String(value)]])).toString() : '';
+  const url = `${config.baseURL || ''}${config.url || ''}${query ? `?${query}` : ''}`;
+  const response = await window.fetch(url, {
+    method: config.method?.toUpperCase(),
+    headers: config.headers as HeadersInit,
+    body: config.data,
+  });
+  const data = await response.json();
+  return {
+    data,
+    status: response.status,
+    statusText: response.statusText,
+    headers: Object.fromEntries(response.headers.entries()),
+    config,
+    request: null,
+  };
+}
 
 const apiClient = axios.create({
   baseURL: '/api/admin',
   timeout: 15000,
   headers: { 'Content-Type': 'application/json' },
-  // VITE_ENABLE_MOCK=true 时用 fetch adapter，让 mock handlers 能拦截 axios 请求
-  adapter: import.meta.env.VITE_ENABLE_MOCK === 'true' ? 'fetch' : undefined,
+  adapter: import.meta.env.VITE_ENABLE_MOCK === 'true'
+    ? (config) => fetchAdapter(config)
+    : undefined,
 });
 
 // Request interceptor

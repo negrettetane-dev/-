@@ -35,6 +35,23 @@ apiClient.interceptors.request.use((config) => {
   return config;
 });
 
+function extractErrorPayload(data: unknown): { message?: string; code?: string | number } {
+  if (!data || typeof data !== 'object') return {};
+  const payload = data as Record<string, unknown>;
+  const detail = payload.detail;
+  if (detail && typeof detail === 'object') {
+    const detailPayload = detail as Record<string, unknown>;
+    return {
+      message: typeof detailPayload.message === 'string' ? detailPayload.message : undefined,
+      code: typeof detailPayload.code === 'string' || typeof detailPayload.code === 'number' ? detailPayload.code : undefined,
+    };
+  }
+  return {
+    message: typeof payload.message === 'string' ? payload.message : undefined,
+    code: typeof payload.code === 'string' || typeof payload.code === 'number' ? payload.code : undefined,
+  };
+}
+
 apiClient.interceptors.response.use(
   (response) => {
     const body = response.data as ApiResponse;
@@ -46,6 +63,7 @@ apiClient.interceptors.response.use(
   },
   (error) => {
     const config = error?.config;
+    const { message, code } = extractErrorPayload(error?.response?.data);
     console.error('API request failed', {
       url: config ? `${config.baseURL || ''}${config.url || ''}` : undefined,
       method: config?.method?.toUpperCase(),
@@ -54,7 +72,7 @@ apiClient.interceptors.response.use(
       response: error?.response?.data,
       error,
     });
-    return Promise.reject(error);
+    return Promise.reject(new ApiError(message || error?.message || '请求失败', code, error?.response?.status));
   },
 );
 

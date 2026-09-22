@@ -1,14 +1,13 @@
-import { useEffect } from 'react';
 import { ConfigProvider, theme } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
 import AppRouter from './router';
 import { setupMockHandlers } from './mocks/handlers';
 
+if (import.meta.env.VITE_ENABLE_MOCK === 'true') {
+  setupMockHandlers();
+}
+
 export default function App() {
-  useEffect(() => {
-    if (import.meta.env.VITE_ENABLE_MOCK !== 'true') return;
-    return setupMockHandlers();
-  }, []);
 
   return (
     <ConfigProvider

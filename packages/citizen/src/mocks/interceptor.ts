@@ -12,7 +12,7 @@ import {
   addReport, getReports, updateReport, getCarbonRewards, redeemCarbonReward,
   addNotification, getNotifications, getNotificationSettings, setNotificationSettings, markNotificationsRead,
 } from '../stores/persistence';
-import { DEMO_ACCESSIBLE_FACILITIES } from '../data/accessibilityFacilities';
+import { createDemoAccessibilityFacilities } from '@zhitu/shared';
 import {
   CUTOFF_MINUTES,
   computeBusStatus,
@@ -297,7 +297,7 @@ export function fetchInterceptor() {
 
     // 无障碍设施（平民端查询）：mock 环境下返回演示数据，对齐后端契约
     if (url === '/api/accessibility/stations') {
-      return new Response(JSON.stringify(json(DEMO_ACCESSIBLE_FACILITIES.map(f => ({ ...f, source: 'demo' })))), { headers: { 'Content-Type': 'application/json' } });
+      return new Response(JSON.stringify(json(createDemoAccessibilityFacilities())), { headers: { 'Content-Type': 'application/json' } });
     }
 
     // 定制公交（mock 模拟后端：班次实例 / 预约）。真实后端实现后前端零改动。
@@ -475,9 +475,9 @@ export function fetchInterceptor() {
         location: address,
         address,
         position,
-        // 当前没有真实上传接口，不把本地 File 伪装成已上传图片；详情页会明确显示“暂无上报图片”。
-        images: [] as string[],
-        beforeImages: [] as string[],
+        // 真实后端会保存上传接口返回的 URL；mock 也按同一字段透传，便于管理端/详情页展示。
+        images: Array.isArray(body.images) ? body.images : [],
+        beforeImages: Array.isArray(body.beforeImages) ? body.beforeImages : (Array.isArray(body.images) ? body.images : []),
         department: departmentForCategory(category),
         estimatedProcessTime: estimateForCategory(category),
         platformFeedback: '工单已提交，平台将尽快受理并反馈处理进展。',

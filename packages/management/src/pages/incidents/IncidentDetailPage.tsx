@@ -40,6 +40,10 @@ interface IncidentDetail {
   images?: string[];
   afterImages?: string[];
   afterImage?: string;
+  imageUrls?: string[];
+  attachments?: Array<string | { url?: string; path?: string }>;
+  media?: Array<string | { url?: string; path?: string }>;
+  photos?: string[];
   accessibilityImpact?: boolean;
   platformFeedback?: string;
   feedback?: string;
@@ -102,7 +106,12 @@ export default function IncidentDetailPage() {
 
   if (!incident) return <div className="content-page"><Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/admin/incidents')}>返回列表</Button><div style={{ padding: 60, textAlign: 'center' }}>{loading ? '加载中...' : '未找到事件'}</div></div>;
 
-  const afterImages = incident.afterImages?.length ? incident.afterImages : (incident.afterImage ? [incident.afterImage] : []);
+  const imageList = (...groups: Array<unknown>): string[] => groups
+    .flatMap(group => Array.isArray(group) ? group : [])
+    .map(item => typeof item === 'string' ? item : (item && typeof item === 'object' ? String((item as { url?: string; path?: string }).url || (item as { url?: string; path?: string }).path || '') : ''))
+    .filter(Boolean);
+  const reportImages = imageList(incident.images, incident.imageUrls, incident.attachments, incident.media, incident.photos);
+  const afterImages = imageList(incident.afterImages, incident.afterImage ? [incident.afterImage] : []);
 
   return <div className="content-page">
     <Space style={{ marginBottom: 16 }}><Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/admin/incidents')}>返回列表</Button></Space>
@@ -126,7 +135,7 @@ export default function IncidentDetailPage() {
     <Card title="上报与处理图片" style={{ marginBottom: 16 }}>
       <Descriptions bordered column={2}>
         <Descriptions.Item label="上报图片">
-          {incident.images?.length ? <Image.PreviewGroup>{incident.images.map((src, index) => <Image key={src} src={src} width={120} alt={`上报图片${index + 1}`} style={{ marginRight: 8 }} />)}</Image.PreviewGroup> : '暂无上报图片'}
+          {reportImages.length ? <Image.PreviewGroup>{reportImages.map((src, index) => <Image key={src} src={src} width={120} alt={`上报图片${index + 1}`} style={{ marginRight: 8 }} />)}</Image.PreviewGroup> : '暂无上报图片'}
         </Descriptions.Item>
         <Descriptions.Item label="处理后图片">
           {afterImages.length ? <Image.PreviewGroup>{afterImages.map((src, index) => <Image key={src} src={src} width={120} alt={`处理后图片${index + 1}`} style={{ marginRight: 8 }} />)}</Image.PreviewGroup> : '暂无处理后图片'}

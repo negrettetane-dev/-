@@ -274,8 +274,9 @@ const AccessibilityManagePage: React.FC = () => {
         <h2>
           <DeploymentUnitOutlined style={{ marginRight: 8 }} />
           无障碍设施管理
+          <Tag color="orange" style={{ marginLeft: 10, verticalAlign: 'middle' }}>演示数据</Tag>
         </h2>
-        <p className="page-desc">维护地铁/公交站点的无障碍入口、电梯、坡道与障碍状态；状态为人工维护记录，未表示自动实时核验；平民端无障碍路线据此计算</p>
+        <p className="page-desc">维护地铁/公交站点的无障碍入口、电梯、坡道与障碍状态。当前数据仅用于功能展示，增删改仅保存在本次管理端会话，不会同步到市民端，也不代表官方实时核验结果。</p>
       </div>
 
       <div className="filter-bar">

@@ -8,6 +8,20 @@ import styles from './Report.module.css';
 
 const MAX_PHOTOS = 6;
 
+async function uploadReportImage(file: File): Promise<string> {
+  const formData = new FormData();
+  formData.append('file', file);
+  const token = localStorage.getItem('zhitu_token');
+  const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {};
+  const res = await fetch('/api/upload', { method: 'POST', body: formData, headers });
+  if (!res.ok) throw new Error(res.status === 401 ? '登录状态已失效，请重新登录后提交' : '图片上传失败');
+  const body = await res.json();
+  if (body?.code !== undefined && body.code !== 0) throw new Error(body.message || '图片上传失败');
+  const url = body?.data?.url || body?.url || body?.data?.path;
+  if (!url) throw new Error('图片上传返回无效地址');
+  return url;
+}
+
 interface AiAssessment {
   category: string;
   severity: 'low' | 'medium' | 'high';
@@ -40,6 +54,7 @@ const ReportFormPage: React.FC = () => {
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const [phone, setPhone] = useState('');
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [validationError, setValidationError] = useState('');
   const [aiAssessment, setAiAssessment] = useState<AiAssessment | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
@@ -122,12 +137,16 @@ const ReportFormPage: React.FC = () => {
     if (!category) { setValidationError('请选择问题类型'); return; }
     if (!description.trim()) { setValidationError('请填写问题描述'); return; }
     setValidationError('');
+    setSubmitting(true);
 
     try {
+      const uploadedUrls = photoFiles.length ? await Promise.all(photoFiles.map(uploadReportImage)) : [];
       await apiPost('/report/submit', {
         category,
         description: description.trim(),
         phone: phone.trim() || undefined,
+        images: uploadedUrls,
+        beforeImages: uploadedUrls,
         // 事件位置：有则提交；无定位且未手动选择时，允许无位置提交但标记 failed
         ...(eventLocation
           ? {
@@ -143,12 +162,14 @@ const ReportFormPage: React.FC = () => {
         // 设备原始定位（保留审核追溯）
         ...(deviceLocation ? { deviceLocation } : {}),
         aiAssessment: aiAssessment || undefined,
-        imageUploadStatus: photoFiles.length ? 'pending_backend_upload' : 'none',
+        imageUploadStatus: uploadedUrls.length ? 'uploaded' : 'none',
       });
       revokeAllPreviews();
       setSubmitted(true);
     } catch (error) {
       setValidationError(error instanceof Error ? error.message : '提交失败，请检查网络后重试');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -225,7 +246,7 @@ const ReportFormPage: React.FC = () => {
         </div>
         {photoFiles.length > 0 && (
           <div style={{fontSize:12,color:'#ad6800',marginTop:6}}>
-            已选 {photoFiles.length} 张图片，等待上传接口接入后随工单提交；当前不会伪装为已上传。
+            已选 {photoFiles.length} 张图片，提交时将先上传至后端，再随工单保存。
           </div>
         )}
       </div>
@@ -314,7 +335,7 @@ const ReportFormPage: React.FC = () => {
               ⚠️ {validationError}
             </div>
           )}
-          <button className={styles.submitBtn} onClick={handleSubmit}>📤 提交上报</button>
+          <button className={styles.submitBtn} onClick={handleSubmit} disabled={submitting}>{submitting ? '提交中…' : '📤 提交上报'}</button>
         </>
       )}
 

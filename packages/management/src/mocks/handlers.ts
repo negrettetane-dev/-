@@ -292,7 +292,7 @@ const API_HANDLERS: Record<string, Handler> = {
       lat: Number(body.lat || 39.90),
       entrances: Array.isArray(body.entrances) ? body.entrances : [],
       accessibleRestroom: Boolean(body.accessibleRestroom),
-      source: 'backend',
+      source: 'demo',
       lastVerifiedAt: body.lastVerifiedAt,
       updatedAt: body.updatedAt || new Date(now).toISOString(),
     };

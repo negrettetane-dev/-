@@ -12,6 +12,7 @@ import TravelModeSelector, { normalizeTravelMode, type RouteTravelMode, type Tra
 import AccessibleRouteCard from '../../components/travel/AccessibleRouteCard';
 import AccessibilityOverview from '../../components/travel/AccessibilityOverview';
 import AccessibilityFacilityDetails from '../../components/travel/AccessibilityFacilityDetails';
+import DataSourceBadge from '../../components/DataSourceBadge';
 import { buildAccessibleOptions, getAccessibilityPreferenceHint, getAccessibilityConditionLabels, ACCESSIBILITY_PREFERENCE_META, type AccessibilityPreference, type AccessibleRouteOption } from '../../services/accessibilityService';
 import { getFacilityForStation, getFacilitySource, subscribeAccessibilityFacilities } from '../../data/accessibilityFacilities';
 import { useAuthStore } from '../../stores/authStore';
@@ -61,6 +62,43 @@ const MODE_META: Record<TravelMode, { icon: string; label: string; color: string
   bike: { icon: '🚲', label: '骑行', color: '#faad14' },
   walk: { icon: '🚶', label: '步行', color: '#722ed1' },
 };
+
+type RoutePolylineRefs = Partial<Record<TravelMode, any[]>>;
+
+interface RoutePolylineSpec {
+  path: [number, number][];
+  isTransit: boolean;
+}
+
+function getRoutePolylineSpecs(mode: TravelMode, route: PlannedRoute): RoutePolylineSpec[] {
+  if (mode === 'bus' && route.segments?.length) {
+    const hasCompleteSegmentPaths = route.segments.every(segment => (segment.path?.length || 0) >= 2);
+    if (hasCompleteSegmentPaths) {
+      return route.segments.map(segment => ({
+        path: segment.path!,
+        isTransit: segment.type === 'bus' || segment.type === 'metro',
+      }));
+    }
+  }
+
+  return route.path.length >= 2
+    ? [{ path: route.path, isTransit: mode === 'bus' }]
+    : [];
+}
+
+function getRoutePolylines(refs: RoutePolylineRefs): any[] {
+  return Object.values(refs).flatMap(polylines => polylines || []);
+}
+
+function setRoutePolylinesVisible(refs: RoutePolylineRefs, visible: boolean): void {
+  getRoutePolylines(refs).forEach(polyline => polyline.setOptions({ visible }));
+}
+
+function setRouteModeVisible(refs: RoutePolylineRefs, mode: TravelMode): void {
+  Object.entries(refs).forEach(([routeMode, polylines]) => {
+    polylines?.forEach(polyline => polyline.setOptions({ visible: routeMode === mode }));
+  });
+}
 
 const MODE_CARBON_KG_PER_KM: Record<TravelMode, number> = {
   drive: 0.192,
@@ -299,8 +337,7 @@ const RouteResultPage: React.FC = () => {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<any>(null);
   const trafficLayerRef = useRef<any>(null);
-  const polylineRef = useRef<any>(null);
-  const routePolylineRefs = useRef<Partial<Record<TravelMode, any>>>({});
+  const routePolylineRefs = useRef<RoutePolylineRefs>({});
   const startMarkerRef = useRef<any>(null);
   const endMarkerRef = useRef<any>(null);
   const waypointMarkersRef = useRef<any[]>([]);
@@ -602,7 +639,6 @@ const RouteResultPage: React.FC = () => {
       mapRef.current?.destroy();
       mapRef.current = null;
       trafficLayerRef.current = null;
-      polylineRef.current = null;
       routePolylineRefs.current = {};
       startMarkerRef.current = null;
       endMarkerRef.current = null;
@@ -664,30 +700,33 @@ const RouteResultPage: React.FC = () => {
     const AMap = (window as any).AMap;
     if (!AMap?.Polyline) return;
 
-    Object.values(routePolylineRefs.current).forEach(pl => { if (pl) map.remove(pl); });
+    const oldPolylines = getRoutePolylines(routePolylineRefs.current);
+    if (oldPolylines.length) map.remove(oldPolylines);
     routePolylineRefs.current = {};
 
     const route = routeResults[selectedMode];
-    if (!route?.path?.length) return;
+    if (!route) return;
+    const specs = getRoutePolylineSpecs(selectedMode, route);
+    if (!specs.length) return;
 
-    const pl = new AMap.Polyline({
-      path: route.path,
+    const polylines = specs.map(spec => new AMap.Polyline({
+      path: spec.path,
       strokeColor: MODE_META[selectedMode].color,
       strokeWeight: 7,
       strokeOpacity: 0.95,
-      strokeStyle: selectedMode === 'bus' ? 'dashed' : 'solid',
+      strokeStyle: spec.isTransit ? 'dashed' : 'solid',
       outlineColor: '#ffffff',
-      outlineWidth: selectedMode === 'bus' ? 2 : 0,
+      outlineWidth: spec.isTransit ? 2 : 0,
       lineJoin: 'round', lineCap: 'round',
-    });
-    map.add(pl);
-    routePolylineRefs.current[selectedMode] = pl;
+    }));
+    map.add(polylines);
+    routePolylineRefs.current[selectedMode] = polylines;
 
     if (!navActive) {
       const rect = mapContainerRef.current?.getBoundingClientRect();
       if (rect && rect.width > 0 && rect.height > 0) {
         try {
-          map.setFitView([pl], false, [80, 60, 80, 60]);
+          map.setFitView(polylines, false, [80, 60, 80, 60]);
         } catch (error) {
           console.warn('AMap setFitView failed:', error);
         }
@@ -706,7 +745,7 @@ const RouteResultPage: React.FC = () => {
     accessibleMarkersRef.current.forEach(m => { try { map.remove(m); } catch { /* ignore */ } });
     accessibleMarkersRef.current = [];
 
-    if (!accessibleActive || !accessibleSelected || !accessibleSelected.route.path?.length || navActive) return;
+    if (!accessibleActive || !accessibleSelected || !accessibleSelected.route.path?.length) return;
 
     // 途经站点的无障碍设施 → 标记
     const stationNames = accessibleSelected.metrics.stationNames;
@@ -829,9 +868,7 @@ const RouteResultPage: React.FC = () => {
 
     // 阶段导航保留车辆 Marker 和运动轨迹，但不让旧逻辑直接把整条路线判定为到达。
     if (stageSnapshot) {
-      Object.entries(routePolylineRefs.current).forEach(([m, pl]) => {
-        if (pl) pl.setOptions({ visible: m === navMode });
-      });
+      setRouteModeVisible(routePolylineRefs.current, navMode);
       if (moveTimerRef.current) { clearInterval(moveTimerRef.current); moveTimerRef.current = null; }
       if (carMarkerRef.current) { map.remove(carMarkerRef.current); carMarkerRef.current = null; }
       const AMap = (window as any).AMap;
@@ -840,16 +877,21 @@ const RouteResultPage: React.FC = () => {
       if (stageSnapshot.navStatus === 'completed' || stageSnapshot.navStatus === 'ended') return;
       const stagePath = stage?.kind === 'arrive' ? null : getStageMapPath(stage || {}, navRoute.path);
       if (stage?.kind === 'arrive') {
-        void completeStage('system');
-        setNavStatus('arrived');
-        navStatusRef.current = 'arrived';
+        const destinationPoint = stage.endCoord || endCoord.current;
+        if (destinationPoint) {
+          map.setCenter(destinationPoint);
+          map.setZoom(16);
+        }
+        setNavDistance(0);
+        setStageArrivalPending(true);
+        setNavRouteError(`已到达${displayDest}，请确认到达`);
         return;
       }
       if (!stagePath?.length) {
         setNavRouteError('当前阶段缺少可用路径，请重新规划路线');
         return;
       }
-      const modeIcon = getStageTransportIcon(stage?.kind);
+      const modeIcon = accessibleActive ? '♿' : getStageTransportIcon(stage?.kind);
       const markerColor = accessibleActive ? '#722ed1' : MODE_META[navMode].color;
       const carMarker = new AMap.Marker({
         position: stagePath[0], anchor: 'center',
@@ -871,6 +913,7 @@ const RouteResultPage: React.FC = () => {
       map.setRotation(0);
       map.setCenter(stagePath[0]);
       map.resize?.();
+      const stageTickMs = Math.max(120, Math.min(900, Math.round(12000 / Math.max(1, stagePath.length - 1))));
       const moveTimer = setInterval(() => {
         const path = movePathRef.current;
         if (!path.length || !carMarkerRef.current) return;
@@ -882,12 +925,13 @@ const RouteResultPage: React.FC = () => {
           carMarkerRef.current.setPosition(end);
           map.setCenter(end);
           setNavDistance(0);
-          if (stage?.kind === 'walk' || stage?.kind === 'transfer') {
-            void completeStage('system');
-          } else if (stage?.kind === 'bus' || stage?.kind === 'metro') {
-            setStageArrivalPending(true);
-            setNavRouteError(`已到达${stage.toStation || '下车站'}，请确认下车`);
-          }
+          setStageArrivalPending(true);
+          const stageTarget = stage?.kind === 'bus' || stage?.kind === 'metro'
+            ? stage.toStation || '下车站'
+            : stage?.kind === 'drive' || stage?.kind === 'bike'
+              ? '当前阶段终点'
+              : '当前路段终点';
+          setNavRouteError(`已到达${stageTarget}，请确认进入下一阶段`);
           return;
         }
         pathIdxRef.current = nextIndex;
@@ -896,10 +940,10 @@ const RouteResultPage: React.FC = () => {
         map.setCenter(next);
         setNavDistance(Math.max(0, navDistanceRef.current - Math.ceil((stage?.distanceMeters || navRoute.distance) / path.length)));
         navDurationRef.current = Math.max(0, navDurationRef.current - 1);
-      }, 250);
+      }, stageTickMs);
       moveTimerRef.current = moveTimer;
       return () => {
-        Object.values(routePolylineRefs.current).forEach(pl => { if (pl) pl.setOptions({ visible: true }); });
+        setRoutePolylinesVisible(routePolylineRefs.current, true);
         if (moveTimerRef.current === moveTimer) { clearInterval(moveTimer); moveTimerRef.current = null; }
         if (carMarkerRef.current && map) map.remove(carMarkerRef.current);
         carMarkerRef.current = null;
@@ -909,9 +953,7 @@ const RouteResultPage: React.FC = () => {
     }
 
     // 导航时只显示当前路线，隐藏其他方案的 Polyline
-    Object.entries(routePolylineRefs.current).forEach(([m, pl]) => {
-      if (pl) pl.setOptions({ visible: m === navMode });
-    });
+    setRouteModeVisible(routePolylineRefs.current, navMode);
 
     // 清理旧的移动 Timer 和车辆 Marker
     if (moveTimerRef.current) { clearInterval(moveTimerRef.current); moveTimerRef.current = null; }
@@ -972,7 +1014,7 @@ const RouteResultPage: React.FC = () => {
 
     return () => {
       // 只清理导航资源，不销毁主地图；恢复所有路线可见
-      Object.values(routePolylineRefs.current).forEach(pl => { if (pl) pl.setOptions({ visible: true }); });
+      setRoutePolylinesVisible(routePolylineRefs.current, true);
       if (moveTimerRef.current) { clearInterval(moveTimerRef.current); moveTimerRef.current = null; }
       if (carMarkerRef.current && map) { map.remove(carMarkerRef.current); }
       carMarkerRef.current = null;
@@ -1024,13 +1066,49 @@ const RouteResultPage: React.FC = () => {
     handleArrived();
   }, [stageSnapshot?.navStatus]);
 
+  const initializeStageNavigation = (route: PlannedRoute) => {
+    const s = startCoord.current;
+    const e = endCoord.current;
+    const stageOrigin = useTravelLocationStore.getState().origin || {
+      name: displayOrigin, address: displayOrigin, lng: s?.[0] ?? null, lat: s?.[1] ?? null, source: 'manual' as const,
+    };
+    const stageDestination = useTravelPlanStore.getState().destination || {
+      name: displayDest, address: displayDest, lng: e?.[0] ?? null, lat: e?.[1] ?? null, source: 'manual' as const,
+    };
+    try {
+      const stages = buildTravelStages(route, stageOrigin, stageDestination);
+      const routeFingerprint = createTravelRouteFingerprint(route, stageOrigin, stageDestination);
+      const restored = restoreStageNavigation(routeFingerprint);
+      if (!restored) {
+        void startStageNavigation({
+          sessionId: typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `stage_${Date.now()}`,
+          routeFingerprint,
+          origin: stageOrigin,
+          destination: stageDestination,
+          routeMode: route.mode,
+          route,
+          stages,
+        }).catch(error => {
+          console.warn('Stage navigation init failed, fallback to simple navigation:', error);
+        });
+      }
+    } catch (error) {
+      console.warn('Stage navigation init failed, fallback to simple navigation:', error);
+    }
+  };
+
   // ===== 开始导航：先校验路线有效性（最终一道防线），再置状态机 + 登录用户创建 Trip =====
   const startNavigation = (mode: TravelMode) => {
-    // 防重复进入：导航中/已到达时不允许再次启动导航；已结束允许重新开始。
-    if (navStatusRef.current === 'navigating' || navStatusRef.current === 'arrived') {
+    // 防重复进入：只有当前页面确实处于导航覆盖层时才拦截；避免上一次异常留下 ref 后按钮看似“点不了”。
+    if (navActive && (navStatusRef.current === 'navigating' || navStatusRef.current === 'arrived')) {
       setNavRouteError('当前已有进行中的导航');
       return;
     }
+    if (!navActive && (navStatusRef.current === 'navigating' || navStatusRef.current === 'arrived')) {
+      navStatusRef.current = 'idle';
+      setNavStatus('idle');
+    }
+    setNavRouteError('');
     // 路线数据必须与请求模式匹配：transit 绝不能用 driving path 冒充
     const route = routeResults[mode];
     if (!route) {
@@ -1050,28 +1128,7 @@ const RouteResultPage: React.FC = () => {
     }
     setSelectedMode(mode);
     setNavMode(mode);
-    const s = startCoord.current;
-    const e = endCoord.current;
-    const stageOrigin = useTravelLocationStore.getState().origin || {
-      name: displayOrigin, address: displayOrigin, lng: s?.[0] ?? null, lat: s?.[1] ?? null, source: 'manual' as const,
-    };
-    const stageDestination = useTravelPlanStore.getState().destination || {
-      name: displayDest, address: displayDest, lng: e?.[0] ?? null, lat: e?.[1] ?? null, source: 'manual' as const,
-    };
-    const stages = buildTravelStages(route, stageOrigin, stageDestination);
-    const routeFingerprint = createTravelRouteFingerprint(route, stageOrigin, stageDestination);
-    const restored = restoreStageNavigation(routeFingerprint);
-    if (!restored) {
-      void startStageNavigation({
-        sessionId: typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `stage_${Date.now()}`,
-        routeFingerprint,
-        origin: stageOrigin,
-        destination: stageDestination,
-        routeMode: route.mode,
-        route,
-        stages,
-      });
-    }
+    initializeStageNavigation(route);
     navStatusRef.current = 'navigating';
     setNavStatus('navigating');
     setNavActive(true);
@@ -1121,7 +1178,7 @@ const RouteResultPage: React.FC = () => {
     accessibleMarkersRef.current = [];
     movePathRef.current = [];
     pathIdxRef.current = 0;
-    Object.values(routePolylineRefs.current).forEach(pl => { if (pl) pl.setOptions({ visible: true }); });
+    setRoutePolylinesVisible(routePolylineRefs.current, true);
   };
 
   // ===== 结束导航：清理 + 保留规划条件 + 返回首页规划页 =====
@@ -1156,11 +1213,11 @@ const RouteResultPage: React.FC = () => {
       mapRef.current?.setPitch(0);
       mapRef.current?.setRotation(0);
       mapRef.current?.resize?.();
-      const selectedPl = routePolylineRefs.current[selectedMode];
+      const selectedPolylines = routePolylineRefs.current[selectedMode] || [];
       const rect = mapContainerRef.current?.getBoundingClientRect();
-      if (selectedPl && rect && rect.width > 0 && rect.height > 0) {
+      if (selectedPolylines.length && rect && rect.width > 0 && rect.height > 0) {
         try {
-          mapRef.current?.setFitView([selectedPl], false, [80, 60, 80, 60]);
+          mapRef.current?.setFitView(selectedPolylines, false, [80, 60, 80, 60]);
         } catch (error) {
           console.warn('AMap setFitView failed:', error);
         }
@@ -1271,11 +1328,16 @@ const RouteResultPage: React.FC = () => {
 
   // ===== 无障碍模式开始导航（复用现有 bus 导航逻辑，仅改文案/设施提示） =====
   const startAccessibleNavigation = (option: AccessibleRouteOption) => {
-    // 防重复进入：导航中/已到达时不允许再次启动导航；已结束允许重新开始。
-    if (navStatusRef.current === 'navigating' || navStatusRef.current === 'arrived') {
+    // 防重复进入：只有当前页面确实处于导航覆盖层时才拦截；避免异常状态导致按钮看似无效。
+    if (navActive && (navStatusRef.current === 'navigating' || navStatusRef.current === 'arrived')) {
       setNavRouteError('当前已有进行中的导航');
       return;
     }
+    if (!navActive && (navStatusRef.current === 'navigating' || navStatusRef.current === 'arrived')) {
+      navStatusRef.current = 'idle';
+      setNavStatus('idle');
+    }
+    setNavRouteError('');
     // 硬性规则兜底：不可通行方案不能开始无障碍导航
     if (option.constraintStatus === 'blocked') {
       setNavRouteError(option.constraintReasons.join('；') || '当前方案不满足无障碍硬约束，请更换方案。');
@@ -1284,6 +1346,7 @@ const RouteResultPage: React.FC = () => {
     setSelectedMode('bus');
     setRouteResults({ bus: option.route });
     setNavMode('bus');
+    initializeStageNavigation(option.route);
     navStatusRef.current = 'navigating';
     setNavStatus('navigating');
     setNavActive(true);
@@ -1331,6 +1394,12 @@ const RouteResultPage: React.FC = () => {
             </div>
           </div>
           <TravelModeSelector value={selectedDisplayMode} onChange={selectTravelMode} className={styles.resultModeSelector} />
+        </div>
+      )}
+
+      {!navActive && accessibleActive && getFacilitySource() === 'demo' && (
+        <div style={{ marginBottom: 10 }}>
+          <DataSourceBadge source="demo" label="当前为演示设施数据" />
         </div>
       )}
 
@@ -1496,7 +1565,13 @@ const RouteResultPage: React.FC = () => {
                       disabled={stageActionBusy}
                       onClick={completeCurrentStage}
                     >
-                      {stageActionBusy ? '处理中…' : '确认已到站，进入下一阶段'}
+                      {stageActionBusy
+                        ? '处理中…'
+                        : stageSnapshot.stages[stageSnapshot.currentStageIndex]?.kind === 'arrive'
+                          ? '确认已到达目的地'
+                          : stageSnapshot.stages[stageSnapshot.currentStageIndex]?.kind === 'bus' || stageSnapshot.stages[stageSnapshot.currentStageIndex]?.kind === 'metro'
+                            ? '确认已到站，进入下一阶段'
+                            : '进入下一阶段'}
                     </button>
                   )}
                 </>
