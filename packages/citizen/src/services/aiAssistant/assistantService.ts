@@ -11,6 +11,9 @@ import { aiChat } from '../aiChatService';
 import { recognizeIntent } from './intentRouter';
 import { searchTransit, getBusLines, getMetroLines } from '../transitService';
 import { getRouteForecast } from '../routeForecastService';
+import { buildTransitRouteOptions, planRouteCandidates, planTransitCandidates, resolveRouteLocations } from '../routePlanningService';
+import { computeAccessibleMetrics } from '../accessibilityService';
+import { getFacilityForStation, getFacilitySource, loadAccessibilityFacilities } from '../../data/accessibilityFacilities';
 import { FORECAST_LEVEL_LABEL } from '../../types/routeForecast';
 import { formatPrice } from '../../utils/price';
 import type { PriceValue } from '../../types/price';
@@ -43,6 +46,8 @@ function modeLabel(mode?: string): string {
 
 /** 入口：根据输入返回一条可信回复 */
 export async function respond(input: string, ctx: AssistantContext): Promise<AssistantMessage> {
+  const routeMetric = extractRouteMetricQuery(input);
+  if (routeMetric) return handleRouteMetric(routeMetric, input);
   if (isRouteDecisionRequest(input)) return handleRouteDecisionShell(input, ctx);
   const parsed = recognizeIntent(input);
   switch (parsed.intent) {
@@ -61,15 +66,16 @@ export async function respond(input: string, ctx: AssistantContext): Promise<Ass
 }
 
 function isRouteDecisionRequest(input: string): boolean {
-  return /(老人|轮椅|视障|听障|婴儿车|少走路|少换乘|不换乘|低碳|环保|便宜|费用优先|时间优先|不想堵车|确认条件并生成方案)/.test(input)
+  return /(无障碍|老人|轮椅|视障|听障|婴儿车|少走路|少换乘|不换乘|低碳|环保|便宜|费用优先|时间优先|不想堵车|确认条件并生成方案)/.test(input)
     && /(去|到|路线|方案|出行|确认条件并生成方案)/.test(input);
 }
 
-function handleRouteDecisionShell(input: string, ctx: AssistantContext): AssistantMessage {
+async function handleRouteDecisionShell(input: string, ctx: AssistantContext): Promise<AssistantMessage> {
   const parsed = recognizeIntent(input);
   const isConfirmed = input.includes('确认条件并生成方案');
   const destination = parsed.destination || '目的地待确认';
-  const traveler = /轮椅/.test(input) ? '轮椅用户'
+  const traveler = /无障碍/.test(input) ? '无障碍出行'
+    : /轮椅/.test(input) ? '轮椅用户'
     : /老人|老年/.test(input) ? '老年人'
       : /视障/.test(input) ? '视障用户'
         : /听障/.test(input) ? '听障用户'
@@ -92,77 +98,155 @@ function handleRouteDecisionShell(input: string, ctx: AssistantContext): Assista
       rows: [
         { label: '起点', value: parsed.origin || ctx.originName || '使用当前位置' },
         { label: '目的地', value: destination },
-        { label: '出行人群', value: traveler },
         { label: '优先条件', value: priorities },
         { label: '出发时间', value: parsed.targetTime || '现在' },
       ],
       source: SRC.unknown,
       sourceLabel: 'AI 条件识别 · 待确认',
+      editor: {
+        origin: parsed.origin || ctx.originName || '',
+        destination,
+        traveler,
+        priorities,
+        travelerOptions: ['普通用户', '无障碍出行', '老年人', '轮椅用户', '视障用户', '听障用户', '携带婴儿车'],
+      },
       actions: [
-        { label: '确认并生成方案', prompt: `确认条件并生成方案：去${destination}，${traveler}，${priorities}`, primary: true },
-        { label: '改为少走路', prompt: `去${destination}，${traveler}，少走路并尽量少换乘` },
-        { label: '改为低碳优先', prompt: `去${destination}，${traveler}，低碳优先` },
+        { label: '确认并生成方案', prompt: `确认条件并生成方案：从${parsed.origin || ctx.originName || '当前位置'}去${destination}，${traveler}，${priorities}`, promptTemplate: '确认条件并生成方案：从{origin}去{destination}，{traveler}，{priorities}', primary: true },
+        { label: '改为少走路', prompt: `去${destination}，${traveler}，少走路并尽量少换乘`, promptTemplate: '从{origin}去{destination}，{traveler}，少走路并尽量少换乘' },
+        { label: '改为低碳优先', prompt: `去${destination}，${traveler}，低碳优先`, promptTemplate: '从{origin}去{destination}，{traveler}，低碳优先' },
       ],
     }]);
   }
 
-  return msg('下面先展示前端方案壳子。路线指标均为比赛演示数据，后端接入后将替换为真实多模式规划结果。', [
-    {
-      id: nextId('c'),
-      kind: 'route',
-      title: 'AI 推荐 · 地铁 + 步行',
-      subtitle: `前往${destination} · 推荐理由：时间稳定，并兼顾${priorities}`,
-      rows: [
-        { label: '预计用时', value: '38 分钟' },
-        { label: '预计费用', value: '4 元' },
-        { label: '步行距离', value: '520 米' },
-        { label: '换乘次数', value: '1 次' },
-        { label: '拥堵风险', value: '低', valueColor: '#389e0d' },
-        { label: '预计碳排放', value: '较低 · 模型估算' },
-        { label: '综合评分', value: '92 分', valueColor: '#1677ff' },
-      ],
-      source: SRC.demo,
-      sourceLabel: '比赛演示数据 · 估算',
-      actions: [
-        { label: '采用此方案', path: buildPlannerPath({ ...parsed, destination }), primary: true },
-        { label: '我更在意价格', prompt: `去${destination}，费用优先` },
-        { label: '我不想换乘', prompt: `去${destination}，不要换乘` },
-      ],
-    },
-    {
-      id: nextId('c'),
-      kind: 'accessibility',
-      title: '无障碍风险检查',
-      subtitle: traveler === '普通用户' ? '可继续补充老人、轮椅或婴儿车等需求' : `${traveler}适配检查`,
-      rows: [
-        { label: '综合适配度', value: traveler === '普通用户' ? '未启用专项检查' : '95 分' },
-        { label: '电梯', value: '3 部 · 状态待核验' },
-        { label: '无障碍通道', value: '演示数据：全程可用' },
-        { label: '楼梯', value: traveler === '普通用户' ? '未设为硬约束' : '0 处' },
-        { label: '风险提示', value: '换乘站电梯状态暂无法确认', valueColor: '#d46b08' },
-      ],
-      source: SRC.demo,
-      sourceLabel: '比赛演示数据 · 状态未知',
-      actions: [{ label: '按无障碍条件重规划', prompt: `去${destination}，按${traveler}无障碍条件重新规划` }],
-    },
-    {
-      id: nextId('c'),
-      kind: 'route',
-      title: '低碳备选 · 公交 + 步行',
-      subtitle: '比推荐方案多 12 分钟，预计碳排放更低',
-      rows: [
-        { label: '预计用时', value: '50 分钟' },
-        { label: '预计费用', value: '2 元' },
-        { label: '步行距离', value: '860 米' },
-        { label: '换乘次数', value: '0 次' },
-        { label: '预计碳排放', value: '很低 · 模型估算', valueColor: '#389e0d' },
-        { label: '综合评分', value: '84 分' },
-      ],
-      source: SRC.demo,
-      sourceLabel: '比赛演示数据 · 估算',
-      actions: [{ label: '选择低碳方案', path: buildPlannerPath({ ...parsed, destination, mode: 'bus' }) }],
-    },
+  const origin = parsed.origin || ctx.originName || '当前位置';
+  let resolved: { start: [number, number]; end: [number, number] };
+  try {
+    resolved = await resolveRouteLocations(origin, destination);
+  } catch {
+    return msg('起点或目的地暂时无法解析，无法生成真实路线。请检查地点名称或先完成定位。');
+  }
+
+  const [driveResult, transitResult] = await Promise.allSettled([
+    planRouteCandidates('drive', resolved.start, resolved.end),
+    planTransitCandidates(resolved.start, resolved.end),
   ]);
+  const driveCandidates = driveResult.status === 'fulfilled' ? driveResult.value : [];
+  const transitOptions = transitResult.status === 'fulfilled' ? buildTransitRouteOptions(transitResult.value) : [];
+  const fastestDrive = [...driveCandidates].sort((a, b) => a.route.duration - b.route.duration)[0]?.route;
+  const transit = transitOptions[0];
+  const formatDuration = (seconds: number) => `${Math.max(1, Math.round(seconds / 60))} 分钟`;
+  const formatDistance = (meters: number) => meters >= 1000 ? `${(meters / 1000).toFixed(1)} 公里` : `${Math.round(meters)} 米`;
+  const congestion = (route: { congestionSegments?: { level: string; ratio: number }[] }) => {
+    const segments = route.congestionSegments || [];
+    if (!segments.length) return '暂无实时拥堵明细';
+    const ratio = segments.filter(segment => segment.level !== 'free').reduce((sum, segment) => sum + segment.ratio, 0);
+    return ratio >= 0.5 ? '高' : ratio >= 0.2 ? '中' : '低';
+  };
+  const planCards: AssistantCard[] = [];
+  if (fastestDrive) {
+    const driveRows = [
+      { label: '预计用时', value: formatDuration(fastestDrive.duration) },
+      { label: '总距离', value: formatDistance(fastestDrive.distance) },
+      { label: '拥堵风险', value: congestion(fastestDrive) },
+      { label: '预计碳排放', value: '较高 · 模型估算' },
+    ];
+    planCards.push({ id: nextId('c'), kind: 'route', title: '驾车方案', subtitle: `前往${destination} · 高德实时路线`, rows: driveRows, source: SRC.real, sourceLabel: '路线业务服务', actions: [{ label: '查看驾车方案', path: buildPlannerPath({ ...parsed, destination, mode: 'drive' }), primary: true }] });
+    planCards.push({ id: nextId('c'), kind: 'route', title: '新能源方案', subtitle: `前往${destination} · 沿用实时驾车路线并叠加新能源服务`, rows: driveRows.map(row => row.label === '预计碳排放' ? { ...row, value: '较低 · 模型估算' } : row), source: SRC.real, sourceLabel: '路线与充电服务', actions: [{ label: '查看新能源方案', path: buildPlannerPath({ ...parsed, destination, mode: 'drive' }), state: { profile: 'ev' }, primary: true }] });
+  }
+  if (transit) {
+    planCards.push({ id: nextId('c'), kind: 'route', title: '公交/地铁方案', subtitle: `前往${destination} · 高德实时公交方案`, rows: [
+      { label: '预计用时', value: formatDuration(transit.route.duration) },
+      { label: '总距离', value: formatDistance(transit.route.distance) },
+      { label: '预计费用', value: `${transit.route.cost || 0} 元` },
+      { label: '步行距离', value: formatDistance(transit.walkingDistance) },
+      { label: '换乘次数', value: `${transit.transferCount} 次` },
+      { label: '拥堵风险', value: '低（公共交通）' },
+    ], source: SRC.real, sourceLabel: '公交路线业务服务', actions: [{ label: '采用此方案', path: buildPlannerPath({ ...parsed, destination, mode: 'bus' }), primary: true }, { label: '我更在意价格', prompt: `去${destination}，费用优先` }, { label: '我不想换乘', prompt: `去${destination}，不要换乘` }] });
+  }
+  if (traveler !== '普通用户') {
+    await loadAccessibilityFacilities();
+    const metrics = transit ? computeAccessibleMetrics(transit.segments) : null;
+    const backendFacilities = metrics && getFacilitySource() === 'backend';
+    const restrooms = backendFacilities ? metrics.stationNames.filter(name => getFacilityForStation(name)?.accessibleRestroom).length : 0;
+    planCards.push({ id: nextId('c'), kind: 'accessibility', title: '无障碍风险检查', subtitle: backendFacilities ? `${traveler} · 后端设施数据` : `${traveler} · 设施状态待确认`, rows: backendFacilities ? [
+      { label: '电梯覆盖站点', value: `${Math.round(metrics.elevatorCoverage * metrics.stationNames.length)}/${metrics.stationNames.length}` },
+      { label: '楼梯风险入口', value: `${metrics.stairsRiskCount} 处`, valueColor: metrics.stairsRiskCount ? '#f5222d' : '#389e0d' },
+      { label: '无障碍卫生间', value: `${restrooms} 个途经站点` },
+      { label: '设施待确认站点', value: `${metrics.unknownFacilityCount} 个`, valueColor: metrics.unknownFacilityCount ? '#d46b08' : '#389e0d' },
+      { label: '步行距离', value: formatDistance(metrics.walkingDistance) },
+      { label: '换乘次数', value: `${metrics.transferCount} 次` },
+    ] : [
+      { label: '步行距离', value: transit ? formatDistance(transit.walkingDistance) : '暂无公交路线数据' },
+      { label: '换乘次数', value: transit ? `${transit.transferCount} 次` : '暂无公交路线数据' },
+      { label: '设施状态', value: '后端数据未成功加载，待确认', valueColor: '#d46b08' },
+    ], source: backendFacilities ? SRC.real : SRC.unknown, sourceLabel: backendFacilities ? '无障碍设施服务' : '无障碍设施服务 · 待确认', actions: [{ label: '按无障碍条件重规划', prompt: `去${destination}，按${traveler}无障碍条件重新规划` }] });
+  }
+  if (!planCards.length) return msg('当前起点和目的地暂未返回可用的真实路线，请检查地点、定位和地图服务配置后重试。');
+
+  const rankedCards = [...planCards].sort((left, right) => {
+    const rank = (card: AssistantCard): number => {
+      const title = card.title;
+      if (/无障碍/.test(input) || traveler !== '普通用户') {
+        if (card.kind === 'accessibility') return -1;
+      }
+      if (/快|尽量快|时间优先|不想堵车/.test(input)) {
+        if (card.kind === 'accessibility') return 99;
+        const durationRow = card.rows?.find(row => row.label === '预计用时');
+        const durationMinutes = durationRow ? Number.parseFloat(durationRow.value) : Number.POSITIVE_INFINITY;
+        return Number.isFinite(durationMinutes) ? durationMinutes : 98;
+      }
+      if (/低碳|环保/.test(input)) {
+        if (/公交|地铁/.test(title)) return 0;
+        if (/新能源/.test(title)) return 2;
+        if (/驾车/.test(title)) return 3;
+      }
+      if (/便宜|费用优先|少换乘|不换乘/.test(input)) {
+        if (/公交|地铁/.test(title)) return 0;
+        if (/新能源/.test(title)) return 2;
+        if (/驾车/.test(title)) return 3;
+      }
+      return /AI 推荐/.test(title) ? 0 : /无障碍/.test(title) ? 1 : 2;
+    };
+    return rank(left) - rank(right);
+  });
+
+  const highlightedCards = rankedCards.map((card, index) => index === 0
+    ? { ...card, title: card.title.startsWith('AI 推荐') ? card.title : `AI 推荐 · ${card.title}`, subtitle: `${card.subtitle || ''} · 已按${priorities}排序` }
+    : card);
+  return msg('已根据你的条件生成多模式出行方案。推荐顺序已按你的优先条件排序；碳排放为模型估算，设施状态以业务服务返回结果为准。', highlightedCards);
+}
+
+type RouteMetric = 'walking' | 'transfer' | 'duration' | 'distance' | 'cost';
+
+async function handleRouteMetric(query: { origin: string; destination: string; metric: RouteMetric }, input: string): Promise<AssistantMessage> {
+  try {
+    const { start, end } = await resolveRouteLocations(query.origin, query.destination);
+    const [driveResult, transitResult] = await Promise.allSettled([
+      planRouteCandidates('drive', start, end),
+      planTransitCandidates(start, end),
+    ]);
+    const drive = driveResult.status === 'fulfilled' ? [...driveResult.value].sort((a, b) => a.route.duration - b.route.duration)[0]?.route : undefined;
+    const transit = transitResult.status === 'fulfilled' ? buildTransitRouteOptions(transitResult.value)[0] : undefined;
+    const formatDistance = (meters: number) => meters >= 1000 ? `${(meters / 1000).toFixed(1)} 公里` : `${Math.round(meters)} 米`;
+    const formatDuration = (seconds: number) => `${Math.max(1, Math.round(seconds / 60))} 分钟`;
+    const cards: AssistantCard[] = [];
+    if (query.metric === 'walking' || query.metric === 'transfer' || query.metric === 'cost') {
+      if (transit) cards.push({ id: nextId('c'), kind: 'transit', title: '公交/地铁真实指标', subtitle: `从${query.origin}到${query.destination}`, rows: [
+        ...(query.metric === 'walking' ? [{ label: '步行距离', value: formatDistance(transit.walkingDistance) }] : []),
+        ...(query.metric === 'transfer' ? [{ label: '换乘次数', value: `${transit.transferCount} 次` }] : []),
+        ...(query.metric === 'cost' ? [{ label: '预计费用', value: `${transit.route.cost || 0} 元` }] : []),
+        { label: '预计用时', value: formatDuration(transit.route.duration) },
+      ], source: SRC.real, sourceLabel: '高德公交路线服务', actions: [{ label: '查看完整路线', path: buildPlannerPath({ intent: 'transit_query', origin: query.origin, destination: query.destination, mode: 'bus' }), primary: true }] });
+    } else if (drive) {
+      cards.push({ id: nextId('c'), kind: 'route', title: '驾车真实指标', subtitle: `从${query.origin}到${query.destination}`, rows: [
+        ...(query.metric === 'duration' ? [{ label: '预计用时', value: formatDuration(drive.duration) }] : []),
+        ...(query.metric === 'distance' ? [{ label: '总距离', value: formatDistance(drive.distance) }] : []),
+      ], source: SRC.real, sourceLabel: '高德驾车路线服务', actions: [{ label: '查看完整路线', path: buildPlannerPath({ intent: 'route_plan', origin: query.origin, destination: query.destination, mode: 'drive' }), primary: true }] });
+    }
+    return cards.length ? msg(`已查询「${input}」对应的真实路线指标：`, cards) : msg('当前没有返回该指标的真实路线数据，请检查起点、目的地或稍后重试。');
+  } catch {
+    return msg('当前无法获取该指标的真实路线数据，请检查起点、目的地或稍后重试。');
+  }
 }
 
 /** 输入对应的「处理中」状态文案（不统一显示「正在思考」） */
@@ -254,8 +338,8 @@ async function handleTraffic(parsed: IntentParseResult): Promise<AssistantMessag
         { label: '平均车速', value: `${avgSpeed} km/h` },
         { label: '拥堵路段', value: `${congested}/${total}` },
       ],
-      source: SRC.simulated,
-      sourceLabel: '模拟数据 · 非官方实时',
+      source: SRC.real,
+      sourceLabel: '交通运行服务',
     }];
 
     if (alerts.length > 0) {
@@ -272,7 +356,7 @@ async function handleTraffic(parsed: IntentParseResult): Promise<AssistantMessag
     const roadNote = parsed.destination
       ? `关于「${parsed.destination}」路段的具体实时拥堵，我暂无法提供精确数值，请打开首页地图查看高德实时路况图层。`
       : '具体某条路段的实时拥堵，请打开首页地图查看高德实时路况图层。';
-    return msg(`以下为全市拥堵概览（模拟数据，非官方实时）。${roadNote}`, cards);
+    return msg(`以下为全市拥堵概览。${roadNote}`, cards);
   } catch {
     return msg('当前实时交通数据暂时无法获取，我不能准确判断此刻的拥堵情况。你可以稍后重试，或先打开首页地图查看高德实时路况图层。');
   }
@@ -280,8 +364,31 @@ async function handleTraffic(parsed: IntentParseResult): Promise<AssistantMessag
 
 // ===== 公交地铁查询 =====
 async function handleTransit(input: string): Promise<AssistantMessage> {
+  const transitRoute = extractTransitRouteQuery(input);
   const q = extractTransitQuery(input);
   try {
+    if (transitRoute) {
+      const { origin, destination } = transitRoute;
+      const { start, end } = await resolveRouteLocations(origin, destination);
+      const candidates = await planTransitCandidates(start, end);
+      const option = buildTransitRouteOptions(candidates)[0];
+      if (!option) return msg(`暂未找到从「${origin}」到「${destination}」的真实公交/地铁方案。`);
+      return msg(`已查询从「${origin}」到「${destination}」的真实公交/地铁方案：`, [{
+        id: nextId('c'),
+        kind: 'transit',
+        title: `${option.icon} 公交/地铁路线`,
+        subtitle: '高德实时公交规划结果',
+        rows: [
+          { label: '预计用时', value: `${Math.max(1, Math.round(option.route.duration / 60))} 分钟` },
+          { label: '换乘次数', value: `${option.transferCount} 次` },
+          { label: '步行距离', value: option.walkingDistance >= 1000 ? `${(option.walkingDistance / 1000).toFixed(1)} 公里` : `${Math.round(option.walkingDistance)} 米` },
+          { label: '预计费用', value: `${option.route.cost || 0} 元` },
+        ],
+        source: SRC.real,
+        sourceLabel: '高德公交路线服务',
+        actions: [{ label: '查看完整路线', path: buildPlannerPath({ intent: 'transit_query', origin, destination, mode: 'bus' }), primary: true }],
+      }]);
+    }
     if (q) {
       const results = await searchTransit(q);
       if (results.length === 0) {
@@ -348,6 +455,31 @@ function extractTransitQuery(text: string): string {
   return '';
 }
 
+function extractTransitRouteQuery(text: string): { origin: string; destination: string } | null {
+  const match = text.match(/从\s*(.+?)\s*(?:到|去)\s*(.+?)(?=的?(?:步行距离|走路距离|总距离|全程距离|多少公里|换乘次数|换乘|费用|多少钱|价格|预计用时|用时|多久|需要多久|多长时间|要多久|路线|怎么走|怎么坐)|$)/);
+  if (!match) return null;
+  const origin = match[1].replace(/(?:开|出发)\s*$/g, '').replace(/[，,。！？?\s]+$/g, '').trim();
+  const destination = match[2].replace(/[，,。！？?\s]+$/g, '').trim();
+  return origin && destination ? { origin, destination } : null;
+}
+
+function extractRouteMetricQuery(text: string): { origin: string; destination: string; metric: RouteMetric } | null {
+  const route = extractTransitRouteQuery(text);
+  if (!route) return null;
+  const metric = /步行距离|走路距离/.test(text)
+    ? 'walking'
+    : /换乘次数|换几次|换乘/.test(text)
+      ? 'transfer'
+      : /费用|多少钱|价格/.test(text)
+        ? 'cost'
+        : /总距离|全程距离|多少公里/.test(text)
+          ? 'distance'
+          : /预计用时|需要多久|多长时间|要多久/.test(text)
+            ? 'duration'
+            : null;
+  return metric ? { ...route, metric } : null;
+}
+
 // ===== 停车场 =====
 interface ParkingLotShape {
   id: string; name: string; address: string; position: [number, number];
@@ -368,11 +500,11 @@ async function handleParking(): Promise<AssistantMessage> {
         { label: '价格', value: formatPrice(p.price) },
         ...(p.hasCharging ? [{ label: '充电', value: '支持 ⚡' }] : []),
       ],
-      source: SRC.demo,
-      sourceLabel: '演示余位',
+      source: SRC.real,
+      sourceLabel: '停车服务',
       actions: [{ label: '导航至此', path: '/travel/result', state: { origin: '我的位置', destination: p.name, mode: 'drive' }, primary: true }],
     }));
-    return msg('为你找到附近的停车场（余位为演示数据，非实时）：', cards);
+    return msg('为你找到附近的停车场：', cards);
   } catch {
     return msg('停车场数据暂时无法获取，请稍后重试或进入停车页查看。');
   }
@@ -399,11 +531,11 @@ async function handleCharging(): Promise<AssistantMessage> {
         { label: '价格', value: formatPrice(c.price) },
         ...(c.status === 'offline' ? [{ label: '状态', value: '离线', valueColor: '#f5222d' }] : []),
       ],
-      source: SRC.demo,
-      sourceLabel: '演示空闲桩',
+      source: SRC.real,
+      sourceLabel: '充电服务',
       actions: [{ label: '扫码充电', path: '/charging/scan', state: { stationId: c.id, stationName: c.name, operator: c.operator, power: c.power, price: c.price, address: c.address }, primary: true }],
     }));
-    return msg('为你找到附近的充电站（空闲桩为演示数据，非实时）：', cards);
+    return msg('为你找到附近的充电站：', cards);
   } catch {
     return msg('充电站数据暂时无法获取，请稍后重试或进入停车页查看。');
   }

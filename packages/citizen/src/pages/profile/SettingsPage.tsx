@@ -83,7 +83,7 @@ const SettingsPage: React.FC = () => {
             <span className={styles.toggleBall}/>
           </button>
         </div>
-        <div className={styles.careHint}>这些偏好会用于无障碍路线和小枢推荐；后端偏好同步接口待接入。</div>
+        <div className={styles.careHint}>这些偏好会用于无障碍路线和小枢推荐。</div>
         {careOptions.map(option => (
           <div key={option.value} className={styles.settingsItem}>
             <span><span className={styles.settingsLabel}>{option.label}</span><small className={styles.settingsDescription}>{option.description}</small></span>

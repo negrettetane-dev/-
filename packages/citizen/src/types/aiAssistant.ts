@@ -26,6 +26,15 @@ export interface AssistantCardAction {
   requiresConfirmation?: boolean;       // 写操作执行前二次确认
   confirmTitle?: string;
   confirmDescription?: string;
+  promptTemplate?: string;
+}
+
+export interface AssistantCardEditor {
+  origin?: string;
+  destination?: string;
+  traveler?: string;
+  priorities?: string;
+  travelerOptions?: string[];
 }
 
 export interface AssistantCardRow {
@@ -42,6 +51,7 @@ export interface AssistantCard {
   rows?: AssistantCardRow[];
   source: AssistantDataSource;
   sourceLabel?: string;
+  editor?: AssistantCardEditor;
   actions?: AssistantCardAction[];
 }
 

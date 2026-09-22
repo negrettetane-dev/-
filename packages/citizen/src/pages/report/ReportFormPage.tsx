@@ -239,14 +239,14 @@ const ReportFormPage: React.FC = () => {
       <div className={styles.formSection}>
         <div className={styles.formTitle}>✨ AI 识别结果</div>
         {!aiAssessment ? (
-          <><p className={styles.aiHint}>根据问题文字、类别和位置生成事件类型、严重程度、地点与推荐处理部门。当前为前端演示识别，提交前可修改。</p><button type="button" className={styles.locationBtn} onClick={analyzeReport} disabled={analyzing}>{analyzing ? '正在识别…' : '开始 AI 识别'}</button></>
+          <><p className={styles.aiHint}>根据问题文字、类别和位置生成事件类型、严重程度、地点与推荐处理部门，提交前可修改。</p><button type="button" className={styles.locationBtn} onClick={analyzeReport} disabled={analyzing}>{analyzing ? '正在识别…' : '开始 AI 识别'}</button></>
         ) : (
           <div className={styles.aiResult}>
             <label>事件类型<select value={aiAssessment.category} onChange={event => setAiAssessment(current => current ? { ...current, category: event.target.value } : current)}>{CATEGORIES.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
             <label>严重程度<select value={aiAssessment.severity} onChange={event => setAiAssessment(current => current ? { ...current, severity: event.target.value as AiAssessment['severity'] } : current)}><option value="low">低</option><option value="medium">中</option><option value="high">高</option></select></label>
             <label>识别地点<input value={aiAssessment.location} onChange={event => setAiAssessment(current => current ? { ...current, location: event.target.value } : current)} /></label>
             <label>推荐处理部门<input value={aiAssessment.department} onChange={event => setAiAssessment(current => current ? { ...current, department: event.target.value } : current)} /></label>
-            <div className={styles.aiConfidence}>识别置信度 {Math.round(aiAssessment.confidence * 100)}% · 前端演示结果，正式提交前请核对</div>
+            <div className={styles.aiConfidence}>识别置信度 {Math.round(aiAssessment.confidence * 100)}% · 正式提交前请核对</div>
             <button type="button" className={styles.reanalyzeBtn} onClick={analyzeReport}>重新识别</button>
           </div>
         )}
