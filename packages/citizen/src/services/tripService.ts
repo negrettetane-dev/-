@@ -1,5 +1,5 @@
 import { apiGet, apiPost } from './apiClient';
-import type { CreateTripRequest, Trip, TripMode, TripStatus } from '../types/trip';
+import type { CreateTripRequest, SubmitTripFeedbackRequest, Trip, TripFeedback, TripFeedbackTag, TripMode, TripStatus } from '../types/trip';
 
 export interface TripQuery {
   mode?: TripMode;
@@ -33,6 +33,23 @@ export async function completeTrip(tripId: string): Promise<Trip> {
 
 export async function cancelTrip(tripId: string): Promise<Trip> {
   return apiPost<Trip>(`/trips/${encodeURIComponent(tripId)}/cancel`);
+}
+
+export async function getTripFeedback(tripId: string): Promise<TripFeedback | null> {
+  const data = await apiGet<unknown>(`/trips/${encodeURIComponent(tripId)}/feedback`);
+  return normalizeTripFeedback(data);
+}
+
+export async function submitTripFeedback(tripId: string, request: SubmitTripFeedbackRequest): Promise<TripFeedback> {
+  const data = await apiPost<unknown>(`/trips/${encodeURIComponent(tripId)}/feedback`, request);
+  return normalizeTripFeedback(data) || {
+    id: `feedback_${tripId}`,
+    tripId,
+    tags: request.tags,
+    comment: request.comment,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
 }
 
 type HistoryRow = Record<string, unknown>;
@@ -102,6 +119,7 @@ function normalizeHistoryTrip(row: HistoryRow): Trip | null {
     providerRouteId: stringValue(row.providerRouteId ?? row.provider_route_id) || undefined,
     carbonSaved: numberValue(row.carbonSaved ?? row.carbon_saved),
     earnedPoints: numberValue(row.earnedPoints ?? row.earned_points ?? row.points),
+    settlementStatus: normalizeSettlementStatus(row.settlementStatus ?? row.settlement_status),
     dataSource,
     createdAt: dateValue(row.createdAt ?? row.created_at ?? startedAt),
   };
@@ -109,6 +127,33 @@ function normalizeHistoryTrip(row: HistoryRow): Trip | null {
 
 function normalizeRouteStrategy(value: unknown): NonNullable<Trip['routeStrategy']> {
   return value === 'shortest' || value === 'low-carbon' || value === 'accessible' ? value : 'fastest';
+}
+
+function normalizeSettlementStatus(value: unknown): Trip['settlementStatus'] {
+  if (value === 'settled' || value === 'failed') return value;
+  if (value === 'calculating' || value === 'estimated' || value === 'pending') return 'calculating';
+  return undefined;
+}
+
+function normalizeFeedbackTag(value: unknown): TripFeedbackTag | null {
+  return value === 'accurate_recommendation' || value === 'time_inaccurate' || value === 'walking_too_long' || value === 'accessibility_wrong' || value === 'good_experience'
+    ? value
+    : null;
+}
+
+function normalizeTripFeedback(data: unknown): TripFeedback | null {
+  if (!isRecord(data)) return null;
+  const tags = Array.isArray(data.tags)
+    ? data.tags.map(normalizeFeedbackTag).filter((tag): tag is TripFeedbackTag => tag !== null)
+    : [];
+  return {
+    id: stringValue(data.id ?? data.feedback_id) || 'feedback',
+    tripId: stringValue(data.tripId ?? data.trip_id),
+    tags,
+    comment: stringValue(data.comment) || undefined,
+    createdAt: dateValue(data.createdAt ?? data.created_at ?? Date.now()),
+    updatedAt: dateValue(data.updatedAt ?? data.updated_at ?? data.createdAt ?? data.created_at ?? Date.now()),
+  };
 }
 
 function isRecord(value: unknown): value is HistoryRow {

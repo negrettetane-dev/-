@@ -1050,9 +1050,13 @@ const RouteResultPage: React.FC = () => {
     }
     setSelectedMode(mode);
     setNavMode(mode);
-    const stageOrigin = useTravelLocationStore.getState().origin;
+    const s = startCoord.current;
+    const e = endCoord.current;
+    const stageOrigin = useTravelLocationStore.getState().origin || {
+      name: displayOrigin, address: displayOrigin, lng: s?.[0] ?? null, lat: s?.[1] ?? null, source: 'manual' as const,
+    };
     const stageDestination = useTravelPlanStore.getState().destination || {
-      name: displayDest, address: displayDest, lng: endCoord.current?.[0] ?? null, lat: endCoord.current?.[1] ?? null, source: 'manual' as const,
+      name: displayDest, address: displayDest, lng: e?.[0] ?? null, lat: e?.[1] ?? null, source: 'manual' as const,
     };
     const stages = buildTravelStages(route, stageOrigin, stageDestination);
     const routeFingerprint = createTravelRouteFingerprint(route, stageOrigin, stageDestination);
@@ -1653,6 +1657,11 @@ const RouteResultPage: React.FC = () => {
                         </button>
                       );
                     })}
+                  </div>
+                )}
+                {mode === 'drive' && (routeCandidates[mode]?.length || 0) === 1 && (
+                  <div className={styles.routeMergeTip}>
+                    时间最短与距离最短路线基本一致，已合并为当前方案
                   </div>
                 )}
                 <div className={styles.routeCardHeader}>

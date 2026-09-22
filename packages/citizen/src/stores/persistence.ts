@@ -23,9 +23,37 @@ export interface PersistedReport {
   category: string;
   description: string;
   location: string;
-  status: 'pending' | 'processing' | 'completed';
+  address?: string;
+  position?: [number, number];
+  eventLocation?: {
+    address: string;
+    longitude: number;
+    latitude: number;
+    locationType?: 'auto' | 'manual' | 'search';
+    locationStatus?: 'verified' | 'unverified' | 'failed';
+    accuracy?: number;
+    poiName?: string;
+    city?: string;
+    locatedAt?: string;
+  } | null;
+  deviceLocation?: { longitude: number; latitude: number; accuracy?: number; locatedAt: string } | null;
+  locationType?: string;
+  locationStatus?: string;
+  status: 'pending' | 'received' | 'processing' | 'completed' | 'resolved' | 'closed' | 'rejected';
   createdAt: number;
+  updateTime?: number;
   phone?: string;
+  images?: string[];
+  beforeImages?: string[];
+  afterImage?: string;
+  afterImages?: string[];
+  department?: string;
+  assignee?: string;
+  estimatedProcessTime?: string;
+  platformFeedback?: string;
+  feedback?: string;
+  processLogs?: { time: number; action: string; operator: string; detail: string }[];
+  rating?: number;
 }
 
 export interface CarbonActivity {
@@ -97,6 +125,15 @@ export function updateReportStatus(id: string, status: PersistedReport['status']
   const r = reports.find(r => r.id === id);
   if (r) r.status = status;
   set(userScopedKey(REPORTS_KEY, userId), reports);
+}
+
+export function updateReport(id: string, patch: Partial<PersistedReport>, userId = 'legacy'): PersistedReport | null {
+  const reports = getReports(userId);
+  const index = reports.findIndex(r => r.id === id);
+  if (index < 0) return null;
+  reports[index] = { ...reports[index], ...patch, updateTime: Date.now() };
+  set(userScopedKey(REPORTS_KEY, userId), reports);
+  return reports[index];
 }
 
 // ====== 碳积分 ======

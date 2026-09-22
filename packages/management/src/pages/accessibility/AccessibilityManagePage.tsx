@@ -16,6 +16,16 @@ const STATUS_META: Record<FacilityStatus, { label: string; color: string }> = {
   obstacle: { label: '🔴 存在障碍', color: 'error' },
 };
 
+const toIsoString = (value: unknown): string | undefined => {
+  if (!value) return undefined;
+  const raw = String(value).trim();
+  if (!raw) return undefined;
+  const date = new Date(raw);
+  return Number.isNaN(date.getTime()) ? raw : date.toISOString();
+};
+
+const formatDate = (value?: string) => value ? new Date(value).toLocaleString('zh-CN') : '未记录';
+
 const AccessibilityManagePage: React.FC = () => {
   const [stations, setStations] = useState<StationFacility[]>([]);
   const [loading, setLoading] = useState(false);
@@ -62,6 +72,8 @@ const AccessibilityManagePage: React.FC = () => {
       lng: record.lng,
       lat: record.lat,
       accessibleRestroom: record.accessibleRestroom,
+      lastVerifiedAt: record.lastVerifiedAt || undefined,
+      updatedAt: record.updatedAt || undefined,
     });
     setStationModalOpen(true);
   };
@@ -73,6 +85,8 @@ const AccessibilityManagePage: React.FC = () => {
       lng: Number(values.lng),
       lat: Number(values.lat),
       accessibleRestroom: Boolean(values.accessibleRestroom),
+      lastVerifiedAt: toIsoString(values.lastVerifiedAt),
+      updatedAt: toIsoString(values.updatedAt) || new Date().toISOString(),
       entrances: editingStation?.entrances || [],
     };
     try {
@@ -105,14 +119,18 @@ const AccessibilityManagePage: React.FC = () => {
     setEntranceStationId(stationId);
     setEditingEntrance(null);
     entranceForm.resetFields();
-    entranceForm.setFieldsValue({ name: 'A口', elevator: false, ramp: false, stairsOnly: false, wheelchairAccessible: true, status: 'verified' });
+    entranceForm.setFieldsValue({ name: 'A口', elevator: false, ramp: false, stairsOnly: false, wheelchairAccessible: true, status: 'verified', lastVerifiedAt: new Date().toISOString(), updatedAt: new Date().toISOString(), note: '' });
     setEntranceModalOpen(true);
   };
 
   const openEditEntrance = (stationId: string, entrance: FacilityEntrance & { id?: string }) => {
     setEntranceStationId(stationId);
     setEditingEntrance(entrance);
-    entranceForm.setFieldsValue(entrance);
+    entranceForm.setFieldsValue({
+      ...entrance,
+      lastVerifiedAt: entrance.lastVerifiedAt || undefined,
+      updatedAt: entrance.updatedAt || undefined,
+    });
     setEntranceModalOpen(true);
   };
 
@@ -125,6 +143,9 @@ const AccessibilityManagePage: React.FC = () => {
       stairsOnly: Boolean(values.stairsOnly),
       wheelchairAccessible: Boolean(values.wheelchairAccessible),
       status: values.status,
+      lastVerifiedAt: toIsoString(values.lastVerifiedAt),
+      updatedAt: toIsoString(values.updatedAt) || new Date().toISOString(),
+      note: values.note ? String(values.note) : undefined,
     };
     try {
       if (editingEntrance?.id) {
@@ -202,6 +223,8 @@ const AccessibilityManagePage: React.FC = () => {
                   {e.stairsOnly && <Tag color="red">⚠️楼梯</Tag>}
                   {e.wheelchairAccessible && <Tag color="green">♿可达</Tag>}
                   <Tag color={meta.color}>{meta.label}</Tag>
+                  {e.lastVerifiedAt && <Tag color="blue">核验 {formatDate(e.lastVerifiedAt)}</Tag>}
+                  {e.note && <Tag color="purple">{e.note}</Tag>}
                   <Button type="link" size="small" icon={<EditOutlined />} onClick={(ev) => { ev.stopPropagation(); openEditEntrance(record.stationId, e); }}>编辑</Button>
                   <Popconfirm title="确认删除该入口？" onConfirm={() => void removeEntrance(e)}>
                     <Button type="link" size="small" danger icon={<DeleteOutlined />} onClick={(ev) => ev.stopPropagation()}>删除</Button>
@@ -212,6 +235,12 @@ const AccessibilityManagePage: React.FC = () => {
           </Space>
         );
       },
+    },
+    {
+      title: '核验时间',
+      key: 'verifiedAt',
+      width: 150,
+      render: (_, record) => <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{formatDate(record.lastVerifiedAt || record.updatedAt)}</span>,
     },
     {
       title: '数据来源',
@@ -300,6 +329,14 @@ const AccessibilityManagePage: React.FC = () => {
           <Form.Item name="accessibleRestroom" label="无障碍卫生间" valuePropName="checked">
             <Switch />
           </Form.Item>
+          <Space wrap>
+            <Form.Item name="lastVerifiedAt" label="最近核验时间">
+              <Input placeholder="2026-09-22T10:30:00+08:00" style={{ width: 220 }} />
+            </Form.Item>
+            <Form.Item name="updatedAt" label="设施更新时间">
+              <Input placeholder="2026-09-22T10:30:00+08:00" style={{ width: 220 }} />
+            </Form.Item>
+          </Space>
         </Form>
         {editingStation && editingStation.entrances.length > 0 && (
           <div style={{ fontSize: 12, color: 'var(--text-hint)' }}>
@@ -335,6 +372,17 @@ const AccessibilityManagePage: React.FC = () => {
             <Form.Item name="stairsOnly" label="仅楼梯" valuePropName="checked"><Switch /></Form.Item>
             <Form.Item name="wheelchairAccessible" label="轮椅可达" valuePropName="checked"><Switch /></Form.Item>
           </Space>
+          <Space wrap>
+            <Form.Item name="lastVerifiedAt" label="最近核验时间">
+              <Input placeholder="2026-09-22T10:30:00+08:00" style={{ width: 220 }} />
+            </Form.Item>
+            <Form.Item name="updatedAt" label="设施更新时间">
+              <Input placeholder="2026-09-22T10:30:00+08:00" style={{ width: 220 }} />
+            </Form.Item>
+          </Space>
+          <Form.Item name="note" label="备注/故障说明">
+            <Input.TextArea rows={3} placeholder="如：电梯待复核、仅楼梯请避开、推荐轮椅使用" />
+          </Form.Item>
         </Form>
       </Modal>
     </div>

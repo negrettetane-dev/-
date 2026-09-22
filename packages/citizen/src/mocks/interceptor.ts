@@ -9,7 +9,7 @@ import {
   getUserPoints, deductPoints, addPoints,
   addRedemption, getRedemptions, markRedemptionUsed,
   findAccount, findAccountById, registerAccount, hashPassword, updateAccount, updateAccountPassword,
-  addReport, getReports, getCarbonRewards, redeemCarbonReward,
+  addReport, getReports, updateReport, getCarbonRewards, redeemCarbonReward,
   addNotification, getNotifications, getNotificationSettings, setNotificationSettings, markNotificationsRead,
 } from '../stores/persistence';
 import { DEMO_ACCESSIBLE_FACILITIES } from '../data/accessibilityFacilities';
@@ -18,8 +18,8 @@ import {
   computeBusStatus,
   instancesForDate,
 } from '../utils/customBusSchedule';
-import { createMockTrip, findMockTrip, finishMockTrip, listMockTrips } from './tripRepository';
-import type { CreateTripRequest } from '../types/trip';
+import { createMockTrip, findMockTrip, findMockTripFeedback, finishMockTrip, listMockTrips, saveMockTripFeedback } from './tripRepository';
+import type { CreateTripRequest, SubmitTripFeedbackRequest, TripFeedbackTag } from '../types/trip';
 
 function delay(ms = 300 + Math.random() * 500) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -31,6 +31,20 @@ function json(data: unknown, code = 0) {
 
 function makeMockToken(userId: string) {
   return `mock.${encodeURIComponent(userId)}.${Date.now()}`;
+}
+
+function departmentForCategory(category: string): string {
+  if (category.startsWith('accessibility')) return '无障碍设施维护部门';
+  if (category === 'signal_fault') return '交通信号管理部门';
+  if (category === 'streetlight') return '路灯管理所';
+  if (category === 'illegal_park') return '交通秩序执法队';
+  return '城市道路设施维护部门';
+}
+
+function estimateForCategory(category: string): string {
+  if (['signal_fault', 'accident_clue', 'accessibility_elevator'].includes(category)) return '预计 4 小时内响应，24 小时内反馈处理结果';
+  if (category.startsWith('accessibility')) return '预计 8 小时内响应，2 个工作日内完成处置';
+  return '预计 1 个工作日内受理，3 个工作日内完成处置';
 }
 
 function mockUserId(input: RequestInfo | URL, init?: RequestInit): string | null {
@@ -55,6 +69,8 @@ function randomCoord(): [number, number] {
 }
 
 // 路径规划 Mock
+const FEEDBACK_TAGS = new Set<TripFeedbackTag>(['accurate_recommendation', 'time_inaccurate', 'walking_too_long', 'accessibility_wrong', 'good_experience']);
+
 function mockRouteResult(mode: string) {
   const coords: [number,number][] = Array.from({length:8},()=>randomCoord());
   switch(mode){
@@ -133,6 +149,21 @@ export function fetchInterceptor() {
           return response({ code: 400, message: '出行参数不完整', data: null }, 400);
         }
         return response(json(createMockTrip(userId, body)));
+      }
+
+      const feedbackMatch = pathname.match(/^\/api\/trips\/([^/]+)\/feedback$/);
+      if (feedbackMatch) {
+        const tripId = decodeURIComponent(feedbackMatch[1]);
+        if (method === 'GET') return response(json(findMockTripFeedback(userId, tripId)));
+        if (method === 'POST') {
+          const body = await requestBody(input, init) as SubmitTripFeedbackRequest;
+          const tags = Array.isArray(body.tags) ? body.tags.filter((tag): tag is TripFeedbackTag => FEEDBACK_TAGS.has(tag as TripFeedbackTag)) : [];
+          const comment = String(body.comment || '').trim().slice(0, 300);
+          if (!tags.length && !comment) return response({ code: 400, message: '请选择反馈标签或填写补充说明', data: null }, 400);
+          const feedback = saveMockTripFeedback(userId, tripId, { tags, comment });
+          return feedback ? response(json(feedback)) : response({ code: 404, message: '出行记录不存在', data: null }, 404);
+        }
+        return response({ code: 405, message: '不支持的操作', data: null }, 405);
       }
 
       const actionMatch = pathname.match(/^\/api\/trips\/([^/]+)\/(complete|cancel)$/);
@@ -392,12 +423,37 @@ export function fetchInterceptor() {
       if (!userId) return response({ code: 401, message: '请先登录', data: null }, 401);
       return response(json(getReports(userId).map(item => ({ ...item, createTime: item.createdAt }))));
     }
+    if (url.match(/\/api\/report\/detail\//) && url.endsWith('/rating') && method === 'POST') {
+      const userId = mockUserId(input, init);
+      if (!userId) return response({ code: 401, message: '请先登录', data: null }, 401);
+      const reportId = decodeURIComponent(url.split('/').slice(-2)[0] || '');
+      const body = await requestBody(input, init);
+      const rating = Math.max(1, Math.min(5, Number(body.rating || 0)));
+      if (!rating) return response({ code: 400, message: '请选择满意度评分', data: null }, 400);
+      const current = getReports(userId).find(item => item.id === reportId);
+      if (!current) return response({ code: 404, message: '上报记录不存在', data: null }, 404);
+      const logs = current.processLogs || [];
+      const updated = updateReport(reportId, {
+        rating,
+        processLogs: [...logs, { time: Date.now(), action: '市民确认评价', operator: '系统', detail: `市民评价${rating}星` }],
+      }, userId);
+      return response(json({ ...updated, createTime: updated?.createdAt }));
+    }
     if (url.match(/\/api\/report\/detail\//)) {
       const userId = mockUserId(input, init);
       if (!userId) return response({ code: 401, message: '请先登录', data: null }, 401);
       const reportId = decodeURIComponent(url.split('/').pop() || '');
       const report = getReports(userId).find(item => item.id === reportId);
-      return report ? response(json({ ...report, createTime: report.createdAt })) : response({ code: 404, message: '上报记录不存在', data: null }, 404);
+      return report ? response(json({
+        images: [],
+        beforeImages: report.images || [],
+        position: report.position || (report.eventLocation ? [report.eventLocation.longitude, report.eventLocation.latitude] : undefined),
+        address: report.address || report.location || report.eventLocation?.address || '位置待确认',
+        processLogs: report.processLogs || [{ time: report.createdAt, action: '市民提交上报', operator: '系统', detail: '工单已生成，等待平台受理' }],
+        updateTime: report.updateTime || report.createdAt,
+        ...report,
+        createTime: report.createdAt,
+      })) : response({ code: 404, message: '上报记录不存在', data: null }, 404);
     }
     if (url === '/api/report/query') return new Response(JSON.stringify(json(MOCK_WORK_ORDERS[2])), { headers:{'Content-Type':'application/json'} });
     if (url === '/api/report/submit' && method === 'POST') {
@@ -405,13 +461,27 @@ export function fetchInterceptor() {
       if (!userId) return response({ code: 401, message: '请先登录', data: null }, 401);
       const body = await requestBody(input, init);
       const now = Date.now();
+      const category = body.category || 'other';
+      const address = body.address || body.eventLocation?.address || '位置待确认';
+      const position: [number, number] | undefined = body.eventLocation
+        ? [Number(body.eventLocation.longitude), Number(body.eventLocation.latitude)]
+        : (body.lng && body.lat ? [Number(body.lng), Number(body.lat)] : undefined);
       // 事件位置（eventLocation）与设备定位（deviceLocation）分离保存
       const report = {
         id: `report_${now.toString(36)}`,
         workOrderNo: `ZT${now.toString(36).toUpperCase()}`,
-        category: body.category || '其他问题',
+        category,
         description: body.description || '',
-        location: body.address || '',
+        location: address,
+        address,
+        position,
+        // 当前没有真实上传接口，不把本地 File 伪装成已上传图片；详情页会明确显示“暂无上报图片”。
+        images: [] as string[],
+        beforeImages: [] as string[],
+        department: departmentForCategory(category),
+        estimatedProcessTime: estimateForCategory(category),
+        platformFeedback: '工单已提交，平台将尽快受理并反馈处理进展。',
+        processLogs: [{ time: now, action: '市民提交上报', operator: '系统', detail: '工单已生成，等待平台受理' }],
         // 新契约：事件发生位置 + 定位方式 + 定位状态
         eventLocation: body.eventLocation || null,
         deviceLocation: body.deviceLocation || null,
@@ -419,6 +489,8 @@ export function fetchInterceptor() {
         locationStatus: body.locationStatus || (body.eventLocation?.locationStatus) || 'failed',
         status: 'pending' as const,
         createdAt: now,
+        updateTime: now,
+        phone: body.phone,
       };
       addReport(report, userId);
       return response(json({ ...report, createTime: now }));
@@ -520,7 +592,19 @@ export function fetchInterceptor() {
         treeEquivalent: Number((currentPoints / 1000).toFixed(2)),
         carDistanceSaved: Math.round(currentPoints / 50),
         rankPercent: 15,
-        records: completedTrips.map(trip => ({ id: trip.id, type: trip.mode, date: trip.startedAt, distance: trip.actualDistance ?? trip.estimatedDistance, duration: trip.actualDuration ?? trip.estimatedDuration, carbonSaved: trip.carbonSaved, points: trip.earnedPoints, route: `${trip.origin.name} → ${trip.destination.name}` }))
+        records: completedTrips.map(trip => ({
+          id: trip.id,
+          tripId: trip.id,
+          type: trip.mode,
+          mode: trip.mode,
+          date: trip.endedAt || trip.startedAt,
+          distance: trip.actualDistance ?? trip.estimatedDistance,
+          duration: trip.actualDuration ?? trip.estimatedDuration,
+          carbonSaved: trip.carbonSaved,
+          points: trip.earnedPoints,
+          route: `${trip.origin.name} → ${trip.destination.name}`,
+          settlementStatus: trip.earnedPoints > 0 ? 'settled' : 'estimated',
+        }))
       })), { headers:{'Content-Type':'application/json'} });
     }
 

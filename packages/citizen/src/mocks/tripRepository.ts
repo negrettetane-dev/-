@@ -1,6 +1,7 @@
-import type { CreateTripRequest, Trip, TripMode } from '../types/trip';
+import type { CreateTripRequest, SubmitTripFeedbackRequest, Trip, TripFeedback, TripMode } from '../types/trip';
 
 const keyFor = (userId: string) => `zhitu_mock_trips:${userId}`;
+const feedbackKeyFor = (userId: string) => `zhitu_mock_trip_feedback:${userId}`;
 
 function read(userId: string): Trip[] {
   try {
@@ -13,6 +14,19 @@ function read(userId: string): Trip[] {
 
 function write(userId: string, trips: Trip[]) {
   localStorage.setItem(keyFor(userId), JSON.stringify(trips));
+}
+
+function readFeedback(userId: string): TripFeedback[] {
+  try {
+    const raw = localStorage.getItem(feedbackKeyFor(userId));
+    return raw ? JSON.parse(raw) as TripFeedback[] : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeFeedback(userId: string, feedback: TripFeedback[]) {
+  localStorage.setItem(feedbackKeyFor(userId), JSON.stringify(feedback));
 }
 
 function rewardFor(mode: TripMode, distance: number) {
@@ -83,4 +97,29 @@ export function finishMockTrip(userId: string, tripId: string, status: 'complete
   trips[index] = updated;
   write(userId, trips);
   return updated;
+}
+
+export function findMockTripFeedback(userId: string, tripId: string): TripFeedback | null {
+  if (!findMockTrip(userId, tripId)) return null;
+  return readFeedback(userId).find(item => item.tripId === tripId) ?? null;
+}
+
+export function saveMockTripFeedback(userId: string, tripId: string, request: SubmitTripFeedbackRequest): TripFeedback | null {
+  if (!findMockTrip(userId, tripId)) return null;
+  const feedback = readFeedback(userId);
+  const index = feedback.findIndex(item => item.tripId === tripId);
+  const now = new Date().toISOString();
+  const comment = request.comment?.trim() || undefined;
+  const item: TripFeedback = {
+    id: index >= 0 ? feedback[index].id : `fb_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`,
+    tripId,
+    tags: request.tags,
+    comment,
+    createdAt: index >= 0 ? feedback[index].createdAt : now,
+    updatedAt: now,
+  };
+  if (index >= 0) feedback[index] = item;
+  else feedback.unshift(item);
+  writeFeedback(userId, feedback);
+  return item;
 }

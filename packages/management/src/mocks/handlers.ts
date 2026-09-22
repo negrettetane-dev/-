@@ -100,22 +100,28 @@ const API_HANDLERS: Record<string, Handler> = {
   // 管理端保存事件状态 + 平台反馈（追加处理历史，同时通知市民端）
   'PUT /api/incidents/:id': (url: string, options?: RequestInit) => {
     const id = url.match(/\/incidents\/([^/?]+)/)?.[1];
-    let body: { status?: string; platformFeedback?: string; notifyCitizen?: boolean } = {};
+    let body: { status?: string; platformFeedback?: string; notifyCitizen?: boolean; department?: string; assignee?: string; estimatedProcessTime?: string; afterImages?: string[]; afterImage?: string } = {};
     try { body = options?.body ? JSON.parse(String(options.body)) : {}; } catch { /* ignore */ }
     const found = getIncident(id);
-    if (found && body.status) {
+    if (found) {
       const fromStatus = found.status;
-      found.status = body.status as MockIncident['status'];
+      if (body.status) found.status = body.status as MockIncident['status'];
       if (body.platformFeedback !== undefined) found.platformFeedback = body.platformFeedback;
+      if (body.department !== undefined) found.department = body.department;
+      if (body.assignee !== undefined) found.assignee = body.assignee;
+      if (body.estimatedProcessTime !== undefined) found.estimatedProcessTime = body.estimatedProcessTime;
+      if (body.afterImages !== undefined) found.afterImages = body.afterImages;
+      if (body.afterImage !== undefined) found.afterImages = body.afterImage ? [body.afterImage] : [];
       const logs = incidentExtraLogs.get(found.id) || [];
+      const detailParts = [body.platformFeedback, body.department ? `受理部门：${body.department}` : '', body.estimatedProcessTime ? `预计处理：${body.estimatedProcessTime}` : ''].filter(Boolean);
       logs.push({
         id: `pl-extra-${Date.now()}`,
         time: Date.now(),
-        action: `状态变更为「${INCIDENT_STATUS_LABELS[found.status] || found.status}」`,
+        action: body.status ? `状态变更为「${INCIDENT_STATUS_LABELS[found.status] || found.status}」` : '更新事件处理信息',
         operator: '管理员',
         fromStatus,
         toStatus: found.status,
-        detail: body.platformFeedback || '',
+        detail: detailParts.join('；'),
       });
       incidentExtraLogs.set(found.id, logs);
     }
@@ -125,6 +131,10 @@ const API_HANDLERS: Record<string, Handler> = {
         id: id || 'unknown',
         status: body.status ?? found?.status ?? 'pending',
         platformFeedback: body.platformFeedback ?? found?.platformFeedback ?? '',
+        department: body.department ?? found?.department ?? '',
+        assignee: body.assignee ?? found?.assignee ?? '',
+        estimatedProcessTime: body.estimatedProcessTime ?? found?.estimatedProcessTime ?? '',
+        afterImages: body.afterImages ?? found?.afterImages ?? [],
         notifyCitizen: body.notifyCitizen !== false,
         notifiedAt: Date.now(),
       },
@@ -283,6 +293,8 @@ const API_HANDLERS: Record<string, Handler> = {
       entrances: Array.isArray(body.entrances) ? body.entrances : [],
       accessibleRestroom: Boolean(body.accessibleRestroom),
       source: 'backend',
+      lastVerifiedAt: body.lastVerifiedAt,
+      updatedAt: body.updatedAt || new Date(now).toISOString(),
     };
     (MOCK_ACCESSIBILITY_STATIONS as { stationId: string }[]).push(station);
     return { code: 0, data: station, message: 'ok', timestamp: now };
@@ -296,6 +308,8 @@ const API_HANDLERS: Record<string, Handler> = {
     if (body.lng !== undefined) station.lng = Number(body.lng);
     if (body.lat !== undefined) station.lat = Number(body.lat);
     if (body.accessibleRestroom !== undefined) station.accessibleRestroom = Boolean(body.accessibleRestroom);
+    if (body.lastVerifiedAt !== undefined) station.lastVerifiedAt = body.lastVerifiedAt;
+    if (body.updatedAt !== undefined) station.updatedAt = body.updatedAt;
     return { code: 0, data: station, message: 'ok', timestamp: Date.now() };
   },
   'DELETE /api/accessibility/stations/:id': (url: string) => {

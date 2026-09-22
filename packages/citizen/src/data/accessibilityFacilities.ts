@@ -17,7 +17,9 @@ const station = (
   lat: number,
   entrances: FacilityEntrance[],
   accessibleRestroom = false,
-): StationFacility => ({ stationId, stationName, lng, lat, entrances, accessibleRestroom, source: 'demo' });
+  lastVerifiedAt?: string,
+  updatedAt?: string,
+): StationFacility => ({ stationId, stationName, lng, lat, entrances, accessibleRestroom, source: 'demo', lastVerifiedAt, updatedAt });
 
 /** 前端演示数据（兜底）：后端不可用时使用，明确 source: 'demo' */
 export const DEMO_ACCESSIBLE_FACILITIES: StationFacility[] = [
@@ -45,9 +47,21 @@ export const DEMO_ACCESSIBLE_FACILITIES: StationFacility[] = [
   ], true),
 
   station('bj_beijing_station', '北京站', 116.433, 39.903, [
-    { name: '北广场入口', elevator: true, ramp: true, stairsOnly: false, wheelchairAccessible: true, status: 'verified' },
-    { name: '南侧通道', elevator: false, ramp: true, stairsOnly: false, wheelchairAccessible: true, status: 'verified' },
-  ], true),
+    { name: '北广场入口', elevator: true, ramp: true, stairsOnly: false, wheelchairAccessible: true, status: 'verified', lastVerifiedAt: '2026-09-10T09:00:00+08:00', updatedAt: '2026-09-10T09:00:00+08:00', note: '推荐轮椅和婴儿车使用' },
+    { name: '南侧通道', elevator: false, ramp: true, stairsOnly: false, wheelchairAccessible: true, status: 'verified', lastVerifiedAt: '2026-09-10T09:00:00+08:00', updatedAt: '2026-09-10T09:00:00+08:00' },
+  ], true, '2026-09-10T09:00:00+08:00', '2026-09-10T09:00:00+08:00'),
+
+  station('bj_xuanwumen', '宣武门', 116.374, 39.899, [
+    { name: 'A口', elevator: true, ramp: true, stairsOnly: false, wheelchairAccessible: true, status: 'verified', lastVerifiedAt: '2026-09-18T10:30:00+08:00', updatedAt: '2026-09-18T10:30:00+08:00', note: '推荐使用，电梯与坡道均已确认' },
+    { name: 'B口', elevator: false, ramp: false, stairsOnly: true, wheelchairAccessible: false, status: 'obstacle', lastVerifiedAt: '2026-09-18T10:30:00+08:00', updatedAt: '2026-09-18T10:30:00+08:00', note: '仅楼梯入口，轮椅和婴儿车请避开' },
+    { name: 'G口', elevator: true, ramp: false, stairsOnly: false, wheelchairAccessible: true, status: 'unknown', updatedAt: '2026-09-18T10:30:00+08:00', note: '电梯状态待现场复核' },
+  ], false, '2026-09-18T10:30:00+08:00', '2026-09-18T10:30:00+08:00'),
+
+  station('bj_beijing_south', '北京南站', 116.385, 39.863, [
+    { name: '北广场入口', elevator: true, ramp: true, stairsOnly: false, wheelchairAccessible: true, status: 'verified', lastVerifiedAt: '2026-09-16T14:20:00+08:00', updatedAt: '2026-09-16T14:20:00+08:00', note: '推荐进站入口，电梯直达站厅' },
+    { name: '东进站口', elevator: true, ramp: true, stairsOnly: false, wheelchairAccessible: true, status: 'verified', lastVerifiedAt: '2026-09-16T14:20:00+08:00', updatedAt: '2026-09-16T14:20:00+08:00' },
+    { name: '南侧地下通道', elevator: false, ramp: false, stairsOnly: true, wheelchairAccessible: false, status: 'obstacle', lastVerifiedAt: '2026-09-16T14:20:00+08:00', updatedAt: '2026-09-16T14:20:00+08:00', note: '仅楼梯，已标记避开' },
+  ], true, '2026-09-16T14:20:00+08:00', '2026-09-16T14:20:00+08:00'),
 
   station('bj_guomao', '国贸', 116.461, 39.909, [
     { name: 'A口', elevator: true, ramp: true, stairsOnly: false, wheelchairAccessible: true, status: 'verified' },
@@ -127,7 +141,7 @@ export function loadAccessibilityFacilities(): Promise<boolean> {
           ? (data as { list: StationFacility[] }).list
           : [];
       if (list.length === 0) return false;
-      facilityMap = new Map(list.map(f => [normalizeFacilityName(f.stationName), { ...f, source: 'backend' as const }]));
+      facilityMap = new Map(list.map(f => [normalizeFacilityName(f.stationName), { ...f, source: 'backend' as const, entrances: (f.entrances || []).map(e => ({ ...e })) }]));
       facilitySource = 'backend';
       facilityListeners.forEach(listener => listener());
       return true;
