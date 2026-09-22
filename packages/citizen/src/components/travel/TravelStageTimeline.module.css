@@ -9,6 +9,7 @@
 .status { font-size: 11px; color: #8c8c8c; flex-shrink: 0; }
 .meta { margin-top: 5px; color: #8c8c8c; font-size: 12px; }
 .action, .transitInfo { margin-top: 8px; font-size: 13px; color: #595959; }
+.accessibleHint { margin-top: 7px; padding: 7px 9px; border-radius: 8px; background: #f9f0ff; color: #531dab; font-size: 12px; line-height: 1.5; }
 .transitInfo { color: #1677ff; }
 .syncState { margin: -4px 0 10px; color: #8c8c8c; font-size: 11px; text-align: right; }
 .transitStatus { margin-top: 7px; color: #d46b08; font-size: 12px; }

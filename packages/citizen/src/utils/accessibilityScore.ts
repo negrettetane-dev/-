@@ -21,6 +21,43 @@ export interface AccessibleRouteMetrics {
   unknownFacilityCount: number;
   /** 设施信息未知的站点名称 */
   unknownFacilityNames?: string[];
+  /** 路线经过的站点设施详情（按路线顺序） */
+  stationFacilities?: AccessibleStationFacility[];
+  /** 可用入口总数 */
+  accessibleEntranceCount: number;
+  /** 电梯入口总数 */
+  elevatorCount: number;
+  /** 坡道入口总数 */
+  rampCount: number;
+  /** 已确认可通行的站点数 */
+  verifiedStationCount: number;
+  /** 约束是否满足 */
+  constraintStatus?: 'pass' | 'risk' | 'blocked';
+  /** 约束或设施风险说明 */
+  constraintReasons?: string[];
+}
+
+export interface AccessibleEntranceSummary {
+  name: string;
+  status: 'verified' | 'unknown' | 'obstacle';
+  elevator: boolean;
+  ramp: boolean;
+  stairsOnly: boolean;
+  wheelchairAccessible: boolean;
+  recommended: boolean;
+  reason: string;
+}
+
+export interface AccessibleStationFacility {
+  stationName: string;
+  stationId?: string;
+  source: 'demo' | 'backend' | 'unavailable';
+  updatedAt?: string;
+  lastVerifiedAt?: string;
+  missing: boolean;
+  recommendedEntrance?: AccessibleEntranceSummary;
+  entrances: AccessibleEntranceSummary[];
+  status: 'verified' | 'unknown' | 'obstacle';
 }
 
 export type AccessibleLevel = 'excellent' | 'good' | 'partial' | 'caution' | 'not_recommended';
@@ -79,9 +116,11 @@ export function durationPenalty(durationSeconds: number): number {
 export function buildAccessibleTags(metrics: AccessibleRouteMetrics): string[] {
   const tags: string[] = [];
   if (metrics.elevatorCoverage >= 0.5) tags.push('🛗 电梯优先');
+  if (metrics.rampCount > 0) tags.push('↗️ 坡道可用');
   if (metrics.accessibleEntranceCoverage >= 0.5) tags.push('♿ 无障碍入口优先');
   if (metrics.walkingDistance <= 400) tags.push('🚶 少步行');
   if (metrics.transferCount <= 1) tags.push('🔄 少换乘');
+  if (metrics.stairsRiskCount > 0) tags.push('⛔ 已避开楼梯风险');
   if (metrics.unknownFacilityCount > 0) tags.push('⚠ 部分无障碍设施信息待确认');
   return tags;
 }

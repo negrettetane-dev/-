@@ -802,7 +802,7 @@ function routeFromAmapRoute(mode: 'drive' | 'bike' | 'walk', route: any): Planne
   return {
     mode, distance: route.distance, duration: route.time, path, polyline: path,
     ...(mode === 'drive'
-      ? { congestionSegments: [{ level: 'slow', ratio: 0.3 }, { level: 'free', ratio: 0.7 }], aiAdvice: '建议避开拥堵路段' }
+      ? { cost: Number(route.tolls ?? route.toll ?? 0) || 0, congestionSegments: [{ level: 'slow', ratio: 0.3 }, { level: 'free', ratio: 0.7 }], aiAdvice: '建议避开拥堵路段' }
       : { calories: Math.round(route.distance / 1000 * (isBike ? 30 : 45)) }),
   };
 }

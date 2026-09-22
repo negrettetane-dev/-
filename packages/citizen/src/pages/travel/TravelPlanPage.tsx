@@ -6,7 +6,7 @@ import TravelModeSelector, { type TravelModeOption } from '../../components/trav
 import TransitSearchPanel from '../../components/travel/TransitSearchPanel';
 import ModeAssistPanel from '../../components/travel/ModeAssistPanel';
 import { parseTravelMode } from '../../types/travelMode';
-import type { AccessibilityPreference } from '../../services/accessibilityService';
+import { getAccessibilityConditionLabels, type AccessibilityPreference } from '../../services/accessibilityService';
 import { getCarePreferences } from '../../stores/persistence';
 import { useAuthStore } from '../../stores/authStore';
 import { getNearbyStations, getBusLines, getMetroLines } from '../../services/transitService';
@@ -115,8 +115,13 @@ const TravelPlanPage: React.FC = () => {
               );
             })}
           </div>
-          <div style={{ color: 'var(--text-hint)', fontSize: 12, marginTop: 8 }}>
-            已选择：{accessibilityPreferences.map(value => ACCESSIBILITY_PREFERENCES.find(item => item.value === value)?.label).join('、')}
+          <div style={{ marginTop: 12, padding: 12, borderRadius: 12, background: '#fbf8ff', border: '1px solid #efe3ff' }}>
+            <div style={{ fontWeight: 700, color: '#3b2267', marginBottom: 8 }}>本次出行条件</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8 }}>
+              {getAccessibilityConditionLabels(accessibilityPreferences).map(label => (
+                <div key={label} style={{ color: '#3b2267', fontSize: 13 }}>✓ {label}</div>
+              ))}
+            </div>
           </div>
         </section>
       )}

@@ -28,6 +28,10 @@ export interface StationFacility {
   accessibleRestroom: boolean;
   /** demo = 前端演示数据；backend = 后端真实数据 */
   source: 'demo' | 'backend';
+  /** 设施记录最后更新时间（ISO 字符串，后端缺失时为空） */
+  updatedAt?: string;
+  /** 最近一次人工确认时间（ISO 字符串，后端缺失时为空） */
+  lastVerifiedAt?: string;
 }
 
 /** 管理端创建/更新站点请求 */
