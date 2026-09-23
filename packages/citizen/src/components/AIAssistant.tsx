@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { LocateFixed } from 'lucide-react';
 import { respond, thinkingLabel } from '../services/aiAssistant/assistantService';
 import { useAuthStore } from '../stores/authStore';
 import { useTravelLocationStore } from '../stores/travelLocationStore';
@@ -35,6 +36,14 @@ function getConversationId(userId: string | null): string {
   } catch {
     return `conversation_${owner}_${Date.now()}`;
   }
+}
+
+function resetConversationId(userId: string | null): string {
+  const owner = userId || 'guest';
+  const key = conversationKey(owner);
+  const next = typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `conversation_${owner}_${Date.now()}`;
+  try { sessionStorage.setItem(key, next); } catch { /* storage unavailable */ }
+  return next;
 }
 
 function greeting(): AssistantMessage {
@@ -94,6 +103,7 @@ const AIAssistant: React.FC = () => {
 
   const clearHistory = () => {
     identityVersionRef.current += 1;
+    conversationIdRef.current = resetConversationId(userId);
     setThinking('');
     setMessages([greeting()]);
     if (userId) {
@@ -198,8 +208,8 @@ const AIAssistant: React.FC = () => {
 
           <div className={styles.sessionBar}>
             <span className={styles.sessionDot} />
-            <span>前端演示会话</span>
-            <span className={styles.sessionHint}>后端会话与业务工具待接入</span>
+            <span>在线会话</span>
+            <span className={styles.sessionHint}>已连接业务服务</span>
           </div>
 
           <div className={styles.body}>
@@ -285,6 +295,18 @@ const AIAssistant: React.FC = () => {
 
 const AssistantCardView: React.FC<{ card: AssistantCard; onAction: (a: AssistantCardAction) => void }> = ({ card, onAction }) => {
   const meta = SOURCE_META[card.source] || SOURCE_META.unknown;
+  const [editor, setEditor] = useState(card.editor || {});
+  const locate = useTravelLocationStore(state => state.locate);
+  const locationStatus = useTravelLocationStore(state => state.status);
+  const priorities = editor.priorities || (card.subtitle?.includes('低碳') ? '低碳优先' : '综合均衡');
+  const actionWithEditor = (action: AssistantCardAction): AssistantCardAction => action.promptTemplate
+    ? { ...action, prompt: action.promptTemplate.replace('{origin}', editor.origin || '当前位置').replace('{destination}', editor.destination || '目的地待确认').replace('{traveler}', editor.traveler || '普通用户').replace('{priorities}', priorities) }
+    : action;
+  const locateOrigin = async () => {
+    await locate();
+    const current = useTravelLocationStore.getState().origin;
+    if (current.address) setEditor(value => ({ ...value, origin: current.address }));
+  };
   return (
     <div className={styles.card}>
       <div className={styles.cardHead}>
@@ -294,6 +316,14 @@ const AssistantCardView: React.FC<{ card: AssistantCard; onAction: (a: Assistant
         </span>
       </div>
       {card.subtitle && <div className={styles.cardSub}>{card.subtitle}</div>}
+      {card.editor && (
+        <div className={styles.cardEditor}>
+          <label>起点<div className={styles.editorInputWrap}><input value={editor.origin || ''} onChange={event => setEditor(current => ({ ...current, origin: event.target.value }))} placeholder="当前位置" /><button type="button" className={styles.editorLocateButton} onClick={() => void locateOrigin()} disabled={locationStatus === 'locating'} title="定位当前位置" aria-label="定位当前位置"><LocateFixed size={14} aria-hidden="true" /></button></div></label>
+          <label>目的地<input value={editor.destination || ''} onChange={event => setEditor(current => ({ ...current, destination: event.target.value }))} placeholder="请输入目的地" /></label>
+          <label>出行人群<select value={editor.traveler || ''} onChange={event => setEditor(current => ({ ...current, traveler: event.target.value }))}>{(card.editor.travelerOptions || []).map(option => <option key={option} value={option}>{option}</option>)}</select></label>
+          {editor.traveler === '省力出行' && <div className={styles.travelerHint}>优先步行距离短、少换乘的路线</div>}
+        </div>
+      )}
       {card.rows && card.rows.length > 0 && (
         <div className={styles.cardRows}>
           {card.rows.map((r, i) => (
@@ -310,7 +340,7 @@ const AssistantCardView: React.FC<{ card: AssistantCard; onAction: (a: Assistant
             <button
               key={`${a.label}-${i}`}
               className={a.primary ? styles.cardActionPrimary : styles.cardAction}
-              onClick={() => onAction(a)}
+              onClick={() => onAction(actionWithEditor(a))}
             >
               {a.label}
             </button>

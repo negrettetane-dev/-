@@ -751,7 +751,7 @@ const RouteResultPage: React.FC = () => {
     const stationNames = accessibleSelected.metrics.stationNames;
     stationNames.forEach(name => {
       const facility = getFacilityForStation(name);
-      if (!facility) return;
+      if (!facility || !Number.isFinite(facility.lng) || !Number.isFinite(facility.lat) || (facility.lng === 0 && facility.lat === 0)) return;
       const best = facility.entrances.slice().sort((a, b) =>
         Number(b.wheelchairAccessible && b.elevator) - Number(a.wheelchairAccessible && a.elevator) ||
         Number(b.wheelchairAccessible) - Number(a.wheelchairAccessible) ||
@@ -1160,7 +1160,7 @@ const RouteResultPage: React.FC = () => {
             routeProvider: 'amap',
             path: route.path,
           },
-          dataSource: 'demo',
+          dataSource: 'real',
         }).catch(() => undefined);
       }
     }
@@ -1371,7 +1371,7 @@ const RouteResultPage: React.FC = () => {
             routeProvider: 'amap',
             path: option.route.path,
           },
-          dataSource: 'demo',
+          dataSource: 'real',
         }).catch(() => undefined);
       }
     }
@@ -1803,7 +1803,7 @@ const RouteResultPage: React.FC = () => {
                   </div>
                 )}
 
-                {/* 新能源（EV）：底层复用驾车路线，叠加充电/能耗业务信息（演示数据标注，不生成精确假数字） */}
+                {/* 新能源（EV）：底层复用驾车路线，叠加充电/能耗业务信息（模型估算） */}
                 {mode === 'drive' && selectedDisplayMode === 'ev' && (
                   <>
                     <div className={styles.bikeInfo}>
@@ -1913,14 +1913,14 @@ const RouteResultPage: React.FC = () => {
             </div>
           </div>
           <div className={styles.departAdvice} style={{ marginTop: 8, fontSize: 13, color: '#722ed1' }}>
-            ♿ 无障碍优化 · 设施数据{getFacilitySource() === 'backend' ? '来自后台维护' : '为演示数据（未接入官方实时）'}
+            ♿ 无障碍优化 · 设施数据{getFacilitySource() === 'backend' ? '来自后台维护' : '暂时无法获取，状态待确认'}
           </div>
         </div>
       ) : !navActive && !isPlanning && availableModes.length > 0 && recommendationId ? (
         <div className={styles.forecastSection} style={{ background: '#f0f5ff', border: '1px solid #d6e4ff' }}>
           <div className={styles.forecastTitle}>
             🧠 智能路线推荐
-            <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-hint)' }}>基于模拟预测</span>
+            <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-hint)' }}>基于交通预测</span>
           </div>
           {(() => {
             const rec = routeResults[recommendationId];
@@ -2001,7 +2001,7 @@ const RouteResultPage: React.FC = () => {
                       <td style={{ padding: 6, textAlign: 'center' }}>{getRouteMetrics(m, r).congestionRisk}</td>
                       <td style={{ padding: 6, textAlign: 'center' }}>{getRouteMetrics(m, r).carbon}<br/><small>估算</small></td>
                       <td style={{ padding: 6, textAlign: 'center', fontWeight: 600 }}>{score}</td>
-                      <td style={{ padding: 6, textAlign: 'center' }}>高德路线<br/><small>拥堵为模拟预测</small></td>
+                      <td style={{ padding: 6, textAlign: 'center' }}>高德路线<br/><small>拥堵为交通预测</small></td>
                     </tr>
                   );
                 })}
