@@ -11,15 +11,8 @@ const IncidentDetailPage = lazy(() => import('../pages/incidents/IncidentDetailP
 const UserManagementPage = lazy(() => import('../pages/users/UserManagementPage'));
 const CarbonManagementPage = lazy(() => import('../pages/carbon/CarbonManagementPage'));
 const ContentManagementPage = lazy(() => import('../pages/content/ContentManagementPage'));
-const AnalyticsPage = lazy(() => import('../pages/analytics/AnalyticsPage'));
 const SettingsPage = lazy(() => import('../pages/settings/SettingsPage'));
 const AdminLoginPage = lazy(() => import('../pages/login/AdminLoginPage'));
-// 信号控制 / 设备管理 / 仿真推演（页面已实现，补挂路由）
-const SignalsPage = lazy(() => import('../pages/signals/SignalsPage'));
-const IntersectionDetailPage = lazy(() => import('../pages/signals/IntersectionDetailPage'));
-const DeviceListPage = lazy(() => import('../pages/devices/DeviceListPage'));
-const DeviceDetailPage = lazy(() => import('../pages/devices/DeviceDetailPage'));
-const SimulationPage = lazy(() => import('../pages/simulation/SimulationPage'));
 const AccessibilityManagePage = lazy(() => import('../pages/accessibility/AccessibilityManagePage'));
 
 const PageLoader = () => (
@@ -44,12 +37,6 @@ export default function AppRouter() {
           <Route path="users" element={<UserManagementPage />} />
           <Route path="carbon" element={<CarbonManagementPage />} />
           <Route path="content" element={<ContentManagementPage />} />
-          <Route path="analytics" element={<AnalyticsPage />} />
-          <Route path="signals" element={<SignalsPage />} />
-          <Route path="signals/:id" element={<IntersectionDetailPage />} />
-          <Route path="devices" element={<DeviceListPage />} />
-          <Route path="devices/:id" element={<DeviceDetailPage />} />
-          <Route path="simulation" element={<SimulationPage />} />
           <Route path="accessibility" element={<AccessibilityManagePage />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>

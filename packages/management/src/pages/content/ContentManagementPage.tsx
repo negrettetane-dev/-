@@ -1,117 +1,45 @@
-import React, { useState } from 'react';
-import { Card, Tabs, Table, Tag, Button, Modal, Input, Switch, message, Space, Popconfirm } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
-import { getTrafficNews, setTrafficNews, getServices, setServices } from '../../stores/adminPersistence';
+import { useCallback, useEffect, useState } from 'react';
+import { Alert, Button, Card, Input, message, Modal, Popconfirm, Select, Space, Spin, Table, Tabs, Tag } from 'antd';
+import type { TableProps } from 'antd';
+import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
+import { contentService, type ContentNews, type ContentNewsInput, type ContentStatus } from '../../services/contentService';
 
-const CATEGORIES = ['交通新闻', '道路施工', '交通管制', '公交调整', '地铁通知', '出行提醒'];
-const STATUS_LABELS: Record<string, { color: string; label: string }> = { draft: { color: 'default', label: '草稿' }, published: { color: 'green', label: '已发布' }, archived: { color: 'red', label: '已下架' }, pinned: { color: 'blue', label: '置顶' } };
+const CATEGORIES = ['系统公告', '出行提醒', '服务通知', '活动通知'];
+const STATUS_LABELS: Record<ContentStatus, { color: string; label: string }> = { draft: { color: 'default', label: '草稿' }, scheduled: { color: 'orange', label: '定时发布' }, published: { color: 'green', label: '已发布' } };
+const emptyDraft: ContentNewsInput = { title: '', category: '系统公告', summary: '', content: '', status: 'draft', scheduledAt: null };
+const toInput = (item: ContentNews): ContentNewsInput => ({ title: item.title, category: item.category, summary: item.summary, content: item.content, status: item.status, scheduledAt: item.scheduledAt || null });
 
 export default function ContentManagementPage() {
-  const [news, setNews] = useState(getTrafficNews().length > 0 ? getTrafficNews() : [
-    { id: 'n1', title: '长安街东段施工通告', category: '道路施工', summary: '8月10日起西向东方向封闭', content: '', status: 'published', pinned: true, createdAt: Date.now() - 86400000, updatedAt: Date.now() },
-    { id: 'n2', title: '1号线延长运营时间', category: '地铁通知', summary: '周五周六延长至23:30', content: '', status: 'published', pinned: false, createdAt: Date.now() - 172800000, updatedAt: Date.now() },
-    { id: 'n3', title: '国庆期间交通管制方案', category: '交通管制', summary: '重要路段分时段管控', content: '', status: 'draft', pinned: false, createdAt: Date.now() - 259200000, updatedAt: Date.now() },
-  ]);
-  const [services, setServicesState] = useState(getServices().length > 0 ? getServices() : [
-    { id: 's1', name: '违章查询', icon: '🚗', desc: '机动车违法信息查询', link: '', sort: 1, enabled: true },
-    { id: 's2', name: '高速路况', icon: '🛣️', desc: '实时高速路况查询', link: '', sort: 2, enabled: true },
-    { id: 's3', name: '车驾管指南', icon: '📋', desc: '驾驶证/机动车业务指南', link: '', sort: 3, enabled: true },
-  ]);
+  const [news, setNews] = useState<ContentNews[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [statusFilter, setStatusFilter] = useState<ContentStatus | undefined>();
   const [newsModal, setNewsModal] = useState(false);
-  const [svcModal, setSvcModal] = useState(false);
-  const [editNews, setEditNews] = useState<any>(null);
-  const [editSvc, setEditSvc] = useState<any>(null);
-
-  const saveNews = () => {
-    if (!editNews?.title) { message.warning('请输入标题'); return; }
-    setNews(prev => {
-      const idx = prev.findIndex(n => n.id === editNews.id);
-      const updated = { ...editNews, updatedAt: Date.now(), id: editNews.id || ('n' + Date.now().toString(36)) };
-      const list = idx >= 0 ? prev.map((n, i) => i === idx ? updated : n) : [updated, ...prev];
-      setTrafficNews(list); return list;
-    });
-    setNewsModal(false); message.success('已保存');
-  };
-
-  const saveSvc = () => {
-    if (!editSvc?.name) { message.warning('请输入服务名称'); return; }
-    setServicesState(prev => {
-      const idx = prev.findIndex(s => s.id === editSvc.id);
-      const updated = { ...editSvc, id: editSvc.id || ('s' + Date.now().toString(36)) };
-      const list = idx >= 0 ? prev.map((s, i) => i === idx ? updated : s) : [...prev, updated];
-      setServices(list); return list;
-    });
-    setSvcModal(false); message.success('已保存');
-  };
-
-  return (
-    <div className="content-page">
-      <div className="page-header"><h2>📝 内容与便民服务管理</h2><p className="page-desc">交通资讯发布管理、便民服务配置</p></div>
-
-      <Tabs defaultActiveKey="news" items={[
-        {
-          key: 'news', label: '交通资讯',
-          children: (
-            <Card extra={<Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditNews({ id: '', title: '', category: '', summary: '', content: '', status: 'draft', pinned: false }); setNewsModal(true); }}>新建资讯</Button>}>
-              <Table dataSource={news} rowKey="id" size="small" pagination={{ pageSize: 10 }} columns={[
-                { title: '标题', dataIndex: 'title', ellipsis: true },
-                { title: '分类', dataIndex: 'category', width: 100, render: (v: string) => <Tag>{v}</Tag> },
-                { title: '摘要', dataIndex: 'summary', ellipsis: true, width: 200 },
-                { title: '状态', dataIndex: 'status', width: 80, render: (s: string) => { const m = STATUS_LABELS[s]; return m ? <Tag color={m.color}>{m.label}</Tag> : s; } },
-                { title: '置顶', dataIndex: 'pinned', width: 60, render: (v: boolean) => v ? '⭐' : '' },
-                { title: '更新时间', dataIndex: 'updatedAt', width: 150, render: (v: number) => new Date(v).toLocaleString('zh-CN') },
-                { title: '操作', width: 120, render: (_, r) => (
-                  <Space>
-                    <Button size="small" icon={<EditOutlined />} onClick={() => { setEditNews({ ...r }); setNewsModal(true); }}>编辑</Button>
-                    <Popconfirm title="确定删除？" onConfirm={() => { setNews(prev => prev.filter(n => n.id !== r.id)); setTrafficNews(news.filter(n => n.id !== r.id)); }}>
-                      <Button size="small" danger icon={<DeleteOutlined />} />
-                    </Popconfirm>
-                  </Space>
-                )},
-              ]} />
-              <Modal title={editNews?.id ? '编辑资讯' : '新建资讯'} open={newsModal} onOk={saveNews} onCancel={() => setNewsModal(false)} width={600}>
-                <div style={{ marginBottom: 10 }}><b>标题</b><Input value={editNews?.title} onChange={e => setEditNews({ ...editNews, title: e.target.value })} /></div>
-                <div style={{ marginBottom: 10 }}><b>分类</b><Input value={editNews?.category} onChange={e => setEditNews({ ...editNews, category: e.target.value })} placeholder="如: 交通新闻" /></div>
-                <div style={{ marginBottom: 10 }}><b>摘要</b><Input.TextArea rows={2} value={editNews?.summary} onChange={e => setEditNews({ ...editNews, summary: e.target.value })} /></div>
-                <div style={{ marginBottom: 10 }}><b>状态</b>
-                  <span style={{ marginLeft: 10 }}><Switch checked={editNews?.status === 'published'} onChange={v => setEditNews({ ...editNews, status: v ? 'published' : 'draft' })} /> {editNews?.status === 'published' ? '已发布' : '草稿'}</span>
-                  <span style={{ marginLeft: 20 }}><Switch checked={editNews?.pinned} onChange={v => setEditNews({ ...editNews, pinned: v })} /> 置顶</span>
-                </div>
-              </Modal>
-            </Card>
-          ),
-        },
-        {
-          key: 'services', label: '便民服务',
-          children: (
-            <Card extra={<Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditSvc({ id: '', name: '', icon: '', desc: '', link: '', sort: services.length + 1, enabled: true }); setSvcModal(true); }}>新建服务</Button>}>
-              <Table dataSource={services} rowKey="id" size="small" pagination={false} columns={[
-                { title: '排序', dataIndex: 'sort', width: 60 },
-                { title: '图标', dataIndex: 'icon', width: 60 },
-                { title: '名称', dataIndex: 'name' },
-                { title: '说明', dataIndex: 'desc', ellipsis: true },
-                { title: '启用', dataIndex: 'enabled', width: 60, render: (v: boolean) => v ? <Tag color="green">启用</Tag> : <Tag>禁用</Tag> },
-                { title: '操作', width: 120, render: (_, r) => (
-                  <Space>
-                    <Button size="small" icon={<EditOutlined />} onClick={() => { setEditSvc({ ...r }); setSvcModal(true); }}>编辑</Button>
-                    <Popconfirm title="确定删除？" onConfirm={() => { setServicesState(prev => prev.filter(s => s.id !== r.id)); setServices(services.filter(s => s.id !== r.id)); }}>
-                      <Button size="small" danger icon={<DeleteOutlined />} />
-                    </Popconfirm>
-                  </Space>
-                )},
-              ]} />
-              <Modal title={editSvc?.id ? '编辑服务' : '新建服务'} open={svcModal} onOk={saveSvc} onCancel={() => setSvcModal(false)}>
-                <div style={{ marginBottom: 10 }}><b>名称</b><Input value={editSvc?.name} onChange={e => setEditSvc({ ...editSvc, name: e.target.value })} /></div>
-                <div style={{ marginBottom: 10 }}><b>图标 emoji</b><Input value={editSvc?.icon} onChange={e => setEditSvc({ ...editSvc, icon: e.target.value })} /></div>
-                <div style={{ marginBottom: 10 }}><b>说明</b><Input value={editSvc?.desc} onChange={e => setEditSvc({ ...editSvc, desc: e.target.value })} /></div>
-                <div style={{ marginBottom: 10 }}><b>链接</b><Input value={editSvc?.link} onChange={e => setEditSvc({ ...editSvc, link: e.target.value })} /></div>
-                <div><b>排序</b><Input type="number" value={editSvc?.sort} onChange={e => setEditSvc({ ...editSvc, sort: parseInt(e.target.value) || 0 })} /></div>
-                <div style={{ marginTop: 10 }}><Switch checked={editSvc?.enabled} onChange={v => setEditSvc({ ...editSvc, enabled: v })} /> 启用</div>
-              </Modal>
-            </Card>
-          ),
-        },
-      ]} />
-    </div>
-  );
+  const [editNews, setEditNews] = useState<{ id?: string; data: ContentNewsInput } | null>(null);
+  const loadNews = useCallback(async () => { setLoading(true); setError(''); try { const result = await contentService.list(statusFilter ? { status: statusFilter } : undefined); setNews(result.list || []); } catch (err) { setError(err instanceof Error ? err.message : '资讯加载失败'); setNews([]); } finally { setLoading(false); } }, [statusFilter]);
+  useEffect(() => { void loadNews(); }, [loadNews]);
+  const saveNews = async () => { const current = editNews; if (!current?.data.title.trim() || !current.data.content.trim()) { message.warning('请输入标题和正文'); return; } if (current.data.status === 'scheduled' && !current.data.scheduledAt) { message.warning('定时发布需要设置发送时间'); return; } try { if (current.id) await contentService.update(current.id, current.data); else await contentService.create(current.data); setNewsModal(false); setEditNews(null); message.success('资讯已保存'); await loadNews(); } catch (err) { message.error(err instanceof Error ? err.message : '保存失败'); } };
+  const deleteDraft = async (item: ContentNews) => { try { await contentService.removeDraft(item.id); message.success('草稿已删除'); await loadNews(); } catch (err) { message.error(err instanceof Error ? err.message : '删除失败'); } };
+  const columns: TableProps<ContentNews>['columns'] = [
+    { title: '标题', dataIndex: 'title', ellipsis: true },
+    { title: '类型', dataIndex: 'category', width: 110, render: value => <Tag>{value}</Tag> },
+    { title: '状态', dataIndex: 'status', width: 100, render: value => { const status = STATUS_LABELS[value as ContentStatus]; return status ? <Tag color={status.color}>{status.label}</Tag> : value; } },
+    { title: '发送时间', dataIndex: 'scheduledAt', width: 170, render: value => value ? new Date(value).toLocaleString('zh-CN') : '—' },
+    { title: '更新时间', dataIndex: 'updatedAt', width: 170, render: value => value ? new Date(value).toLocaleString('zh-CN') : '—' },
+    { title: '操作', width: 150, render: (_, record) => <Space><Button size="small" icon={<EditOutlined />} onClick={() => { setEditNews({ id: record.id, data: toInput(record) }); setNewsModal(true); }}>编辑</Button>{record.status === 'draft' && <Popconfirm title="确定删除这个草稿？" onConfirm={() => void deleteDraft(record)}><Button size="small" danger icon={<DeleteOutlined />} /></Popconfirm>}</Space> },
+  ];
+  const updateField = (field: keyof ContentNewsInput, value: string | null) => setEditNews(current => current && { ...current, data: { ...current.data, [field]: value } });
+  return <div className="content-page">
+    <div className="page-header"><h2>🔔 系统消息管理</h2><p className="page-desc">发布后通过用户端通知按钮向客户展示，不是交通资讯。</p></div>
+    {error && <Alert type="error" showIcon message="资讯接口加载失败" description={error} action={<Button size="small" icon={<ReloadOutlined />} onClick={() => void loadNews()}>重试</Button>} style={{ marginBottom: 16 }} />}
+    <Tabs activeKey={statusFilter || 'all'} onChange={key => setStatusFilter(key === 'all' ? undefined : key as ContentStatus)} items={[{ key: 'all', label: '全部' }, { key: 'draft', label: '草稿' }, { key: 'scheduled', label: '定时发布' }, { key: 'published', label: '已发布' }]} />
+    <Card extra={<Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditNews({ data: { ...emptyDraft } }); setNewsModal(true); }}>新建系统消息</Button>}>{loading ? <div style={{ textAlign: 'center', padding: 48 }}><Spin /></div> : <Table rowKey="id" dataSource={news} columns={columns} pagination={{ pageSize: 10 }} locale={{ emptyText: '暂无真实后端数据' }} />}</Card>
+    <Modal title={editNews?.id ? '编辑系统消息' : '新建系统消息'} open={newsModal} onOk={() => void saveNews()} onCancel={() => { setNewsModal(false); setEditNews(null); }} width={680} destroyOnClose>
+      <div style={{ marginBottom: 12 }}><b>标题</b><Input value={editNews?.data.title} onChange={e => updateField('title', e.target.value)} /></div>
+      <div style={{ marginBottom: 12 }}><b>类型</b><Select style={{ width: '100%', marginTop: 4 }} value={editNews?.data.category} options={CATEGORIES.map(value => ({ value, label: value }))} onChange={value => updateField('category', value)} /></div>
+      <div style={{ marginBottom: 12 }}><b>摘要</b><Input.TextArea rows={2} value={editNews?.data.summary} onChange={e => updateField('summary', e.target.value)} /></div>
+      <div style={{ marginBottom: 12 }}><b>正文</b><Input.TextArea rows={8} value={editNews?.data.content} onChange={e => updateField('content', e.target.value)} /></div>
+      <Space align="center"><b>发布方式</b><Select value={editNews?.data.status} options={[{ value: 'draft', label: '保存为草稿' }, { value: 'published', label: '立即发布' }, { value: 'scheduled', label: '定时发送' }]} onChange={(status: ContentStatus) => setEditNews(current => current && { ...current, data: { ...current.data, status, scheduledAt: status === 'scheduled' ? current.data.scheduledAt : null } })} /><Input type="datetime-local" value={editNews?.data.scheduledAt ? editNews.data.scheduledAt.slice(0, 16) : ''} disabled={editNews?.data.status !== 'scheduled'} onChange={event => updateField('scheduledAt', event.target.value ? new Date(event.target.value).toISOString() : null)} /></Space>
+    </Modal>
+  </div>;
 }

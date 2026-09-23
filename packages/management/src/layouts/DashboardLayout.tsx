@@ -6,10 +6,6 @@ import { isAdminLoggedIn, getAdminInfo, adminLogout } from '../stores/adminAuth'
 import {
   DashboardOutlined,
   AlertOutlined,
-  ControlOutlined,
-  ExperimentOutlined,
-  ApiOutlined,
-  BarChartOutlined,
   SettingOutlined,
   UserOutlined,
   TeamOutlined,
@@ -18,7 +14,6 @@ import {
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   CarOutlined,
-  ToolOutlined,
   DeploymentUnitOutlined,
 } from '@ant-design/icons';
 import { useUIStore } from '../stores/uiStore';
@@ -32,10 +27,6 @@ const menuItems: MenuProps['items'] = [
   { key: '/admin/users', icon: <TeamOutlined />, label: '用户管理' },
   { key: '/admin/carbon', icon: <GiftOutlined />, label: '碳积分管理' },
   { key: '/admin/content', icon: <EditOutlined />, label: '内容管理' },
-  { key: '/admin/analytics', icon: <BarChartOutlined />, label: '数据分析' },
-  { key: '/admin/signals', icon: <ControlOutlined />, label: '信号控制' },
-  { key: '/admin/devices', icon: <ToolOutlined />, label: '设备管理' },
-  { key: '/admin/simulation', icon: <ExperimentOutlined />, label: '仿真推演' },
   { key: '/admin/accessibility', icon: <DeploymentUnitOutlined />, label: '无障碍设施管理' },
   { key: '/admin/settings', icon: <SettingOutlined />, label: '系统设置' },
 ];
@@ -46,10 +37,6 @@ const breadcrumbNameMap: Record<string, string> = {
   '/admin/users': '用户管理',
   '/admin/carbon': '碳积分管理',
   '/admin/content': '内容管理',
-  '/admin/analytics': '数据分析',
-  '/admin/signals': '信号控制',
-  '/admin/devices': '设备管理',
-  '/admin/simulation': '仿真推演',
   '/admin/accessibility': '无障碍设施管理',
   '/admin/settings': '系统设置',
 };
