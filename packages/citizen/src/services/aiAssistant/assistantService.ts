@@ -12,7 +12,7 @@ import { recognizeIntent } from './intentRouter';
 import { searchTransit, getBusLines, getMetroLines } from '../transitService';
 import { getRouteForecast } from '../routeForecastService';
 import { buildTransitRouteOptions, planRouteCandidates, planTransitCandidates, resolveRouteLocations } from '../routePlanningService';
-import { computeAccessibleMetrics } from '../accessibilityService';
+import { buildAccessibleOptions, computeAccessibleMetrics, type AccessibilityPreference } from '../accessibilityService';
 import { getFacilityForStation, getFacilitySource, loadAccessibilityFacilities } from '../../data/accessibilityFacilities';
 import { FORECAST_LEVEL_LABEL } from '../../types/routeForecast';
 import { formatPrice } from '../../utils/price';
@@ -48,8 +48,16 @@ function modeLabel(mode?: string): string {
 export async function respond(input: string, ctx: AssistantContext): Promise<AssistantMessage> {
   const routeMetric = extractRouteMetricQuery(input);
   if (routeMetric) return handleRouteMetric(routeMetric, input);
-  if (isRouteDecisionRequest(input)) return handleRouteDecisionShell(input, ctx);
-  const parsed = recognizeIntent(input);
+  const parsed = withConversationContext(input, ctx);
+  if (isRouteDecisionRequest(input) || isRoutePreferenceFollowUp(input, parsed, ctx)) {
+    return handleRouteDecisionShell(input, parsed, ctx);
+  }
+  if (isRouteFollowUp(input, parsed, ctx)) {
+    if (parsed.mode === 'bus' && parsed.origin && parsed.destination) {
+      return handleTransit(`从${parsed.origin}到${parsed.destination}有没有公交地铁方案`);
+    }
+    return handleRoutePlan(parsed, ctx);
+  }
   switch (parsed.intent) {
     case 'route_plan': return handleRoutePlan(parsed, ctx);
     case 'route_compare': return handleRouteCompare(parsed, ctx);
@@ -65,28 +73,56 @@ export async function respond(input: string, ctx: AssistantContext): Promise<Ass
   }
 }
 
+function withConversationContext(input: string, ctx: AssistantContext): IntentParseResult {
+  const current = recognizeIntent(input);
+  const inherited: Partial<IntentParseResult> = {};
+  const previousUserMessages = (ctx.conversation || []).filter(message => message.role === 'user').reverse();
+  for (const message of previousUserMessages) {
+    const previous = recognizeIntent(message.content);
+    inherited.destination ||= previous.destination;
+    inherited.origin ||= previous.origin;
+    inherited.mode ||= previous.mode;
+    inherited.targetTime ||= previous.targetTime;
+    if (inherited.destination && inherited.origin && inherited.mode && inherited.targetTime) break;
+  }
+  return {
+    ...current,
+    destination: current.destination || inherited.destination,
+    origin: current.origin || inherited.origin || ctx.originName,
+    mode: current.mode || inherited.mode,
+    targetTime: current.targetTime || inherited.targetTime,
+  };
+}
+
+function isRouteFollowUp(input: string, parsed: IntentParseResult, ctx: AssistantContext): boolean {
+  if (!parsed.destination || !(ctx.conversation || []).some(message => message.role === 'user')) return false;
+  return /(地铁|公交|开车|驾车|骑行|步行|走路).{0,8}(方案|可以|行吗|有没有|怎么走|呢)|(?:换成|改成|那)(地铁|公交|开车|驾车|骑行|步行)|^(地铁|公交|开车|驾车|骑行|步行)(呢|可以吗)?[？?]?$/i.test(input.trim());
+}
+
+function isRoutePreferenceFollowUp(input: string, parsed: IntentParseResult, ctx: AssistantContext): boolean {
+  if (!parsed.destination || !(ctx.conversation || []).some(message => message.role === 'user')) return false;
+  return /^(?:那)?(?:再)?(?:更|要|想要|改成)?(?:快|便宜|低碳|环保|少走路|少步行|少换乘|不换乘|无障碍)(?:一点|一些|优先|的方案|呢|可以吗)?[，。！？?\s]*$/.test(input.trim());
+}
+
 function isRouteDecisionRequest(input: string): boolean {
   return /(无障碍|老人|轮椅|视障|听障|婴儿车|少走路|少换乘|不换乘|低碳|环保|便宜|费用优先|时间优先|不想堵车|确认条件并生成方案)/.test(input)
     && /(去|到|路线|方案|出行|确认条件并生成方案)/.test(input);
 }
 
-async function handleRouteDecisionShell(input: string, ctx: AssistantContext): Promise<AssistantMessage> {
-  const parsed = recognizeIntent(input);
+async function handleRouteDecisionShell(input: string, parsed: IntentParseResult, ctx: AssistantContext): Promise<AssistantMessage> {
   const isConfirmed = input.includes('确认条件并生成方案');
   const destination = parsed.destination || '目的地待确认';
   const traveler = /无障碍/.test(input) ? '无障碍出行'
     : /轮椅/.test(input) ? '轮椅用户'
-    : /老人|老年/.test(input) ? '老年人'
-      : /视障/.test(input) ? '视障用户'
-        : /听障/.test(input) ? '听障用户'
-          : /婴儿车/.test(input) ? '携带婴儿车' : '普通用户';
+    : /省力|老人|老年/.test(input) ? '省力出行'
+      : /视障/.test(input) ? '视障用户' : '普通用户';
   const priorities = [
     /快|时间优先/.test(input) && '时间优先',
     /便宜|费用优先/.test(input) && '费用优先',
     /低碳|环保/.test(input) && '低碳优先',
     /少走路/.test(input) && '少步行',
     /少换乘|不换乘/.test(input) && '少换乘',
-    traveler !== '普通用户' && '无障碍优先',
+    traveler === '省力出行' ? '省力优先' : traveler !== '普通用户' && '无障碍优先',
   ].filter(Boolean).join('、') || '综合均衡';
 
   if (!isConfirmed) {
@@ -108,7 +144,7 @@ async function handleRouteDecisionShell(input: string, ctx: AssistantContext): P
         destination,
         traveler,
         priorities,
-        travelerOptions: ['普通用户', '无障碍出行', '老年人', '轮椅用户', '视障用户', '听障用户', '携带婴儿车'],
+        travelerOptions: ['普通用户', '无障碍出行', '省力出行', '轮椅用户', '视障用户'],
       },
       actions: [
         { label: '确认并生成方案', prompt: `确认条件并生成方案：从${parsed.origin || ctx.originName || '当前位置'}去${destination}，${traveler}，${priorities}`, promptTemplate: '确认条件并生成方案：从{origin}去{destination}，{traveler}，{priorities}', primary: true },
@@ -131,9 +167,25 @@ async function handleRouteDecisionShell(input: string, ctx: AssistantContext): P
     planTransitCandidates(resolved.start, resolved.end),
   ]);
   const driveCandidates = driveResult.status === 'fulfilled' ? driveResult.value : [];
-  const transitOptions = transitResult.status === 'fulfilled' ? buildTransitRouteOptions(transitResult.value) : [];
+  const transitCandidates = transitResult.status === 'fulfilled' ? transitResult.value : [];
+  const accessibilityPreference: AccessibilityPreference[] | undefined = traveler === '视障用户'
+      ? ['visual']
+      : traveler === '无障碍出行' || traveler === '轮椅用户'
+        ? ['wheelchair']
+        : undefined;
+  const preferredRoute = accessibilityPreference
+    ? buildAccessibleOptions(transitCandidates, accessibilityPreference)[0]?.route
+    : undefined;
+  const preferredTransit = traveler === '省力出行'
+    ? [...transitCandidates].sort((left, right) =>
+      left.walkingDistance - right.walkingDistance ||
+      left.transferCount - right.transferCount ||
+      left.route.duration - right.route.duration,
+    )[0]
+    : transitCandidates.find(candidate => candidate.route === preferredRoute);
+  const transitOptions = buildTransitRouteOptions(transitCandidates);
   const fastestDrive = [...driveCandidates].sort((a, b) => a.route.duration - b.route.duration)[0]?.route;
-  const transit = transitOptions[0];
+  const transit = preferredTransit || transitOptions[0];
   const formatDuration = (seconds: number) => `${Math.max(1, Math.round(seconds / 60))} 分钟`;
   const formatDistance = (meters: number) => meters >= 1000 ? `${(meters / 1000).toFixed(1)} 公里` : `${Math.round(meters)} 米`;
   const congestion = (route: { congestionSegments?: { level: string; ratio: number }[] }) => {

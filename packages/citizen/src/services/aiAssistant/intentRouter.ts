@@ -74,5 +74,11 @@ export function recognizeIntent(input: string): IntentParseResult {
       };
     }
   }
-  return { intent: 'unknown' };
+  return {
+    intent: 'unknown',
+    destination: extractDestination(text),
+    origin: extractOrigin(text),
+    mode: extractMode(text),
+    targetTime: extractTargetTime(text),
+  };
 }

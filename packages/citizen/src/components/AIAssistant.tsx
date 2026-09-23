@@ -38,6 +38,14 @@ function getConversationId(userId: string | null): string {
   }
 }
 
+function resetConversationId(userId: string | null): string {
+  const owner = userId || 'guest';
+  const key = conversationKey(owner);
+  const next = typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `conversation_${owner}_${Date.now()}`;
+  try { sessionStorage.setItem(key, next); } catch { /* storage unavailable */ }
+  return next;
+}
+
 function greeting(): AssistantMessage {
   return {
     id: 'greeting',
@@ -95,6 +103,7 @@ const AIAssistant: React.FC = () => {
 
   const clearHistory = () => {
     identityVersionRef.current += 1;
+    conversationIdRef.current = resetConversationId(userId);
     setThinking('');
     setMessages([greeting()]);
     if (userId) {
@@ -312,6 +321,7 @@ const AssistantCardView: React.FC<{ card: AssistantCard; onAction: (a: Assistant
           <label>起点<div className={styles.editorInputWrap}><input value={editor.origin || ''} onChange={event => setEditor(current => ({ ...current, origin: event.target.value }))} placeholder="当前位置" /><button type="button" className={styles.editorLocateButton} onClick={() => void locateOrigin()} disabled={locationStatus === 'locating'} title="定位当前位置" aria-label="定位当前位置"><LocateFixed size={14} aria-hidden="true" /></button></div></label>
           <label>目的地<input value={editor.destination || ''} onChange={event => setEditor(current => ({ ...current, destination: event.target.value }))} placeholder="请输入目的地" /></label>
           <label>出行人群<select value={editor.traveler || ''} onChange={event => setEditor(current => ({ ...current, traveler: event.target.value }))}>{(card.editor.travelerOptions || []).map(option => <option key={option} value={option}>{option}</option>)}</select></label>
+          {editor.traveler === '省力出行' && <div className={styles.travelerHint}>优先步行距离短、少换乘的路线</div>}
         </div>
       )}
       {card.rows && card.rows.length > 0 && (
