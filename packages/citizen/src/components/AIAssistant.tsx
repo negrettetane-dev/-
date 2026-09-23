@@ -50,7 +50,7 @@ function greeting(): AssistantMessage {
   return {
     id: 'greeting',
     role: 'ai',
-    text: '👋 你好，我是小枢。你可以直接说出出行需求，比如「去北京南站怎么走」「附近哪里有停车场」「我的积分还有多少」。',
+    text: '👋 你好，我是小枢。告诉我从哪里出发、想去哪里，以及你更在意时间、费用、少走路还是无障碍。之后可以直接说「换成地铁」「少走一点」，我会接着当前条件继续规划。',
     createdAt: Date.now(),
   };
 }
@@ -180,8 +180,8 @@ const AIAssistant: React.FC = () => {
   };
 
   const quickQuestions = isLoggedIn
-    ? ['查我的积分', '规划去北京南站', '找附近停车场', '查看上报进度']
-    : ['怎么去北京南站', '找附近停车场', '查看现在路况', '查询附近公交'];
+    ? ['从国贸到北京南站，少换乘', '从西直门到北京南站，省力出行', '找附近停车场', '查我的积分']
+    : ['从国贸到北京南站，少换乘', '从西直门到北京南站，省力出行', '找附近停车场', '查看北京实时路况'];
 
   return (
     <>
@@ -261,7 +261,7 @@ const AIAssistant: React.FC = () => {
           <div className={styles.inputRow}>
             <input
               className={styles.input}
-              placeholder="说出你的出行需求，如「去高铁站哪条路靠谱」"
+              placeholder="输入起点、目的地和偏好，如「从国贸到北京南站，少走路」"
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(input); } }}

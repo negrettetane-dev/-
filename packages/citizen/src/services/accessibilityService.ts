@@ -12,23 +12,19 @@ import {
   calculateAccessibleScore, buildAccessibleTags,
   type AccessibleRouteMetrics, type AccessibleLevel, type AccessibleScoreResult,
 } from '../utils/accessibilityScore';
+import { ACCESSIBILITY_PREFERENCES, type AccessibilityPreference } from '../types/accessibilityPreference';
 
-export type AccessibilityPreference = 'wheelchair' | 'visual' | 'hearing' | 'elderly' | 'stroller';
+export type { AccessibilityPreference } from '../types/accessibilityPreference';
 
-export const ACCESSIBILITY_PREFERENCE_META: Record<AccessibilityPreference, { label: string; icon: string; hint: string }> = {
-  wheelchair: { label: '轮椅出行', icon: '♿', hint: '优先电梯、坡道，避开楼梯' },
-  visual: { label: '视障出行', icon: '🦯', hint: '强化语音和分段提示' },
-  hearing: { label: '听障出行', icon: '🧏', hint: '强化视觉提醒和状态标识' },
-  elderly: { label: '老年人', icon: '🧓', hint: '优先少换乘、少步行' },
-  stroller: { label: '婴儿车', icon: '👶', hint: '优先坡道、电梯和无障碍入口' },
-};
+export const ACCESSIBILITY_PREFERENCE_META = Object.fromEntries(
+  ACCESSIBILITY_PREFERENCES.map(item => [item.value, item]),
+) as Record<AccessibilityPreference, (typeof ACCESSIBILITY_PREFERENCES)[number]>;
 
 export function getAccessibilityPreferenceHint(preferences: AccessibilityPreference[]): string {
-  if (preferences.includes('wheelchair') || preferences.includes('stroller')) return '优先电梯和坡道，避开已知楼梯风险';
-  if (preferences.includes('elderly')) return '优先少换乘、少步行的路线';
-  if (preferences.includes('visual')) return '将提供更清晰的分段和语音提示';
-  if (preferences.includes('hearing')) return '将提供更明显的视觉状态提醒';
-  return '根据当前设施数据筛选无障碍路线';
+  const hints = ACCESSIBILITY_PREFERENCES
+    .filter(item => preferences.includes(item.value))
+    .map(item => item.description);
+  return hints.length ? hints.join('；') : '根据当前设施数据筛选无障碍路线';
 }
 
 export interface AccessibleRouteOption {
@@ -146,14 +142,15 @@ export function buildAccessibleOptions(
     preferenceScore: item.score.score
       + (preferences.includes('elderly') ? (item.metrics.transferCount <= 1 ? 12 : -item.metrics.transferCount * 4) : 0)
       + (preferences.includes('visual') ? (item.metrics.transferCount <= 1 ? 8 : -item.metrics.transferCount * 3) : 0)
-      + (preferences.includes('hearing') ? (item.metrics.unknownFacilityCount === 0 ? 8 : -item.metrics.unknownFacilityCount * 2) : 0)
-      + (preferences.includes('wheelchair') || preferences.includes('stroller')
+      + (preferences.includes('wheelchair')
         ? (item.metrics.elevatorCoverage + item.metrics.accessibleEntranceCoverage) * 10
         : 0),
   }));
 
   // 角色分配
-  const byScore = [...preferenceAdjusted].sort((a, b) => b.preferenceScore - a.preferenceScore);
+  const byScore = [...preferenceAdjusted].sort((a, b) => preferences.includes('elderly')
+    ? a.walkingDistance - b.walkingDistance || a.metrics.transferCount - b.metrics.transferCount || b.preferenceScore - a.preferenceScore
+    : b.preferenceScore - a.preferenceScore);
   const accessible = byScore[0];
   const byTime = [...preferenceAdjusted].sort((a, b) => a.duration - b.duration)[0];
   const byWalk = [...preferenceAdjusted].sort((a, b) => a.walkingDistance - b.walkingDistance)[0];
