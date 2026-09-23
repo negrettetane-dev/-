@@ -4,6 +4,7 @@ import { useElderly } from '../../App';
 import { useAuthStore } from '../../stores/authStore';
 import { getCarePreferences, getNotificationSettings, setCarePreferences, setNotificationSettings, type CarePreference, type NotificationSettings } from '../../stores/persistence';
 import { apiGet, apiPut } from '../../services/apiClient';
+import { ACCESSIBILITY_PREFERENCES } from '../../types/accessibilityPreference';
 import styles from './Profile.module.css';
 
 const SettingsPage: React.FC = () => {
@@ -22,18 +23,11 @@ const SettingsPage: React.FC = () => {
 
   useEffect(() => { setCarePreferenceState(getCarePreferences(userId)); }, [userId]);
 
-  const careOptions: Array<{ value: CarePreference; label: string; description: string }> = [
-    { value: 'elderly', label: '老年人', description: '优先更简单的提示与少步行路线' },
-    { value: 'wheelchair', label: '轮椅出行', description: '优先电梯、坡道，避开已知楼梯风险' },
-    { value: 'visual', label: '视障出行', description: '强化语音和分段提示' },
-    { value: 'hearing', label: '听障出行', description: '强化视觉提醒和状态标识' },
-    { value: 'stroller', label: '携带婴儿车', description: '优先坡道、电梯和无障碍入口' },
-  ];
-
   const toggleCarePreference = (preference: CarePreference) => {
-    setCarePreferenceState(current => {
-      const next = current.includes(preference) ? current.filter(item => item !== preference) : [...current, preference];
+    setCarePreferenceState(() => {
+      const next = [preference];
       setCarePreferences(next, userId);
+      try { sessionStorage.setItem('zhitu_accessibility_preferences', JSON.stringify(next)); } catch { /* storage unavailable */ }
       setSaveMessage('关怀偏好已保存到当前设备');
       return next;
     });
@@ -84,14 +78,16 @@ const SettingsPage: React.FC = () => {
           </button>
         </div>
         <div className={styles.careHint}>这些偏好会用于无障碍路线和小枢推荐。</div>
-        {careOptions.map(option => (
+        <div role="radiogroup" aria-label="出行偏好">
+        {ACCESSIBILITY_PREFERENCES.map(option => (
           <div key={option.value} className={styles.settingsItem}>
             <span><span className={styles.settingsLabel}>{option.label}</span><small className={styles.settingsDescription}>{option.description}</small></span>
-            <button type="button" role="switch" aria-checked={carePreferences.includes(option.value)} aria-label={option.label} className={`${styles.toggle} ${carePreferences.includes(option.value) ? styles.toggleOn : ''}`} onClick={() => toggleCarePreference(option.value)}>
+            <button type="button" role="radio" aria-checked={carePreferences.includes(option.value)} aria-label={option.label} className={`${styles.toggle} ${carePreferences.includes(option.value) ? styles.toggleOn : ''}`} onClick={() => toggleCarePreference(option.value)}>
               <span className={styles.toggleBall}/>
             </button>
           </div>
         ))}
+        </div>
       </div>
 
       <div style={{textAlign:'center',padding:20,color:'var(--text-hint)',fontSize:13}}>

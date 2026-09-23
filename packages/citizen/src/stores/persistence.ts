@@ -2,6 +2,8 @@
 // 所有核心用户数据都在 localStorage 中持久化，
 // 页面刷新不丢失。
 
+import { normalizeAccessibilityPreferences, type AccessibilityPreference } from '../types/accessibilityPreference';
+
 const STORAGE_PREFIX = 'zhitu_';
 
 function get<T>(key: string, fallback: T): T {
@@ -54,14 +56,14 @@ export interface NotificationSettings {
   system: boolean;
 }
 
-export type CarePreference = 'wheelchair' | 'visual' | 'hearing' | 'elderly' | 'stroller';
+export type CarePreference = AccessibilityPreference;
 
 export function getCarePreferences(userId = 'legacy'): CarePreference[] {
-  return get<CarePreference[]>(userScopedKey('care_preferences', userId), []);
+  return normalizeAccessibilityPreferences(get<unknown>(userScopedKey('care_preferences', userId), []));
 }
 
 export function setCarePreferences(preferences: CarePreference[], userId = 'legacy'): void {
-  set(userScopedKey('care_preferences', userId), preferences);
+  set(userScopedKey('care_preferences', userId), normalizeAccessibilityPreferences(preferences));
 }
 
 export type NotificationType = 'carbon' | 'weather' | 'event' | 'system';
