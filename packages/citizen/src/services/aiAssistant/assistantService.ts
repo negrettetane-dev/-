@@ -49,6 +49,9 @@ export async function respond(input: string, ctx: AssistantContext): Promise<Ass
   const routeMetric = extractRouteMetricQuery(input);
   if (routeMetric) return handleRouteMetric(routeMetric, input);
   const parsed = withConversationContext(input, ctx);
+  if (isExplicitRouteRequest(input, parsed)) {
+    return handleRouteDecisionShell(input, parsed, ctx);
+  }
   if (isRouteDecisionRequest(input) || isRoutePreferenceFollowUp(input, parsed, ctx)) {
     return handleRouteDecisionShell(input, parsed, ctx);
   }
@@ -71,6 +74,11 @@ export async function respond(input: string, ctx: AssistantContext): Promise<Ass
     case 'platform_help': return handlePlatformHelp();
     default: return handleUnknown(input, ctx);
   }
+}
+
+function isExplicitRouteRequest(input: string, parsed: IntentParseResult): boolean {
+  if (!parsed.origin || !parsed.destination) return false;
+  return /怎么走|怎么去|如何去|路线|规划|导航|出发|前往|开车|驾车|自驾|坐车|骑行|步行/.test(input);
 }
 
 function withConversationContext(input: string, ctx: AssistantContext): IntentParseResult {
