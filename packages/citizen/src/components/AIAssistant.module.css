@@ -290,6 +290,7 @@
 
 .cardEditor { display: grid; gap: 8px; margin: 2px 0 4px; padding: 10px; border-radius: 10px; background: #f8fbff; }
 .cardEditor label { display: grid; grid-template-columns: 58px 1fr; align-items: center; gap: 8px; color: #667085; font-size: 12px; }
+.travelerLabel { line-height: 1.35; white-space: nowrap; }
 .cardEditor input, .cardEditor select { min-width: 0; box-sizing: border-box; width: min(100%, 300px); margin-left: auto; padding: 7px 9px; border: 1px solid #d9e2ec; border-radius: 7px; background: #fff; color: #1a1a2e; font-size: 12px; outline: none; }
 .cardEditor input:focus, .cardEditor select:focus { border-color: #1677ff; box-shadow: 0 0 0 2px rgba(22,119,255,.12); }
 .travelerHint { margin: -4px 0 0 66px; color: #8c8c8c; font-size: 11px; line-height: 1.4; }

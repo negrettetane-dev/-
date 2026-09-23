@@ -180,8 +180,8 @@ const AIAssistant: React.FC = () => {
   };
 
   const quickQuestions = isLoggedIn
-    ? ['从国贸到北京南站，少换乘', '从西直门到北京南站，省力出行', '找附近停车场', '查我的积分']
-    : ['从国贸到北京南站，少换乘', '从西直门到北京南站，省力出行', '找附近停车场', '查看北京实时路况'];
+    ? ['从国贸到北京南站，少换乘', '从西直门到北京南站，省力出行（长辈推荐）', '找附近停车场', '查我的积分']
+    : ['从国贸到北京南站，少换乘', '从西直门到北京南站，省力出行（长辈推荐）', '找附近停车场', '查看北京实时路况'];
 
   return (
     <>
@@ -320,8 +320,9 @@ const AssistantCardView: React.FC<{ card: AssistantCard; onAction: (a: Assistant
         <div className={styles.cardEditor}>
           <label>起点<div className={styles.editorInputWrap}><input value={editor.origin || ''} onChange={event => setEditor(current => ({ ...current, origin: event.target.value }))} placeholder="当前位置" /><button type="button" className={styles.editorLocateButton} onClick={() => void locateOrigin()} disabled={locationStatus === 'locating'} title="定位当前位置" aria-label="定位当前位置"><LocateFixed size={14} aria-hidden="true" /></button></div></label>
           <label>目的地<input value={editor.destination || ''} onChange={event => setEditor(current => ({ ...current, destination: event.target.value }))} placeholder="请输入目的地" /></label>
-          <label>出行人群<select value={editor.traveler || ''} onChange={event => setEditor(current => ({ ...current, traveler: event.target.value }))}>{(card.editor.travelerOptions || []).map(option => <option key={option} value={option}>{option}</option>)}</select></label>
-          {editor.traveler === '省力出行' && <div className={styles.travelerHint}>优先步行距离短、少换乘的路线</div>}
+          <label><span className={styles.travelerLabel}>出行<br />人群</span><select value={editor.traveler || ''} onChange={event => setEditor(current => ({ ...current, traveler: event.target.value }))}>{(card.editor.travelerOptions || []).map(option => <option key={option} value={option}>{option}</option>)}</select></label>
+          {editor.traveler === '无障碍出行（轮椅推车用户推荐）' && <div className={styles.travelerHint}>优先电梯、坡道和无障碍入口，减少搬运行李或推车的不便</div>}
+          {editor.traveler === '省力出行（长辈推荐）' && <div className={styles.travelerHint}>优先步行距离短、少换乘的路线</div>}
         </div>
       )}
       {card.rows && card.rows.length > 0 && (
