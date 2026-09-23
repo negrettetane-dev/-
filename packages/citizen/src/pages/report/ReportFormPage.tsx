@@ -8,18 +8,88 @@ import styles from './Report.module.css';
 
 const MAX_PHOTOS = 6;
 
-async function uploadReportImage(file: File): Promise<string> {
+interface UploadedReportImage {
+  url: string;
+  uploadId?: string;
+  objectKey?: string;
+  thumbnailUrl?: string;
+  mimeType?: string;
+  sizeBytes?: number;
+}
+
+const authHeaders = (): HeadersInit => {
+  const token = localStorage.getItem('zhitu_token');
+  return token ? { Authorization: `Bearer ${token}` } : {};
+};
+
+const extractUploadUrl = (body: any): UploadedReportImage => {
+  const data = body?.data || body || {};
+  const url = data.url || data.publicUrl || data.fileUrl || data.path;
+  if (!url) throw new Error('图片上传返回无效地址');
+  return {
+    url,
+    uploadId: data.uploadId,
+    objectKey: data.objectKey || data.key,
+    thumbnailUrl: data.thumbnailUrl,
+    mimeType: data.mimeType,
+    sizeBytes: data.sizeBytes || data.size,
+  };
+};
+
+async function uploadWithPresign(file: File): Promise<UploadedReportImage> {
+  const presignRes = await fetch('/api/uploads/presign', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ filename: file.name, contentType: file.type, size: file.size, bizType: 'report' }),
+  });
+  if (!presignRes.ok) throw new Error(presignRes.status === 401 ? '登录状态已失效，请重新登录后提交' : '图片上传凭证获取失败');
+  const presignBody = await presignRes.json();
+  if (presignBody?.code !== undefined && presignBody.code !== 0) throw new Error(presignBody.message || '图片上传凭证获取失败');
+  const presign = presignBody?.data || presignBody || {};
+  const uploadUrl = presign.uploadUrl || presign.url;
+  if (!uploadUrl) throw new Error('图片上传凭证无效');
+
+  const uploadHeaders = new Headers(presign.headers || {});
+  if (file.type && !uploadHeaders.has('Content-Type')) uploadHeaders.set('Content-Type', file.type);
+  const uploadRes = await fetch(uploadUrl, { method: presign.method || 'PUT', headers: uploadHeaders, body: file });
+  if (!uploadRes.ok) throw new Error('图片直传失败，请稍后重试');
+
+  const completeRes = await fetch('/api/uploads/complete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({
+      uploadId: presign.uploadId,
+      objectKey: presign.objectKey || presign.key,
+      bizType: 'report',
+      filename: file.name,
+      contentType: file.type,
+      size: file.size,
+    }),
+  });
+  if (!completeRes.ok) throw new Error(completeRes.status === 401 ? '登录状态已失效，请重新登录后提交' : '图片上传完成确认失败');
+  const completeBody = await completeRes.json();
+  if (completeBody?.code !== undefined && completeBody.code !== 0) throw new Error(completeBody.message || '图片上传完成确认失败');
+  try { return extractUploadUrl(completeBody); } catch { return extractUploadUrl({ data: presign }); }
+}
+
+async function uploadWithSimpleEndpoint(file: File): Promise<UploadedReportImage> {
   const formData = new FormData();
   formData.append('file', file);
-  const token = localStorage.getItem('zhitu_token');
-  const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {};
-  const res = await fetch('/api/upload', { method: 'POST', body: formData, headers });
+  const res = await fetch('/api/upload', { method: 'POST', body: formData, headers: authHeaders() });
   if (!res.ok) throw new Error(res.status === 401 ? '登录状态已失效，请重新登录后提交' : '图片上传失败');
   const body = await res.json();
   if (body?.code !== undefined && body.code !== 0) throw new Error(body.message || '图片上传失败');
-  const url = body?.data?.url || body?.url || body?.data?.path;
-  if (!url) throw new Error('图片上传返回无效地址');
-  return url;
+  return extractUploadUrl(body);
+}
+
+async function uploadReportImage(file: File): Promise<UploadedReportImage> {
+  try {
+    return await uploadWithPresign(file);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '';
+    if (message.includes('登录状态')) throw error;
+    return uploadWithSimpleEndpoint(file);
+  }
 }
 
 interface AiAssessment {
@@ -140,34 +210,64 @@ const ReportFormPage: React.FC = () => {
     setSubmitting(true);
 
     try {
-      const uploadedUrls = photoFiles.length ? await Promise.all(photoFiles.map(uploadReportImage)) : [];
+      const uploadedImages = photoFiles.length ? await Promise.all(photoFiles.map(uploadReportImage)) : [];
+      const uploadedUrls = uploadedImages.map(image => image.url);
+      const normalizedEventLocation = eventLocation
+        ? {
+            ...eventLocation,
+            longitude: Number(eventLocation.longitude),
+            latitude: Number(eventLocation.latitude),
+            // 兼容后端校验器读取 eventLocation.lng/lat 的实现；坐标仍为 GCJ-02。
+            lng: Number(eventLocation.longitude),
+            lat: Number(eventLocation.latitude),
+            coordinateSystem: 'GCJ02',
+            locationType: eventLocation.locationType || 'manual',
+            locationStatus: eventLocation.locationStatus || 'verified',
+            locatedAt: eventLocation.locatedAt || new Date().toISOString(),
+          }
+        : null;
+      const finalCategory = aiAssessment?.category || category;
+      const uploadIds = uploadedImages.map(image => image.uploadId).filter((id): id is string => Boolean(id));
+      const finalAssessment = {
+        category: finalCategory,
+        severity: aiAssessment?.severity || 'low',
+        recommendedDepartment: aiAssessment?.department || (finalCategory.startsWith('accessibility') ? '无障碍设施维护部门' : finalCategory === 'signal_fault' ? '交通信号管理部门' : '城市道路设施维护部门'),
+      };
       await apiPost('/report/submit', {
-        category,
+        category: finalCategory,
         description: description.trim(),
         phone: phone.trim() || undefined,
-        images: uploadedUrls,
-        beforeImages: uploadedUrls,
+        uploadIds,
+        ...(uploadedUrls.length ? { images: uploadedUrls, beforeImages: uploadedUrls, media: uploadedImages } : {}),
         // 事件位置：有则提交；无定位且未手动选择时，允许无位置提交但标记 failed
-        ...(eventLocation
+        ...(normalizedEventLocation
           ? {
-              eventLocation,
+              eventLocation: normalizedEventLocation,
               // 冗余字段（兼容旧后端 / 便于管理端直接读）
-              lng: eventLocation.longitude,
-              lat: eventLocation.latitude,
-              address: eventLocation.address,
-              locationType: eventLocation.locationType,
-              locationStatus: eventLocation.locationStatus,
+              lng: normalizedEventLocation.lng,
+              lat: normalizedEventLocation.lat,
+              longitude: normalizedEventLocation.longitude,
+              latitude: normalizedEventLocation.latitude,
+              address: normalizedEventLocation.address,
+              locationType: normalizedEventLocation.locationType,
+              locationStatus: normalizedEventLocation.locationStatus,
             }
           : { locationStatus: 'failed' as const }),
         // 设备原始定位（保留审核追溯）
         ...(deviceLocation ? { deviceLocation } : {}),
-        aiAssessment: aiAssessment || undefined,
+        // 后端要求提交用户确认后的最终识别结果；当前 AI 为前端演示，因此只提交最小 finalAssessment。
+        finalAssessment,
         imageUploadStatus: uploadedUrls.length ? 'uploaded' : 'none',
       });
       revokeAllPreviews();
       setSubmitted(true);
     } catch (error) {
-      setValidationError(error instanceof Error ? error.message : '提交失败，请检查网络后重试');
+      const message = error instanceof Error ? error.message : '提交失败，请检查网络后重试';
+      setValidationError(
+        message === 'Request failed with status code 500'
+          ? '上报服务内部异常（HTTP 500），请求已到达后端，但后端在保存工单时出错，请联系后端检查 /api/report/submit 日志'
+          : message,
+      );
     } finally {
       setSubmitting(false);
     }
