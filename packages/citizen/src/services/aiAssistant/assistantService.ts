@@ -169,8 +169,10 @@ async function handleRouteDecisionShell(input: string, parsed: IntentParseResult
   const driveCandidates = driveResult.status === 'fulfilled' ? driveResult.value : [];
   const transitCandidates = transitResult.status === 'fulfilled' ? transitResult.value : [];
   const accessibilityPreference: AccessibilityPreference[] | undefined = traveler === '视障用户'
-      ? ['visual']
-      : traveler === '无障碍出行' || traveler === '轮椅用户'
+    ? ['visual']
+    : traveler === '无障碍出行'
+      ? ['wheelchair']
+      : traveler === '轮椅用户'
         ? ['wheelchair']
         : undefined;
   const preferredRoute = accessibilityPreference

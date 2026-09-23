@@ -14,7 +14,8 @@ import AccessibilityOverview from '../../components/travel/AccessibilityOverview
 import AccessibilityFacilityDetails from '../../components/travel/AccessibilityFacilityDetails';
 import DataSourceBadge from '../../components/DataSourceBadge';
 import { buildAccessibleOptions, getAccessibilityPreferenceHint, getAccessibilityConditionLabels, ACCESSIBILITY_PREFERENCE_META, type AccessibilityPreference, type AccessibleRouteOption } from '../../services/accessibilityService';
-import { getFacilityForStation, getFacilitySource, subscribeAccessibilityFacilities } from '../../data/accessibilityFacilities';
+import { ACCESSIBILITY_PREFERENCES, normalizeAccessibilityPreferences } from '../../types/accessibilityPreference';
+import { getFacilityForStation, getFacilitySource, loadAccessibilityFacilities, subscribeAccessibilityFacilities } from '../../data/accessibilityFacilities';
 import { useAuthStore } from '../../stores/authStore';
 import { useTripStore } from '../../stores/tripStore';
 import { useTravelPlanStore } from '../../stores/travelPlanStore';
@@ -22,7 +23,7 @@ import { useTravelLocationStore } from '../../stores/travelLocationStore';
 import { isTransitSupported } from '../../services/transitEligibility';
 import { estimateDriveCost, estimateDriveImpact } from '../../services/routeCarbonEstimator';
 import { fromLegacyRouteMode } from '../../types/travelMode';
-import { getCarePreferences } from '../../stores/persistence';
+import { getCarePreferences, setCarePreferences } from '../../stores/persistence';
 import { buildTravelStages, createTravelRouteFingerprint } from '../../services/routePlanningService';
 import { useTravelStageNavigationStore } from '../../stores/travelStageNavigationStore';
 import TravelStageTimeline from '../../components/travel/TravelStageTimeline';
@@ -264,16 +265,17 @@ const RouteResultPage: React.FC = () => {
   const [accessibleOptions, setAccessibleOptions] = useState<AccessibleRouteOption[]>([]);
   const [accessibleSelectedId, setAccessibleSelectedId] = useState<'accessible' | 'fastest' | 'least-walk' | null>(null);
   const [accessibleUnavailableNote, setAccessibleUnavailableNote] = useState('');
+  const userId = useAuthStore(state => state.user?.id || 'legacy');
   // 无障碍模式派生状态（须在组件顶部、所有 effect 依赖数组之前定义，避免 TDZ）
   const accessibleActive = selectedDisplayMode === 'accessible';
   const [accessibilityPreferences, setAccessibilityPreferences] = useState<AccessibilityPreference[]>(() => {
     try {
-      const saved = JSON.parse(sessionStorage.getItem('zhitu_accessibility_preferences') || 'null');
-      if (Array.isArray(saved) && saved.length) return saved;
-      const profilePreferences = getCarePreferences(useAuthStore.getState().user?.id || 'legacy');
+      const saved = normalizeAccessibilityPreferences(JSON.parse(sessionStorage.getItem('zhitu_accessibility_preferences') || 'null'));
+      if (saved.length) return saved;
+      const profilePreferences = getCarePreferences(userId);
       return profilePreferences.length ? profilePreferences : ['wheelchair'];
     } catch {
-      const profilePreferences = getCarePreferences(useAuthStore.getState().user?.id || 'legacy');
+      const profilePreferences = getCarePreferences(userId);
       return profilePreferences.length ? profilePreferences : ['wheelchair'];
     }
   });
@@ -406,6 +408,9 @@ const RouteResultPage: React.FC = () => {
     setUnavailableNote('');
     setTransitOptions([]);
     setSelectedTransitOptionId(null);
+    setAccessibleOptions([]);
+    setAccessibleSelectedId(null);
+    setAccessibleUnavailableNote('');
 
     // 加载 mock 卡片数据作为展示兜底
     const query = new URLSearchParams({ origin, dest: destination, mode: selectedMode });
@@ -453,10 +458,11 @@ const RouteResultPage: React.FC = () => {
 
     // 无障碍：走无障碍候选
     const planAccessible = async (): Promise<PlannedRoute> => {
+      await loadAccessibilityFacilities();
       const candidates = await planTransitCandidates(s, e, transitCity);
       const accessible = buildAccessibleOptions(candidates, accessibilityPreferences);
       setAccessibleOptions(accessible);
-      setAccessibleUnavailableNote(accessible.length ? '' : '');
+      setAccessibleUnavailableNote('');
       if (accessible.length === 0) throw new Error('transit-no-valid-segment');
       setAccessibleSelectedId(accessible[0].id);
       return accessible[0].route;
@@ -1397,9 +1403,9 @@ const RouteResultPage: React.FC = () => {
         </div>
       )}
 
-      {!navActive && accessibleActive && getFacilitySource() === 'demo' && (
+      {!navActive && accessibleActive && getFacilitySource() === 'backend' && (
         <div style={{ marginBottom: 10 }}>
-          <DataSourceBadge source="demo" label="当前为演示设施数据" />
+          <DataSourceBadge source="backend_verified" label="当前为后端设施数据" />
         </div>
       )}
 
@@ -1415,11 +1421,12 @@ const RouteResultPage: React.FC = () => {
                 <button
                   key={preference}
                   type="button"
-                  aria-pressed={active}
-                  onClick={() => setAccessibilityPreferences(current => {
-                    const next = active ? current.filter(item => item !== preference) : [...current, preference];
-                    if (!next.length) return current;
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => setAccessibilityPreferences(() => {
+                    const next = [preference];
                     sessionStorage.setItem('zhitu_accessibility_preferences', JSON.stringify(next));
+                    setCarePreferences(next, userId);
                     return next;
                   })}
                   style={{ border: `1px solid ${active ? '#722ed1' : 'var(--border-color)'}`, background: active ? '#f9f0ff' : '#fff', color: active ? '#531dab' : 'var(--text-primary)', borderRadius: 18, padding: '7px 10px', cursor: 'pointer', fontSize: 12 }}
@@ -1600,11 +1607,14 @@ const RouteResultPage: React.FC = () => {
           <div style={{ padding: '10px 12px', marginBottom: 12, borderRadius: 10, background: '#f0f5ff', color: '#1d39c4', fontSize: 13, lineHeight: 1.6 }}>
             <div style={{ fontWeight: 700 }}>已按以下需求规划</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
-              {accessibilityPreferences.map(preference => (
+              {accessibilityPreferences.map(preference => {
+                const meta = ACCESSIBILITY_PREFERENCES.find(item => item.value === preference);
+                return meta && (
                 <span key={preference} style={{ background: '#fff', borderRadius: 14, padding: '3px 8px' }}>
-                  {ACCESSIBILITY_PREFERENCE_META[preference].icon} {ACCESSIBILITY_PREFERENCE_META[preference].label}
+                  {meta.icon} {meta.label}
                 </span>
-              ))}
+                );
+              })}
             </div>
             <div style={{ color: '#597ef7', marginTop: 4 }}>{getAccessibilityPreferenceHint(accessibilityPreferences)}</div>
           </div>
@@ -1897,7 +1907,7 @@ const RouteResultPage: React.FC = () => {
               {(() => {
                 const recommended = accessibleOptions[0];
                 const fastest = accessibleOptions.find(o => o.id === 'fastest') || null;
-                if (!recommended) return '当前候选方案信息待确认。';
+                if (!recommended) return accessibleUnavailableNote || '当前没有可用的无障碍推荐。';
                 let text = `当前方案轮椅/步行移动约${Math.round(recommended.walkingDistance)}m，换乘 ${recommended.transferCount} 次。`;
                 if (fastest && fastest !== recommended) {
                   const savedWalk = Math.max(0, fastest.walkingDistance - recommended.walkingDistance);
@@ -1907,13 +1917,14 @@ const RouteResultPage: React.FC = () => {
                   }
                 }
                 if (recommended.metrics.elevatorCoverage > 0) text += ' 🛗 途经站点优先选择设有电梯的出入口。';
-                if (recommended.metrics.unknownFacilityCount > 0) text += ' ⚠ 部分设施状态暂无实时信息，建议出发前确认。';
                 return text;
               })()}
             </div>
           </div>
           <div className={styles.departAdvice} style={{ marginTop: 8, fontSize: 13, color: '#722ed1' }}>
-            ♿ 无障碍优化 · 设施数据{getFacilitySource() === 'backend' ? '来自后台维护' : '暂时无法获取，状态待确认'}
+            {getFacilitySource() === 'backend'
+              ? '♿ 无障碍优化 · 已结合后台维护的设施数据'
+              : '♿ 无障碍优化 · 当前按步行距离和换乘次数排序'}
           </div>
         </div>
       ) : !navActive && !isPlanning && availableModes.length > 0 && recommendationId ? (

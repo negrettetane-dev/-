@@ -2,7 +2,7 @@
 // 规则（V1 固定偏好，用户不必设置；后续做成「无障碍偏好」配置）：
 //   无障碍设施 35% > 移动距离 25% > 换乘次数 20% > 路线耗时 10% > 信息可靠程度 10%
 // 硬性规则：仅楼梯 → 不建议；步行/轮椅移动 > 1000m → 大幅扣分。
-// 展示规则：不直接显示数字分，转换为「无障碍条件优秀/较好/部分设施待确认/不建议」。
+// 展示规则：不直接显示数字分，转换为「无障碍条件优秀/较好/一般/不建议」。
 
 export interface AccessibleRouteMetrics {
   /** 步行 / 轮椅移动距离（米） */
@@ -103,7 +103,7 @@ export function calculateAccessibleScore(metrics: AccessibleRouteMetrics, durati
   if (score < 60) return { score, level: 'caution', levelLabel: '谨慎选择', levelTone: 'orange' };
   if (score >= 90) return { score, level: 'excellent', levelLabel: '无障碍条件优秀', levelTone: 'green' };
   if (score >= 75) return { score, level: 'good', levelLabel: '无障碍条件较好', levelTone: 'blue' };
-  return { score, level: 'partial', levelLabel: '部分设施待确认', levelTone: 'orange' };
+  return { score, level: 'partial', levelLabel: '无障碍条件一般', levelTone: 'orange' };
 }
 
 /** 耗时折算扣分（供评分用），10 分钟内不扣，超过后每 10 分钟 1 分，封顶 10 */

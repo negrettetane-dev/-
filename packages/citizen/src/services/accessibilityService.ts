@@ -13,16 +13,13 @@ import {
   type AccessibleRouteMetrics, type AccessibleLevel, type AccessibleScoreResult,
   type AccessibleEntranceSummary, type AccessibleStationFacility,
 } from '../utils/accessibilityScore';
+import { ACCESSIBILITY_PREFERENCES, type AccessibilityPreference } from '../types/accessibilityPreference';
 
-export type AccessibilityPreference = 'wheelchair' | 'visual' | 'hearing' | 'elderly' | 'stroller';
+export type { AccessibilityPreference } from '../types/accessibilityPreference';
 
-export const ACCESSIBILITY_PREFERENCE_META: Record<AccessibilityPreference, { label: string; icon: string; hint: string }> = {
-  wheelchair: { label: '轮椅出行', icon: '♿', hint: '必须有无障碍入口，避开楼梯' },
-  visual: { label: '视障出行', icon: '🦯', hint: '分段文字提示，支持语音播报' },
-  hearing: { label: '听障出行', icon: '🧏', hint: '强化文字、颜色和视觉提醒' },
-  elderly: { label: '老年人', icon: '🧓', hint: '少换乘、少走路，提示更简短' },
-  stroller: { label: '婴儿车', icon: '👶', hint: '优先坡道、电梯，避开台阶' },
-};
+export const ACCESSIBILITY_PREFERENCE_META = Object.fromEntries(
+  ACCESSIBILITY_PREFERENCES.map(item => [item.value, item]),
+) as Record<AccessibilityPreference, (typeof ACCESSIBILITY_PREFERENCES)[number]>;
 
 export interface AccessibilityPreferenceRules {
   hardAvoidStairs: boolean;
@@ -37,13 +34,13 @@ export interface AccessibilityPreferenceRules {
 
 export function getAccessibilityPreferenceRules(preferences: AccessibilityPreference[]): AccessibilityPreferenceRules {
   return {
-    hardAvoidStairs: preferences.includes('wheelchair') || preferences.includes('stroller'),
+    hardAvoidStairs: preferences.includes('wheelchair'),
     requireAccessibleEntrance: preferences.includes('wheelchair'),
-    preferElevatorOrRamp: preferences.some(item => ['wheelchair', 'stroller'].includes(item)),
-    preferShortWalk: preferences.some(item => ['elderly', 'stroller', 'wheelchair'].includes(item)),
+    preferElevatorOrRamp: preferences.includes('wheelchair'),
+    preferShortWalk: preferences.some(item => ['elderly', 'wheelchair'].includes(item)),
     preferFewTransfers: preferences.includes('elderly'),
-    textGuidance: preferences.includes('visual') || preferences.includes('hearing') || preferences.includes('elderly'),
-    visualAlerts: preferences.includes('hearing') || preferences.includes('visual'),
+    textGuidance: preferences.includes('visual') || preferences.includes('elderly'),
+    visualAlerts: preferences.includes('visual'),
     voiceGuidance: preferences.includes('visual'),
   };
 }
@@ -57,16 +54,14 @@ export function getAccessibilityConditionLabels(preferences: AccessibilityPrefer
   if (rules.preferShortWalk) labels.push('步行距离尽量少');
   if (rules.preferFewTransfers) labels.push('优先少换乘');
   if (rules.voiceGuidance) labels.push('分段语音提示');
-  if (preferences.includes('hearing')) labels.push('文字和视觉提醒');
   return labels;
 }
 
 export function getAccessibilityPreferenceHint(preferences: AccessibilityPreference[]): string {
-  if (preferences.includes('wheelchair') || preferences.includes('stroller')) return '优先电梯和坡道，避开已知楼梯风险';
-  if (preferences.includes('elderly')) return '优先少换乘、少步行的路线';
-  if (preferences.includes('visual')) return '将提供更清晰的分段和语音提示';
-  if (preferences.includes('hearing')) return '将提供更明显的视觉状态提醒';
-  return '根据当前设施数据筛选无障碍路线';
+  const hints = ACCESSIBILITY_PREFERENCES
+    .filter(item => preferences.includes(item.value))
+    .map(item => item.description);
+  return hints.length ? hints.join('；') : '根据当前设施数据筛选无障碍路线';
 }
 
 export interface AccessibleRouteOption {
@@ -264,7 +259,6 @@ export function buildAccessibleOptions(
     preferenceScore: item.score.score
       + (rules.preferFewTransfers ? (item.metrics.transferCount <= 1 ? 12 : -item.metrics.transferCount * 8) : 0)
       + (preferences.includes('visual') ? (item.metrics.transferCount <= 1 ? 8 : -item.metrics.transferCount * 3) : 0)
-      + (preferences.includes('hearing') ? (item.metrics.unknownFacilityCount === 0 ? 8 : -item.metrics.unknownFacilityCount * 2) : 0)
       + (rules.preferElevatorOrRamp ? (item.metrics.elevatorCoverage + item.metrics.accessibleEntranceCoverage) * 12 + item.metrics.rampCount * 2 : 0)
       + (rules.preferShortWalk ? -Math.min(18, item.metrics.walkingDistance / 80) : 0)
       - (item.constraintStatus === 'risk' ? 10 : 0)
@@ -272,7 +266,9 @@ export function buildAccessibleOptions(
   }));
 
   // 角色分配
-  const byScore = [...preferenceAdjusted].sort((a, b) => b.preferenceScore - a.preferenceScore);
+  const byScore = [...preferenceAdjusted].sort((a, b) => preferences.includes('elderly')
+    ? a.walkingDistance - b.walkingDistance || a.metrics.transferCount - b.metrics.transferCount || b.preferenceScore - a.preferenceScore
+    : b.preferenceScore - a.preferenceScore);
   const accessible = byScore[0];
   const byTime = [...preferenceAdjusted].sort((a, b) => a.duration - b.duration)[0];
   const byWalk = [...preferenceAdjusted].sort((a, b) => a.walkingDistance - b.walkingDistance)[0];

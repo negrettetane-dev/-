@@ -7,7 +7,8 @@ import TransitSearchPanel from '../../components/travel/TransitSearchPanel';
 import ModeAssistPanel from '../../components/travel/ModeAssistPanel';
 import { parseTravelMode } from '../../types/travelMode';
 import { getAccessibilityConditionLabels, type AccessibilityPreference } from '../../services/accessibilityService';
-import { getCarePreferences } from '../../stores/persistence';
+import { ACCESSIBILITY_PREFERENCES } from '../../types/accessibilityPreference';
+import { getCarePreferences, setCarePreferences } from '../../stores/persistence';
 import { useAuthStore } from '../../stores/authStore';
 import { getNearbyStations, getBusLines, getMetroLines } from '../../services/transitService';
 import type { TransitLine, NearbyStation } from '../../types/transit';
@@ -24,14 +25,6 @@ const TravelPlanPage: React.FC = () => {
     const saved = getCarePreferences(userId);
     return saved.length ? saved : ['wheelchair'];
   });
-
-  const ACCESSIBILITY_PREFERENCES: Array<{ value: AccessibilityPreference; label: string; icon: string }> = [
-    { value: 'wheelchair', label: '轮椅出行', icon: '♿' },
-    { value: 'visual', label: '视障出行', icon: '🦯' },
-    { value: 'hearing', label: '听障出行', icon: '🧏' },
-    { value: 'elderly', label: '老年人', icon: '🧓' },
-    { value: 'stroller', label: '婴儿车', icon: '👶' },
-  ];
 
   useEffect(() => {
     if (mode !== 'accessible') return;
@@ -86,22 +79,21 @@ const TravelPlanPage: React.FC = () => {
         <section className={styles.transitSection} aria-labelledby="accessibility-preferences-title">
           <div className={styles.sectionTitle} id="accessibility-preferences-title">♿ 选择您的出行需求</div>
           <div style={{ color: 'var(--text-secondary)', fontSize: 13, marginBottom: 10 }}>
-            可多选，系统会根据设施和路线信息调整推荐顺序
+            请选择一项，系统会根据对应需求调整推荐顺序
           </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          <div role="radiogroup" aria-label="出行需求" style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             {ACCESSIBILITY_PREFERENCES.map(preference => {
               const active = accessibilityPreferences.includes(preference.value);
               return (
                 <button
                   key={preference.value}
                   type="button"
-                  aria-pressed={active}
-                  onClick={() => setAccessibilityPreferences(current => {
-                    if (active) {
-                      const next = current.filter(value => value !== preference.value);
-                      return next.length ? next : current;
-                    }
-                    return [...current, preference.value];
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => setAccessibilityPreferences(() => {
+                    const next = [preference.value];
+                    setCarePreferences(next, userId);
+                    return next;
                   })}
                   style={{
                     border: `1px solid ${active ? 'var(--primary)' : 'var(--border-color)'}`,
