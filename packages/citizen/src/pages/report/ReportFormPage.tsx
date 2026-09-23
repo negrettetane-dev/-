@@ -211,7 +211,6 @@ const ReportFormPage: React.FC = () => {
 
     try {
       const uploadedImages = photoFiles.length ? await Promise.all(photoFiles.map(uploadReportImage)) : [];
-      const uploadedUrls = uploadedImages.map(image => image.url);
       const normalizedEventLocation = eventLocation
         ? {
             ...eventLocation,
@@ -228,6 +227,9 @@ const ReportFormPage: React.FC = () => {
         : null;
       const finalCategory = aiAssessment?.category || category;
       const uploadIds = uploadedImages.map(image => image.uploadId).filter((id): id is string => Boolean(id));
+      if (uploadedImages.length > 0 && uploadIds.length !== uploadedImages.length) {
+        throw new Error('图片上传结果缺少 uploadId，请重新上传');
+      }
       const finalAssessment = {
         category: finalCategory,
         severity: aiAssessment?.severity || 'low',
@@ -238,7 +240,6 @@ const ReportFormPage: React.FC = () => {
         description: description.trim(),
         phone: phone.trim() || undefined,
         uploadIds,
-        ...(uploadedUrls.length ? { images: uploadedUrls, beforeImages: uploadedUrls, media: uploadedImages } : {}),
         // 事件位置：有则提交；无定位且未手动选择时，允许无位置提交但标记 failed
         ...(normalizedEventLocation
           ? {
@@ -257,7 +258,7 @@ const ReportFormPage: React.FC = () => {
         ...(deviceLocation ? { deviceLocation } : {}),
         // 后端要求提交用户确认后的最终识别结果；当前 AI 为前端演示，因此只提交最小 finalAssessment。
         finalAssessment,
-        imageUploadStatus: uploadedUrls.length ? 'uploaded' : 'none',
+        imageUploadStatus: uploadIds.length ? 'uploaded' : 'none',
       });
       revokeAllPreviews();
       setSubmitted(true);
