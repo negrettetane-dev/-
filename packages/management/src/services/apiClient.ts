@@ -3,6 +3,30 @@ import axios from 'axios';
 import type { AxiosResponse, InternalAxiosRequestConfig } from 'axios';
 import type { ApiResponse } from '@zhitu/shared';
 
+export class ApiError extends Error {
+  constructor(message: string, public readonly code?: string | number, public readonly status?: number) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
+function errorPayload(data: unknown): { message?: string; code?: string | number } {
+  if (!data || typeof data !== 'object') return {};
+  const payload = data as Record<string, unknown>;
+  const detail = payload.detail;
+  if (detail && typeof detail === 'object') {
+    const nested = detail as Record<string, unknown>;
+    return {
+      message: typeof nested.message === 'string' ? nested.message : undefined,
+      code: typeof nested.code === 'string' || typeof nested.code === 'number' ? nested.code : undefined,
+    };
+  }
+  return {
+    message: typeof payload.message === 'string' ? payload.message : undefined,
+    code: typeof payload.code === 'string' || typeof payload.code === 'number' ? payload.code : undefined,
+  };
+}
+
 async function fetchAdapter(config: InternalAxiosRequestConfig): Promise<AxiosResponse> {
   const query = config.params ? new URLSearchParams(Object.entries(config.params).flatMap(([key, value]) => value == null ? [] : [[key, String(value)]])).toString() : '';
   const url = `${config.baseURL || ''}${config.url || ''}${query ? `?${query}` : ''}`;
@@ -46,12 +70,13 @@ apiClient.interceptors.response.use(
   (response) => {
     const data = response.data as ApiResponse;
     if (data.code !== 0) {
-      return Promise.reject(new Error(data.message || '请求失败'));
+      return Promise.reject(new ApiError(data.message || '请求失败', data.code, response.status));
     }
     return response;
   },
   (error) => {
-    return Promise.reject(error);
+    const { message, code } = errorPayload(error?.response?.data);
+    return Promise.reject(new ApiError(message || error?.message || '请求失败', code, error?.response?.status));
   },
 );
 

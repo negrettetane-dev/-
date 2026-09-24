@@ -79,8 +79,8 @@ const ReportDetailPage: React.FC = () => {
     };
   }, [report]);
 
-  const beforeImages = useMemo(() => [...(report?.beforeImages || []), ...(report?.images || [])].filter(Boolean), [report]);
-  const afterImages = useMemo(() => [...(report?.afterImages || []), ...(report?.afterImage ? [report.afterImage] : [])].filter(Boolean), [report]);
+  const beforeImages = useMemo(() => [...new Set([...(report?.beforeImages || []), ...(report?.images || [])].filter(Boolean))], [report]);
+  const afterImages = useMemo(() => [...new Set([...(report?.afterImages || []), ...(report?.afterImage ? [report.afterImage] : [])].filter(Boolean))], [report]);
   const feedback = report?.platformFeedback || report?.feedback || '';
   const accessibilityIncident = Boolean(report?.category?.startsWith('accessibility'));
 
@@ -183,6 +183,12 @@ const ReportDetailPage: React.FC = () => {
             {afterImages[0] ? <img src={afterImages[0]} alt="处理后" /> : <div className={styles.imagePlaceholder}>待上传处理后照片</div>}
           </div>
         </div>
+        {afterImages.length > 1 && (
+          <div style={{ marginTop: 12 }}>
+            <div style={{ marginBottom: 8, fontSize: 13, color: 'var(--text-secondary)' }}>全部处理后图片（{afterImages.length}）</div>
+            <div className={styles.detailImageGrid}>{afterImages.map((src, index) => <img key={`${src}-${index}`} src={src} alt={`处理后图片 ${index + 1}`} />)}</div>
+          </div>
+        )}
       </div>
 
       {accessibilityIncident && (

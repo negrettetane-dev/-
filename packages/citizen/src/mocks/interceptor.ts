@@ -18,6 +18,7 @@ import {
   computeBusStatus,
   instancesForDate,
 } from '../utils/customBusSchedule';
+import { createDemoPurchase, listDemoPurchases, LongDistanceDemoStoreError } from '../services/longDistanceDemoStore';
 import { createMockTrip, findMockTrip, findMockTripFeedback, finishMockTrip, listMockTrips, saveMockTripFeedback } from './tripRepository';
 import type { CreateTripRequest, SubmitTripFeedbackRequest, TripFeedbackTag } from '../types/trip';
 
@@ -388,29 +389,31 @@ export function fetchInterceptor() {
     if (url === '/api/long-distance/purchases' && method === 'GET') {
       const userId = mockUserId(input, init);
       if (!userId) return response({ code: 401, message: '请先登录', data: null }, 401);
-      return response(json([]));
+      return response(json(listDemoPurchases()));
     }
     if (url === '/api/long-distance/purchases' && method === 'POST') {
       const userId = mockUserId(input, init);
       if (!userId) return response({ code: 401, message: '请先登录', data: null }, 401);
       const body = await requestBody(input, init);
-      const now = Date.now();
-      return response(json({
-        id: `ldp_${now.toString(36)}`,
-        purchaseNo: 'LD' + now.toString(36).toUpperCase(),
-        kind: 'purchase',
-        scheduleId: body.scheduleId || '',
-        routeName: '长途客运',
-        provider: 'e2Go',
-        date: body.date || new Date().toISOString().slice(0, 10),
-        departureTime: '',
-        originStation: '',
-        destinationStation: '',
-        price: Number(body.passengerCount || 1) * 100,
-        passengerCount: Number(body.passengerCount || 1),
-        status: 'pending',
-        createdAt: now,
-      }));
+      try {
+        const purchase = createDemoPurchase({
+          scheduleId: String(body.scheduleId || ''),
+          date: String(body.date || new Date().toISOString().slice(0, 10)),
+          passengerCount: Number(body.passengerCount || 0),
+          price: Number(body.price || 0),
+          baseTickets: Number(body.baseTickets || 0),
+          provider: String(body.provider || '合作平台'),
+          originStation: String(body.originStation || ''),
+          destinationStation: String(body.destinationStation || ''),
+          departureTime: String(body.departureTime || ''),
+        });
+        return response(json(purchase));
+      } catch (error) {
+        if (error instanceof LongDistanceDemoStoreError) {
+          return response({ code: error.code === 'INSUFFICIENT_INVENTORY' ? 409 : 400, message: error.message, data: null }, error.code === 'INSUFFICIENT_INVENTORY' ? 409 : 400);
+        }
+        throw error;
+      }
     }
 
     // 停车充电

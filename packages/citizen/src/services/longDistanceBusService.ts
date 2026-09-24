@@ -8,6 +8,13 @@
 
 import { apiGet, apiPost, ApiError } from './apiClient';
 import { isValidCoord } from './locationService';
+import {
+  createDemoPurchase,
+  cacheDemoPurchase,
+  getDemoSoldTickets,
+  listDemoPurchases,
+  LongDistanceDemoStoreError,
+} from './longDistanceDemoStore';
 import type { LongDistancePurchase, CreateLongDistancePurchaseRequest } from '@zhitu/shared';
 
 export interface BusSchedule {
@@ -148,10 +155,10 @@ function hashStr(input: string): number {
 
 /** 本地降级库存刷新（模拟合作平台实时库存） */
 export function refreshInventoryLocal(schedule: BusSchedule, date: string, querySeq: number): ScheduleInventory {
-  const seed = `${schedule.id}:${date}:${querySeq}`;
-  const variation = (hashStr(seed) % 7) - 3; // -3 ~ +3
-  const remaining = Math.max(0, schedule.baseTickets + variation);
-  const priceJitter = (hashStr(`${seed}:price`) % 3) - 1;
+  const seed = `${schedule.id}:${date}`;
+  const sold = getDemoSoldTickets(schedule.id, date);
+  const remaining = Math.max(0, schedule.baseTickets - sold);
+  const priceJitter = (hashStr(`${seed}:price:${querySeq}`) % 3) - 1;
   const price = Math.max(1, schedule.basePrice + priceJitter);
   const saleStatus = remaining <= 0 ? 'sold_out' : remaining <= 5 ? 'almost_sold' : 'on_sale';
   return { price, remainingTickets: remaining, saleStatus, refreshedAt: new Date().toISOString() };
@@ -246,7 +253,12 @@ export async function querySchedules(
       const results: QueryResult[] = list
         .map(raw => {
           const schedule = normalizeApiSchedule(raw);
-          const inventory = normalizeInventory(raw.inventory);
+          const remoteInventory = normalizeInventory(raw.inventory);
+          const inventory = {
+            ...remoteInventory,
+            remainingTickets: Math.max(0, remoteInventory.remainingTickets - getDemoSoldTickets(schedule.id, date)),
+          };
+          inventory.saleStatus = inventory.remainingTickets <= 0 ? 'sold_out' : inventory.remainingTickets <= 5 ? 'almost_sold' : 'on_sale';
           const distanceKm = stationDistance(schedule.originStation, userLng, userLat);
           return { schedule, inventory, distanceKm };
         })
@@ -307,19 +319,6 @@ export async function getPurchaseUrl(
 
 // ===== 购票记录（后端存储；后端未接入时降级本地演示） =====
 
-const PURCHASE_KEY = 'zhitu_long_distance_purchases';
-
-function readLocalPurchases(): LongDistancePurchase[] {
-  try {
-    const raw = localStorage.getItem(PURCHASE_KEY);
-    return raw ? JSON.parse(raw) as LongDistancePurchase[] : [];
-  } catch { return []; }
-}
-
-function writeLocalPurchases(list: LongDistancePurchase[]): void {
-  try { localStorage.setItem(PURCHASE_KEY, JSON.stringify(list)); } catch { /* ignore */ }
-}
-
 /**
  * 创建购票记录：点击「确认购票信息」时调用，后端存储；后端未接入时降级本地。
  * 返回记录 + 数据来源。
@@ -330,37 +329,44 @@ export async function createPurchase(
   passengerCount: number,
   price: number,
 ): Promise<{ purchase: LongDistancePurchase; source: DataSource }> {
-  const now = Date.now();
-  const demoPurchase: LongDistancePurchase = {
-    id: `ldp_${now.toString(36)}`,
-    purchaseNo: `LD${now.toString(36).toUpperCase()}`,
-    kind: 'purchase',
-    scheduleId: schedule.id,
-    routeName: `${schedule.originStation} → ${schedule.destinationStation}`,
-    provider: schedule.providerName,
-    date,
-    departureTime: schedule.departureTime,
-    originStation: schedule.originStation,
-    destinationStation: schedule.destinationStation,
-    price,
-    passengerCount,
-    status: 'pending',
-    createdAt: now,
-  };
   try {
-    const req: CreateLongDistancePurchaseRequest = { scheduleId: schedule.id, date, passengerCount };
+    const req: CreateLongDistancePurchaseRequest = {
+      scheduleId: schedule.id,
+      date,
+      passengerCount,
+      provider: schedule.providerName,
+      originStation: schedule.originStation,
+      destinationStation: schedule.destinationStation,
+      departureTime: schedule.departureTime,
+      price,
+      baseTickets: schedule.baseTickets,
+    };
     const data = await apiPost<LongDistancePurchase>('/long-distance/purchases', req);
-    if (data?.id) return { purchase: { ...data, kind: 'purchase' }, source: 'backend' };
-  } catch (error) {
-    // 未登录（401）：抛 UNAUTHORIZED，由页面提示登录，不静默降级本地
-    if (error instanceof ApiError && error.status === 401) {
-      throw new Error('UNAUTHORIZED');
+    if (data?.id) {
+      const purchase = { ...data, kind: 'purchase' as const };
+      cacheDemoPurchase(purchase);
+      return { purchase, source: 'backend' };
     }
-    // 其他错误（后端未接入/网络）：降级本地
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 401) throw new Error('UNAUTHORIZED');
+    if (error instanceof ApiError && (error.status === 400 || error.status === 409)) throw error;
+    if (error instanceof LongDistanceDemoStoreError) throw error;
   }
-  // 本地降级：写入 localStorage（演示，跨设备不可见）
-  writeLocalPurchases([demoPurchase, ...readLocalPurchases()]);
-  return { purchase: demoPurchase, source: 'demo' };
+
+  return {
+    purchase: createDemoPurchase({
+      scheduleId: schedule.id,
+      date,
+      passengerCount,
+      price,
+      baseTickets: schedule.baseTickets,
+      provider: schedule.providerName,
+      originStation: schedule.originStation,
+      destinationStation: schedule.destinationStation,
+      departureTime: schedule.departureTime,
+    }),
+    source: 'demo',
+  };
 }
 
 /** 我的购票记录：后端优先；后端未接入时读本地降级 */
@@ -368,8 +374,11 @@ export async function getMyPurchases(): Promise<{ purchases: LongDistancePurchas
   try {
     const data = await apiGet<LongDistancePurchase[]>('/long-distance/purchases');
     if (Array.isArray(data)) {
-      return { purchases: data.map(p => ({ ...p, kind: 'purchase' as const })), source: 'backend' };
+      const backendPurchases = data.map(p => ({ ...p, kind: 'purchase' as const }));
+      const backendIds = new Set(backendPurchases.map(p => p.id));
+      const localOnly = listDemoPurchases().filter(p => !backendIds.has(p.id));
+      return { purchases: [...backendPurchases, ...localOnly].sort((a, b) => b.createdAt - a.createdAt), source: 'backend' };
     }
   } catch { /* 降级 */ }
-  return { purchases: readLocalPurchases(), source: 'demo' };
+  return { purchases: listDemoPurchases(), source: 'demo' };
 }

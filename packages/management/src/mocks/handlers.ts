@@ -19,6 +19,7 @@ import {
   INCIDENT_STATUS_LABELS,
   type MockStationFacility,
   type MockIncident,
+  type MockIncidentMedia,
   type IncidentProcessLog,
   type MockAdminNotification,
 } from './mockData';
@@ -28,6 +29,8 @@ type Handler = (url: string, options?: RequestInit) => unknown;
 // 内存中缓存事件（模拟后端持久化）：GET / PUT 共享同一份数据，保存状态后追加处理历史
 let incidentCache: MockIncident[] | null = null;
 const incidentExtraLogs = new Map<string, IncidentProcessLog[]>();
+interface MockStagedUpload extends MockIncidentMedia { uploadId: string; incidentId: string; }
+const stagedIncidentUploads = new Map<string, MockStagedUpload>();
 
 function getIncidentCache(): MockIncident[] {
   if (!incidentCache) incidentCache = generateIncidents();
@@ -69,6 +72,29 @@ const API_HANDLERS: Record<string, Handler> = {
     code: 0, data: generateAiAlerts(), message: 'ok', timestamp: Date.now(),
   }),
 
+  'POST /api/uploads': (_url: string, options?: RequestInit) => {
+    const form = options?.body instanceof FormData ? options.body : null;
+    const file = form?.get('file');
+    const incidentId = String(form?.get('incidentId') || '');
+    const purpose = String(form?.get('purpose') || '');
+    if (!(file instanceof File) || !incidentId || purpose !== 'incident_after_image') {
+      return { code: 'INVALID_UPLOAD_REQUEST', data: null, message: '图片上传参数不完整', timestamp: Date.now() };
+    }
+    const uploadId = `up_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    const url = URL.createObjectURL(file);
+    const upload: MockStagedUpload = {
+      uploadId,
+      mediaId: uploadId,
+      incidentId,
+      url,
+      filename: file.name,
+      mimeType: file.type,
+      sizeBytes: file.size,
+    };
+    stagedIncidentUploads.set(uploadId, upload);
+    return { code: 0, data: { uploadId, url, filename: file.name, mimeType: file.type, sizeBytes: file.size, status: 'uploaded' }, message: 'ok', timestamp: Date.now() };
+  },
+
   // Incidents
   'GET /api/incidents': (url: string) => {
     const params = new URLSearchParams(url.split('?')[1] || '');
@@ -100,7 +126,7 @@ const API_HANDLERS: Record<string, Handler> = {
   // 管理端保存事件状态 + 平台反馈（追加处理历史，同时通知市民端）
   'PUT /api/incidents/:id': (url: string, options?: RequestInit) => {
     const id = url.match(/\/incidents\/([^/?]+)/)?.[1];
-    let body: { status?: string; platformFeedback?: string; notifyCitizen?: boolean; department?: string; assignee?: string; estimatedProcessTime?: string; afterImages?: string[]; afterImage?: string } = {};
+    let body: { version?: number; status?: string; platformFeedback?: string; notifyCitizen?: boolean; department?: string; assignee?: string; estimatedProcessTime?: string; retainedAfterImageIds?: string[]; retainedLegacyAfterImages?: string[]; afterImageUploadIds?: string[]; afterImages?: string[]; afterImage?: string } = {};
     try { body = options?.body ? JSON.parse(String(options.body)) : {}; } catch { /* ignore */ }
     const found = getIncident(id);
     if (found) {
@@ -110,8 +136,20 @@ const API_HANDLERS: Record<string, Handler> = {
       if (body.department !== undefined) found.department = body.department;
       if (body.assignee !== undefined) found.assignee = body.assignee;
       if (body.estimatedProcessTime !== undefined) found.estimatedProcessTime = body.estimatedProcessTime;
-      if (body.afterImages !== undefined) found.afterImages = body.afterImages;
+      if (body.retainedAfterImageIds || body.retainedLegacyAfterImages || body.afterImageUploadIds) {
+        const retainedIds = new Set(body.retainedAfterImageIds || []);
+        const retained = (found.afterImageMedia || []).filter(item => retainedIds.has(item.mediaId));
+        const legacy = (body.retainedLegacyAfterImages || []).map((url, index) => ({ mediaId: `legacy-${index}-${url}`, url }));
+        const uploaded = (body.afterImageUploadIds || []).flatMap(uploadId => {
+          const item = stagedIncidentUploads.get(uploadId);
+          return item && item.incidentId === found.id ? [{ mediaId: item.uploadId, url: item.url, filename: item.filename, mimeType: item.mimeType, sizeBytes: item.sizeBytes }] : [];
+        });
+        found.afterImageMedia = [...retained, ...legacy, ...uploaded];
+        found.afterImages = found.afterImageMedia.map(item => item.url);
+        body.afterImageUploadIds?.forEach(uploadId => stagedIncidentUploads.delete(uploadId));
+      } else if (body.afterImages !== undefined) found.afterImages = body.afterImages;
       if (body.afterImage !== undefined) found.afterImages = body.afterImage ? [body.afterImage] : [];
+      found.version = (found.version || 1) + 1;
       const logs = incidentExtraLogs.get(found.id) || [];
       const detailParts = [body.platformFeedback, body.department ? `受理部门：${body.department}` : '', body.estimatedProcessTime ? `预计处理：${body.estimatedProcessTime}` : ''].filter(Boolean);
       logs.push({
@@ -134,7 +172,9 @@ const API_HANDLERS: Record<string, Handler> = {
         department: body.department ?? found?.department ?? '',
         assignee: body.assignee ?? found?.assignee ?? '',
         estimatedProcessTime: body.estimatedProcessTime ?? found?.estimatedProcessTime ?? '',
-        afterImages: body.afterImages ?? found?.afterImages ?? [],
+        version: found?.version ?? 1,
+        afterImageMedia: found?.afterImageMedia ?? [],
+        afterImages: found?.afterImages ?? [],
         notifyCitizen: body.notifyCitizen !== false,
         notifiedAt: Date.now(),
       },

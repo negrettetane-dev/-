@@ -10,6 +10,7 @@ export interface StatusMeta {
 /** 事件状态（管理员可保存的状态，用于详情页下拉） */
 export const INCIDENT_STATUS_OPTIONS: StatusMeta[] = [
   { value: 'pending', label: '待审核', color: 'warning' },
+  { value: 'received', label: '已受理', color: 'processing' },
   { value: 'processing', label: '处理中', color: 'orange' },
   { value: 'resolved', label: '已完成', color: 'success' },
 ];

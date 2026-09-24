@@ -11,25 +11,29 @@
 
 | 项 | 现状 | 目标 |
 |---|---|---|
-| 状态/严重程度 | 后端返回英文枚举，管理端直接展示英文 | 前端已本地映射为中文（待审核/处理中/已完成，**「已关闭」已从可选项中移除**），**后端枚举值保持英文不变** |
-| 平台反馈 | `PUT /api/incidents/:id` 只更新 status，`platformFeedback` 被忽略 | 同时保存 `platformFeedback` |
+| 状态/严重程度 | 后端返回英文枚举，管理端直接展示英文 | 前端已本地映射为中文（待审核/已受理/处理中/已完成，**「已关闭」已从可选项中移除**），**后端枚举值保持英文不变** |
+| 平台反馈 | `PUT /api/admin/incidents/:id` 只更新 status，`platformFeedback` 被忽略 | 同时保存 `platformFeedback` |
 | 市民端可见性 | 市民端工单状态/反馈不随管理端更新 | 状态与反馈同步到 `/events/mine`、`/report/detail/:id` |
 | 市民通知 | 无 | 状态变更时向市民推送一条 `event` 类别通知 |
 
 ## 二、接口调整
 
-### PUT /api/incidents/:id（管理端当前实际调用）
+### PUT /api/admin/incidents/:id（管理端当前实际调用）
 
-> 管理端 axios baseURL 为 `/api`，前端代码中写作 `PUT /incidents/:id`，故实际路径为 `/api/incidents/:id`。
-> `citizen-notification-backend-contract.md` 中建议的 `/api/admin/workorders/{id}` 为**目标态**命名；
-> 若后端改路径，请同步前端 `packages/management/src/pages/incidents/IncidentDetailPage.tsx`。
+> 管理端 axios baseURL 为 `/api/admin`，前端代码中写作 `PUT /incidents/:id`，故实际路径为 `/api/admin/incidents/:id`。
 
 前端请求体：
 
 ```json
 {
+  "version": 8,
   "status": "processing",
   "platformFeedback": "已派维修队伍，预计 2 小时内恢复通行，请绕行辅道。",
+  "department": "城市道路设施维护部门",
+  "estimatedProcessTime": "预计 2 小时内完成处置",
+  "retainedAfterImageIds": ["media_existing_1"],
+  "retainedLegacyAfterImages": [],
+  "afterImageUploadIds": ["up_new_1"],
   "notifyCitizen": true
 }
 ```
@@ -38,8 +42,14 @@
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---|---|
-| status | `pending` / `processing` / `resolved`（`closed` 为历史值，管理端已不再提供该选项，后端可保留枚举以兼容旧数据，或同步下线） | 是 | 状态枚举保持英文，前端负责中文展示 |
+| status | `pending` / `received` / `processing` / `resolved`（`closed` 为历史值，管理端已不再提供该选项，后端可保留枚举以兼容旧数据，或同步下线） | 是 | 状态机按 `pending → received → processing → resolved` 推进；前端负责中文展示 |
+| version | number | 建议必填 | 乐观锁版本；过期返回 HTTP 409 + `INCIDENT_VERSION_CONFLICT` |
 | platformFeedback | string（≤500 字） | 否 | 平台反馈，市民端可见 |
+| department | string | 否 | 受理部门 |
+| estimatedProcessTime | string | 否 | 预计处理时间 |
+| retainedAfterImageIds | string[] | 是 | 本次保存后继续保留的既有处理后媒体 ID，按显示顺序传入 |
+| retainedLegacyAfterImages | string[] | 迁移期可选 | 尚未迁移为媒体记录的历史相对 URL；只允许后端已存在于该事件的 URL，不得信任任意外部 URL |
+| afterImageUploadIds | string[] | 是 | 本次新增并已暂存上传的处理后图片 ID |
 | notifyCitizen | boolean | 否，默认 true | 是否向上报市民推送通知 |
 
 响应（前端已按此结构消费，`code=0` 即成功）：
@@ -59,9 +69,87 @@
 }
 ```
 
+### 管理员上传处理后图片
+
+`POST /api/admin/uploads`，使用管理员 Bearer Token，`multipart/form-data` 字段：
+
+| 字段 | 必填 | 说明 |
+|---|---:|---|
+| file | 是 | 单张 JPG、PNG 或 WebP，最大 10MB |
+| purpose | 是 | 固定 `incident_after_image` |
+| incidentId | 是 | 即将绑定的事件 ID |
+
+成功返回暂存媒体（尚未与事件正式绑定）：
+
+```json
+{
+  "code": 0,
+  "data": {
+    "uploadId": "up_01J...",
+    "url": "/uploads/incidents/staged/up_01J.webp",
+    "thumbnailUrl": "/uploads/incidents/staged/up_01J_thumb.webp",
+    "filename": "repair.webp",
+    "mimeType": "image/webp",
+    "sizeBytes": 428531,
+    "status": "uploaded",
+    "expiresAt": "2026-09-25T12:00:00Z"
+  },
+  "message": "ok"
+}
+```
+
+后端要求：
+
+- 校验管理员身份、事件存在及事件更新权限；不得接受请求体传入的管理员身份。
+- 校验 MIME、文件魔数及可解码性，拒绝 SVG 等主动内容；限制像素数，清理 EXIF（尤其 GPS）。
+- 使用随机文件名和安全路径，单事件最终最多 6 张处理后图片。
+- 暂存记录绑定管理员、事件和 `purpose`，未绑定文件建议 24 小时后清理。
+- 返回 `/uploads/...` 可访问相对 URL，并设置正确 Content-Type 与 `X-Content-Type-Options: nosniff`。
+
+### GET /api/admin/incidents/:id 图片字段
+
+管理端详情增加权威媒体列表和乐观锁版本：
+
+```json
+{
+  "version": 8,
+  "afterImageMedia": [
+    {
+      "mediaId": "media_01J...",
+      "url": "/uploads/incidents/INC-001/final.webp",
+      "thumbnailUrl": "/uploads/incidents/INC-001/final_thumb.webp",
+      "filename": "final.webp",
+      "mimeType": "image/webp",
+      "sizeBytes": 428531
+    }
+  ],
+  "afterImages": ["/uploads/incidents/INC-001/final.webp"]
+}
+```
+
+`afterImageMedia` 供管理端编辑并作为权威数据；`afterImages` 是给旧管理端和市民端的兼容 URL 数组。
+
+### 图片关联事务规则
+
+`PUT /api/admin/incidents/:id` 必须在同一事务内：
+
+1. 校验 `version` 和状态转换；
+2. 校验保留的媒体均属于当前事件；
+3. 校验新增上传未过期、`status=uploaded`、用途及事件匹配、未绑定其他事件；
+4. 按 `retainedAfterImageIds` 后接 `afterImageUploadIds` 的顺序生成最终图片集合，合计不超过 6 张；
+5. 更新事件状态、部门、预计时间和反馈；
+6. 更新图片关联及顺序、递增版本；
+7. 追加处理日志并按规则写通知/outbox；
+8. 一次 commit，任一步失败全部回滚。
+
+空图片数组表示清空；被移除媒体的物理文件应在事务提交后异步清理。历史 URL 只允许保留服务器已知属于该事件的地址，不允许写入任意外部 URL。
+
+建议错误码：`ADMIN_AUTH_REQUIRED`（401）、`INCIDENT_UPDATE_FORBIDDEN`（403）、`INCIDENT_NOT_FOUND`（404）、`UPLOAD_NOT_FOUND_OR_EXPIRED`（404/410）、`INCIDENT_VERSION_CONFLICT`（409）、`UPLOAD_ALREADY_ATTACHED`（409）、`IMAGE_TOO_LARGE`（413）、`UNSUPPORTED_IMAGE_TYPE`（415）、`TOO_MANY_AFTER_IMAGES`（422）、`UPLOAD_RATE_LIMITED`（429）。失败统一返回 `{ code, message, traceId }`。
+
+
 ### 处理流程（建议在同一事务/幂等流程内）
 
-1. 校验 `status` 合法性与事件存在性，非法返回 `code=400`。
+1. 校验 `version`、`status` 合法性、管理员权限与事件存在性；非法返回结构化业务错误。
 2. 更新事件表字段：
    - `status`、`platform_feedback`
    - `status_updated_at`（本次状态变更时间）

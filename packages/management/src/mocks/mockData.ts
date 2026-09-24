@@ -145,8 +145,18 @@ export interface IncidentProcessLog {
   detail: string;
 }
 
+export interface MockIncidentMedia {
+  mediaId: string;
+  url: string;
+  thumbnailUrl?: string;
+  filename?: string;
+  mimeType?: string;
+  sizeBytes?: number;
+}
+
 export interface MockIncident {
   id: string;
+  version?: number;
   title: string;
   description: string;
   roadName: string;
@@ -160,6 +170,7 @@ export interface MockIncident {
   assignee?: string;
   estimatedProcessTime?: string;
   images?: string[];
+  afterImageMedia?: MockIncidentMedia[];
   afterImages?: string[];
   accessibilityImpact?: boolean;
   platformFeedback?: string;
@@ -237,6 +248,7 @@ export function generateIncidents(): MockIncident[] {
 
     return {
       id: `INC-${(i + 1).toString().padStart(4, '0')}`,
+      version: 1,
       title: `${tpl.roadName}${tpl.type}`,
       description: `在${tpl.roadName}检测到${tpl.type}事件，建议立即处置。${i % 3 === 0 ? '可能影响周边2公里范围交通。' : ''}`,
       roadName: tpl.roadName,
