@@ -49,6 +49,9 @@ export async function respond(input: string, ctx: AssistantContext): Promise<Ass
   const routeMetric = extractRouteMetricQuery(input);
   if (routeMetric) return handleRouteMetric(routeMetric, input);
   const parsed = withConversationContext(input, ctx);
+  if (isExplicitRouteRequest(input, parsed)) {
+    return handleRouteDecisionShell(input, parsed, ctx);
+  }
   if (isRouteDecisionRequest(input) || isRoutePreferenceFollowUp(input, parsed, ctx)) {
     return handleRouteDecisionShell(input, parsed, ctx);
   }
@@ -56,11 +59,11 @@ export async function respond(input: string, ctx: AssistantContext): Promise<Ass
     if (parsed.mode === 'bus' && parsed.origin && parsed.destination) {
       return handleTransit(`从${parsed.origin}到${parsed.destination}有没有公交地铁方案`);
     }
-    return handleRoutePlan(parsed, ctx);
+    return handleRouteDecisionShell(input, parsed, ctx);
   }
   switch (parsed.intent) {
-    case 'route_plan': return handleRoutePlan(parsed, ctx);
-    case 'route_compare': return handleRouteCompare(parsed, ctx);
+    case 'route_plan': return handleRouteDecisionShell(input, parsed, ctx);
+    case 'route_compare': return handleRouteDecisionShell(input, parsed, ctx);
     case 'traffic_query': return handleTraffic(parsed);
     case 'transit_query': return handleTransit(input);
     case 'parking_query': return handleParking();
@@ -71,6 +74,11 @@ export async function respond(input: string, ctx: AssistantContext): Promise<Ass
     case 'platform_help': return handlePlatformHelp();
     default: return handleUnknown(input, ctx);
   }
+}
+
+function isExplicitRouteRequest(input: string, parsed: IntentParseResult): boolean {
+  if (!parsed.origin || !parsed.destination) return false;
+  return /怎么走|怎么去|如何去|路线|规划|导航|出发|前往|开车|驾车|自驾|坐车|骑行|步行/.test(input);
 }
 
 function withConversationContext(input: string, ctx: AssistantContext): IntentParseResult {
@@ -112,9 +120,10 @@ function isRouteDecisionRequest(input: string): boolean {
 async function handleRouteDecisionShell(input: string, parsed: IntentParseResult, ctx: AssistantContext): Promise<AssistantMessage> {
   const isConfirmed = input.includes('确认条件并生成方案');
   const destination = parsed.destination || '目的地待确认';
-  const traveler = /无障碍/.test(input) ? '无障碍出行'
+  const traveler = input.includes('无障碍出行（轮椅推车用户推荐）') ? '无障碍出行（轮椅推车用户推荐）'
     : /轮椅/.test(input) ? '轮椅用户'
-    : /省力|老人|老年/.test(input) ? '省力出行'
+    : /(无障碍|电梯|行李|行李箱|拖箱|拉杆箱|推车|婴儿车)/.test(input) ? '无障碍出行（轮椅推车用户推荐）'
+    : /省力|老人|老年|长辈/.test(input) ? '省力出行（长辈推荐）'
       : /视障/.test(input) ? '视障用户' : '普通用户';
   const priorities = [
     /快|时间优先/.test(input) && '时间优先',
@@ -122,7 +131,8 @@ async function handleRouteDecisionShell(input: string, parsed: IntentParseResult
     /低碳|环保/.test(input) && '低碳优先',
     /少走路/.test(input) && '少步行',
     /少换乘|不换乘/.test(input) && '少换乘',
-    traveler === '省力出行' ? '省力优先' : traveler !== '普通用户' && '无障碍优先',
+    /电梯|行李/.test(input) && '电梯优先',
+    traveler === '省力出行（长辈推荐）' ? '省力优先' : traveler !== '普通用户' && '无障碍优先',
   ].filter(Boolean).join('、') || '综合均衡';
 
   if (!isConfirmed) {
@@ -144,7 +154,7 @@ async function handleRouteDecisionShell(input: string, parsed: IntentParseResult
         destination,
         traveler,
         priorities,
-        travelerOptions: ['普通用户', '无障碍出行', '省力出行', '轮椅用户', '视障用户'],
+        travelerOptions: ['普通用户', '无障碍出行（轮椅推车用户推荐）', '省力出行（长辈推荐）', '轮椅用户', '视障用户'],
       },
       actions: [
         { label: '确认并生成方案', prompt: `确认条件并生成方案：从${parsed.origin || ctx.originName || '当前位置'}去${destination}，${traveler}，${priorities}`, promptTemplate: '确认条件并生成方案：从{origin}去{destination}，{traveler}，{priorities}', primary: true },
@@ -162,15 +172,19 @@ async function handleRouteDecisionShell(input: string, parsed: IntentParseResult
     return msg('起点或目的地暂时无法解析，无法生成真实路线。请检查地点名称或先完成定位。');
   }
 
-  const [driveResult, transitResult] = await Promise.allSettled([
+  const [driveResult, transitResult, bikeResult, walkResult] = await Promise.allSettled([
     planRouteCandidates('drive', resolved.start, resolved.end),
     planTransitCandidates(resolved.start, resolved.end),
+    planRouteCandidates('bike', resolved.start, resolved.end),
+    planRouteCandidates('walk', resolved.start, resolved.end),
   ]);
   const driveCandidates = driveResult.status === 'fulfilled' ? driveResult.value : [];
   const transitCandidates = transitResult.status === 'fulfilled' ? transitResult.value : [];
+  const bikeCandidates = bikeResult.status === 'fulfilled' ? bikeResult.value : [];
+  const walkCandidates = walkResult.status === 'fulfilled' ? walkResult.value : [];
   const accessibilityPreference: AccessibilityPreference[] | undefined = traveler === '视障用户'
     ? ['visual']
-    : traveler === '无障碍出行'
+    : traveler === '无障碍出行（轮椅推车用户推荐）'
       ? ['wheelchair']
       : traveler === '轮椅用户'
         ? ['wheelchair']
@@ -178,7 +192,7 @@ async function handleRouteDecisionShell(input: string, parsed: IntentParseResult
   const preferredRoute = accessibilityPreference
     ? buildAccessibleOptions(transitCandidates, accessibilityPreference)[0]?.route
     : undefined;
-  const preferredTransit = traveler === '省力出行'
+  const preferredTransit = traveler === '省力出行（长辈推荐）'
     ? [...transitCandidates].sort((left, right) =>
       left.walkingDistance - right.walkingDistance ||
       left.transferCount - right.transferCount ||
@@ -187,6 +201,8 @@ async function handleRouteDecisionShell(input: string, parsed: IntentParseResult
     : transitCandidates.find(candidate => candidate.route === preferredRoute);
   const transitOptions = buildTransitRouteOptions(transitCandidates);
   const fastestDrive = [...driveCandidates].sort((a, b) => a.route.duration - b.route.duration)[0]?.route;
+  const fastestBike = [...bikeCandidates].sort((a, b) => a.route.duration - b.route.duration)[0]?.route;
+  const fastestWalk = [...walkCandidates].sort((a, b) => a.route.duration - b.route.duration)[0]?.route;
   const transit = preferredTransit || transitOptions[0];
   const formatDuration = (seconds: number) => `${Math.max(1, Math.round(seconds / 60))} 分钟`;
   const formatDistance = (meters: number) => meters >= 1000 ? `${(meters / 1000).toFixed(1)} 公里` : `${Math.round(meters)} 米`;
@@ -217,7 +233,21 @@ async function handleRouteDecisionShell(input: string, parsed: IntentParseResult
       { label: '拥堵风险', value: '低（公共交通）' },
     ], source: SRC.real, sourceLabel: '公交路线业务服务', actions: [{ label: '采用此方案', path: buildPlannerPath({ ...parsed, destination, mode: 'bus' }), primary: true }, { label: '我更在意价格', prompt: `去${destination}，费用优先` }, { label: '我不想换乘', prompt: `去${destination}，不要换乘` }] });
   }
-  if (traveler !== '普通用户') {
+  if (fastestBike) {
+    planCards.push({ id: nextId('c'), kind: 'route', title: '骑行方案', subtitle: `前往${destination} · 高德实时骑行路线`, rows: [
+      { label: '预计用时', value: formatDuration(fastestBike.duration) },
+      { label: '总距离', value: formatDistance(fastestBike.distance) },
+      { label: '碳排放', value: '低' },
+    ], source: SRC.real, sourceLabel: '高德骑行路线服务', actions: [{ label: '查看骑行方案', path: buildPlannerPath({ ...parsed, destination, mode: 'bike' }), primary: true }] });
+  }
+  if (fastestWalk) {
+    planCards.push({ id: nextId('c'), kind: 'route', title: '步行方案', subtitle: `前往${destination} · 高德实时步行路线`, rows: [
+      { label: '预计用时', value: formatDuration(fastestWalk.duration) },
+      { label: '总距离', value: formatDistance(fastestWalk.distance) },
+      { label: '碳排放', value: '低' },
+    ], source: SRC.real, sourceLabel: '高德步行路线服务', actions: [{ label: '查看步行方案', path: buildPlannerPath({ ...parsed, destination, mode: 'walk' }), primary: true }] });
+  }
+  if (traveler !== '普通用户' || /电梯|行李/.test(input)) {
     await loadAccessibilityFacilities();
     const metrics = transit ? computeAccessibleMetrics(transit.segments) : null;
     const backendFacilities = metrics && getFacilitySource() === 'backend';
@@ -240,7 +270,7 @@ async function handleRouteDecisionShell(input: string, parsed: IntentParseResult
   const rankedCards = [...planCards].sort((left, right) => {
     const rank = (card: AssistantCard): number => {
       const title = card.title;
-      if (/无障碍/.test(input) || traveler !== '普通用户') {
+      if (/(无障碍|电梯|行李)/.test(input) || traveler !== '普通用户') {
         if (card.kind === 'accessibility') return -1;
       }
       if (/快|尽量快|时间优先|不想堵车/.test(input)) {
@@ -317,48 +347,6 @@ export function thinkingLabel(input: string): string {
     case 'route_forecast': return '正在生成拥堵预测…';
     default: return '正在理解你的需求…';
   }
-}
-
-// ===== 路线规划 =====
-// 真实计算由 RouteResultPage 的 AMap 三路规划完成，这里不伪造耗时/距离。
-function handleRoutePlan(parsed: IntentParseResult, ctx: AssistantContext): AssistantMessage {
-  const dest = parsed.destination;
-  if (!dest) {
-    return msg('可以。你想从哪里出发、去哪里？如果允许，我也可以使用你的当前位置作为起点。');
-  }
-  const originText = ctx.originName
-    ? `已使用你的当前位置「${ctx.originName}」作为起点。`
-    : '起点可在规划页选择或定位。';
-  return msg(
-    `我可以为你规划前往「${dest}」的路线。${originText}路线需要调用高德实时路线数据计算（驾车/公交/骑行/步行多方案），请进入规划页查看具体耗时与拥堵情况。`,
-    [{
-      id: nextId('c'),
-      kind: 'route',
-      title: `前往 ${dest}`,
-      subtitle: '进入规划页查看多模式方案（高德实时路线数据）',
-      source: SRC.real,
-      sourceLabel: '高德实时路线',
-      actions: [{ label: `规划前往${dest}`, path: buildPlannerPath(parsed), primary: true }],
-    }],
-  );
-}
-
-// ===== 多方式比较 =====
-function handleRouteCompare(parsed: IntentParseResult, ctx: AssistantContext): AssistantMessage {
-  const dest = parsed.destination;
-  const originText = ctx.originName ? `已使用当前位置「${ctx.originName}」作为起点。` : '';
-  return msg(
-    `多种出行方式（驾车/公交/骑行/步行）的对比需要调用高德实时路线数据计算，我无法在这里给出准确的耗时。${originText}请进入规划页，系统会并发展示多模式方案供你比较。`,
-    [{
-      id: nextId('c'),
-      kind: 'route',
-      title: dest ? `比较到「${dest}」的出行方式` : '比较出行方式',
-      subtitle: '规划页并发展示驾车 / 公交 / 骑行 / 步行方案',
-      source: SRC.real,
-      sourceLabel: '高德实时路线',
-      actions: [{ label: '开始比较', path: buildPlannerPath(parsed), primary: true }],
-    }],
-  );
 }
 
 // ===== 实时路况 =====
