@@ -20,30 +20,40 @@ const INTENT_RULES: { intent: AssistantIntent; re: RegExp }[] = [
 ];
 
 /** 需要从「目的地」里剔除的疑问/动作词 */
-const DEST_STOP = /(怎么走|怎么去|怎么坐|的路线|路线|堵不堵|远不远|多少钱|附近|哪里|哪|现在|今天|明天|后天|几点|多久|吗|呢|啊|吧|停车|充电|怎么|多远|路线)/g;
+const DEST_STOP = /(怎么走|怎么去|怎么坐|的路线|路线|堵不堵|远不远|多少钱|附近|哪里|哪|现在|今天|明天|后天|几点|多久|吗|呢|啊|吧|停车|充电|怎么|多远|路线|少换乘|不换乘|少走路|少步行|最快|最便宜|低碳|环保|时间优先|费用优先)/g;
 
 /** 抽取目的地："去X" / "到X" / "前往X" / "从A到B" */
 function extractDestination(text: string): string | undefined {
-  const cleaned = text.replace(/[？?。.,，!！～~]/g, ' ').trim();
-  // "从A到B" 优先取 B
-  let m = cleaned.match(/从[一-龥A-Za-z0-9]{1,12}?到\s*([一-龥A-Za-z0-9]{2,20})/);
-  if (m?.[1]) return m[1].replace(DEST_STOP, '').trim() || undefined;
+  const normalized = text.replace(/[？?。.,，!！～~]/g, ' ').replace(/\s+/g, ' ').trim();
+  // 先按结构解析“从 A 到 B”，B 在偏好词、标点或句尾处结束。
+  let m = normalized.match(/从\s*(.+?)\s*到\s*([^，。！？!?；;\s]+(?:站|机场|医院|大学|公园|广场|中心|大厦|小区)?)/);
+  if (m?.[2]) return m[2].replace(DEST_STOP, '').trim() || undefined;
   // "去X" / "到X" / "前往X"
-  m = cleaned.match(/(?:去|到|前往|至)\s*([一-龥A-Za-z0-9]{2,20})/);
+  m = normalized.match(/(?:去|到|前往|至)\s*([^，。！？!?；;\s]+)/);
   if (m?.[1]) {
     const dest = m[1].replace(DEST_STOP, '').trim();
     if (dest.length >= 2) return dest;
   }
   // "X怎么走" / "X的路线"
-  m = cleaned.match(/([一-龥A-Za-z0-9]{2,20}?)(?:怎么走|怎么去|的路线|路线怎么)/);
+  m = normalized.match(/([一-龥A-Za-z0-9]{2,20}?)(?:怎么走|怎么去|的路线|路线怎么)/);
   if (m?.[1] && !/(现在|今天|明天|哪里|哪|几点|多久|怎么|什么)/.test(m[1])) return m[1];
   return undefined;
 }
 
 /** 抽取起点："从A到B" 中的 A */
 function extractOrigin(text: string): string | undefined {
-  const m = text.match(/从([一-龥A-Za-z0-9]{2,20}?)(?:到|去|出发|前往)/);
-  return m?.[1];
+  const m = text.match(/从\s*(.+?)\s*(?:到|去|出发|前往)/);
+  return m?.[1]?.replace(/[，,。；;].*$/, '').trim() || undefined;
+}
+
+function extractPreference(text: string): IntentParseResult['preference'] {
+  if (/不换乘/.test(text)) return 'no-transfer';
+  if (/少换乘/.test(text)) return 'least-transfer';
+  if (/少走路|少步行/.test(text)) return 'least-walking';
+  if (/最快|尽量快|时间优先/.test(text)) return 'fastest';
+  if (/最便宜|便宜|费用优先/.test(text)) return 'cheapest';
+  if (/低碳|环保/.test(text)) return 'low-carbon';
+  return undefined;
 }
 
 /** 抽取出行方式 */
@@ -71,6 +81,7 @@ export function recognizeIntent(input: string): IntentParseResult {
         origin: extractOrigin(text),
         mode: extractMode(text),
         targetTime: extractTargetTime(text),
+        preference: extractPreference(text),
       };
     }
   }
@@ -80,5 +91,6 @@ export function recognizeIntent(input: string): IntentParseResult {
     origin: extractOrigin(text),
     mode: extractMode(text),
     targetTime: extractTargetTime(text),
+    preference: extractPreference(text),
   };
 }

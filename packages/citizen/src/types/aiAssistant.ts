@@ -79,4 +79,5 @@ export interface IntentParseResult {
   origin?: string;
   mode?: 'drive' | 'bus' | 'bike' | 'walk';
   targetTime?: string;
+  preference?: 'least-transfer' | 'no-transfer' | 'least-walking' | 'fastest' | 'cheapest' | 'low-carbon';
 }
