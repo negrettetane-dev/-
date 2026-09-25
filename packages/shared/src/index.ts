@@ -9,4 +9,5 @@ export * from './types/management';
 export * from './types/customBus';
 export * from './types/accessibility';
 export * from './types/api';
+export * from './fixtures/accessibility';
 export * from './utils';

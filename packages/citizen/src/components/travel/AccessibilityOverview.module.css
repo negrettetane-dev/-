@@ -1,0 +1,26 @@
+.panel {
+  background: linear-gradient(180deg, #ffffff 0%, #fbf9ff 100%);
+  border: 1px solid #e6dcff;
+  border-radius: 16px;
+  padding: 16px;
+  margin-bottom: 12px;
+  box-shadow: 0 6px 18px rgba(114, 46, 209, 0.08);
+}
+
+.header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.title { font-size: 16px; font-weight: 800; color: #26144a; }
+.status { padding: 5px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.statusPass { color: #237804; background: #f6ffed; border: 1px solid #b7eb8f; }
+.statusRisk { color: #ad6800; background: #fffbe6; border: 1px solid #ffe58f; }
+.statusBlocked { color: #a8071a; background: #fff1f0; border: 1px solid #ffa39e; }
+.scoreRow { display: flex; align-items: baseline; gap: 8px; color: #722ed1; margin-bottom: 12px; }
+.score { font-size: 34px; line-height: 1; font-weight: 900; }
+.scoreLabel { font-size: 13px; color: #5f4b8b; }
+.grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.item { min-width: 0; padding: 10px; border-radius: 12px; background: #fff; border: 1px solid #f0e8ff; }
+.item span, .item b { display: block; }
+.item span { color: #7c6d9f; font-size: 11px; margin-bottom: 4px; }
+.item b { color: #211238; font-size: 14px; white-space: nowrap; }
+.notice { margin-top: 10px; color: #8c5a00; background: #fffbe6; border: 1px solid #ffe58f; border-radius: 10px; padding: 9px 10px; font-size: 12px; line-height: 1.6; }
+.source { margin-top: 8px; color: #8b7ba8; font-size: 11px; }
+@media (max-width: 768px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .header { flex-direction: column; } }

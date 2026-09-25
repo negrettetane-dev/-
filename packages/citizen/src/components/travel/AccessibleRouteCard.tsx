@@ -16,6 +16,12 @@ const LEVEL_BG: Record<string, string> = {
   red: '#fff1f0',
 };
 
+const RISK_COLOR: Record<'低' | '中' | '高', string> = {
+  低: '#389e0d',
+  中: '#d48806',
+  高: '#cf1322',
+};
+
 interface AccessibleRouteCardProps {
   option: AccessibleRouteOption;
   active: boolean;
@@ -23,13 +29,32 @@ interface AccessibleRouteCardProps {
   onStart: () => void;
 }
 
+function getAccessibleRiskLabel(option: AccessibleRouteOption): '低' | '中' | '高' {
+  if (option.constraintStatus === 'blocked' || option.score.level === 'not_recommended' || option.metrics.stairsRiskCount > 0) return '高';
+  if (option.constraintStatus === 'risk' || option.score.level === 'caution' || option.metrics.unknownFacilityCount > 0) return '中';
+  return '低';
+}
+
+function getAccessibleOverallScore(option: AccessibleRouteOption): number {
+  const durationPenalty = Math.min(18, option.duration / 60 * 0.25);
+  const walkingPenalty = Math.min(14, option.walkingDistance / 90);
+  const transferPenalty = option.transferCount * 4;
+  const carbonBonus = 3;
+  return Math.max(60, Math.min(98, Math.round(option.score.score - durationPenalty - walkingPenalty - transferPenalty + carbonBonus)));
+}
+
 /** ♿ 无障碍路线卡片：显示推荐角色、无障碍条件评级、设施标签、移动/换乘/耗时 */
 const AccessibleRouteCard: React.FC<AccessibleRouteCardProps> = ({ option, active, onSelect, onStart }) => {
   const tone = option.score.levelTone;
   const fmtDuration = (s: number) => (s < 3600 ? `${Math.floor(s / 60)}分钟` : `${Math.floor(s / 3600)}h${Math.floor((s % 3600) / 60)}min`);
+  const carbonKg = option.distance / 1000 * 0.045;
+  const congestionRisk = getAccessibleRiskLabel(option);
+  const overallScore = getAccessibleOverallScore(option);
 
-  const riskMessage = option.metrics.stairsRiskCount > 0
-    ? `存在 ${option.metrics.stairsRiskCount} 处楼梯风险，可能影响轮椅或婴儿车通行，建议更换方案。`
+  const riskMessage = option.constraintStatus === 'blocked'
+    ? `该路线不满足本次无障碍硬约束：${option.constraintReasons.join('；') || '存在不可通行设施'}。`
+    : option.metrics.stairsRiskCount > 0
+      ? `存在 ${option.metrics.stairsRiskCount} 处楼梯风险，可能影响轮椅或婴儿车通行，建议更换方案。`
     : option.score.level === 'caution'
       ? '未发现明确楼梯风险，但步行距离较长，请结合现场情况选择。'
       : '';
@@ -57,6 +82,41 @@ const AccessibleRouteCard: React.FC<AccessibleRouteCardProps> = ({ option, activ
         <span>🔄 换乘 {option.transferCount} 次</span>
       </div>
 
+      <div className={styles.metricGrid} aria-label={`${option.label}方案指标`}>
+        <div className={styles.metricItem}>
+          <span>预计时间</span>
+          <b>{fmtDuration(option.duration)}</b>
+        </div>
+        <div className={styles.metricItem}>
+          <span>预计费用</span>
+          <b>{Math.round(option.route.cost || 0)}元</b>
+        </div>
+        <div className={styles.metricItem}>
+          <span>步行距离</span>
+          <b>{Math.round(option.walkingDistance)}米</b>
+        </div>
+        <div className={styles.metricItem}>
+          <span>换乘次数</span>
+          <b>{option.transferCount}次</b>
+        </div>
+        <div className={styles.metricItem}>
+          <span>碳排放</span>
+          <b>{carbonKg.toFixed(1)}kg</b>
+        </div>
+        <div className={styles.metricItem}>
+          <span>拥堵风险</span>
+          <b style={{ color: RISK_COLOR[congestionRisk] }}>{congestionRisk}</b>
+        </div>
+        <div className={styles.metricItem}>
+          <span>无障碍评分</span>
+          <b>{Math.round(option.score.score)}</b>
+        </div>
+        <div className={styles.metricItem}>
+          <span>综合评分</span>
+          <b>{overallScore}</b>
+        </div>
+      </div>
+
       {/* 无障碍特征标签 */}
       {option.tags.length > 0 && (
         <div className={styles.tags}>
@@ -80,9 +140,10 @@ const AccessibleRouteCard: React.FC<AccessibleRouteCardProps> = ({ option, activ
       <button
         type="button"
         className={styles.navBtn}
+        disabled={option.constraintStatus === 'blocked'}
         onClick={(e) => { e.stopPropagation(); onStart(); }}
       >
-        ♿ 开始无障碍导航
+        {option.constraintStatus === 'blocked' ? '该路线不可通行' : '♿ 开始无障碍导航'}
       </button>
     </div>
   );

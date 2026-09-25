@@ -13,6 +13,7 @@ interface TravelStageTimelineProps {
   syncState?: 'synced' | 'pending' | 'offline' | 'error';
   transitStatus?: TransitRealtimeStatus | null;
   actionBusy?: boolean;
+  accessibleMode?: boolean;
 }
 
 function formatDistance(meters: number | null) {
@@ -32,7 +33,17 @@ function statusFor(stage: TravelStage, index: number, current: number): TravelSt
   return 'pending';
 }
 
-const TravelStageTimeline: React.FC<TravelStageTimelineProps> = ({ stages, currentStageIndex, navStatus, onComplete, onResume, syncState, transitStatus, actionBusy }) => (
+const STAGE_ICONS: Record<TravelStage['kind'], string> = {
+  walk: '🚶',
+  transfer: '🚶',
+  bus: '🚌',
+  metro: '🚇',
+  drive: '🚗',
+  bike: '🚲',
+  arrive: '📍',
+};
+
+const TravelStageTimeline: React.FC<TravelStageTimelineProps> = ({ stages, currentStageIndex, navStatus, onComplete, onResume, syncState, transitStatus, actionBusy, accessibleMode }) => (
   <section className={styles.timeline} aria-label="路线阶段">
     {syncState && <div className={styles.syncState}>{syncState === 'synced' ? '已同步' : syncState === 'pending' ? '同步中…' : syncState === 'offline' ? '离线模式' : '同步失败'}</div>}
     {stages.map((stage, index) => {
@@ -46,13 +57,14 @@ const TravelStageTimeline: React.FC<TravelStageTimelineProps> = ({ stages, curre
           </div>
           <div className={styles.content}>
             <div className={styles.header}>
-              <strong>{stage.name}</strong>
+              <strong className={styles.title}><span className={styles.icon} aria-hidden="true">{STAGE_ICONS[stage.kind]}</span>{stage.name}</strong>
               <span className={styles.status}>{status === 'completed' ? '已完成' : status === 'current' ? '进行中' : '待开始'}</span>
             </div>
             <div className={styles.meta}>{formatDistance(stage.distanceMeters)} · {formatDuration(stage.durationSeconds)}</div>
             {current && (
               <>
                 <div className={styles.action}>{stage.nextAction}</div>
+                {accessibleMode && <div className={styles.accessibleHint}>{stage.kind === 'walk' || stage.kind === 'transfer' ? '无障碍提示：按分段提示前进，注意坡道、电梯和地面标识。' : '无障碍提示：到站后按文字提示确认下车，优先使用推荐电梯或无障碍入口。'}</div>}
                 {stage.lineName && <div className={styles.transitInfo}>{stage.lineName}{stage.fromStation ? ` · ${stage.fromStation}` : ''}{stage.toStation ? ` → ${stage.toStation}` : ''}{stage.stationCount ? ` · ${stage.stationCount}站` : ''}</div>}
                 {current && transitStatus && <div className={styles.transitStatus}>{transitStatus.status === 'normal' ? '线路正常' : transitStatus.status === 'delayed' ? `线路延误${transitStatus.delaySeconds ? ` ${Math.round(transitStatus.delaySeconds / 60)}分钟` : ''}` : transitStatus.status === 'suspended' ? '线路停运' : transitStatus.status === 'rerouted' ? '线路绕行' : '实时状态暂无数据'}{transitStatus.message ? ` · ${transitStatus.message}` : ''}</div>}
                 {navStatus === 'paused' && onResume ? (

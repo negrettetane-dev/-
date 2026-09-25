@@ -103,11 +103,15 @@ export const useTravelStageNavigationStore = create<TravelStageNavigationState>(
 
     try {
       const remote = await createNavigationSession(makeInput(base));
-      const synced = snapshotFromRemote(remote, makeInput(base), base);
+      const current = get().snapshot;
+      if (!current || current.clientSessionId !== base.clientSessionId || current.navStatus === 'ended') return;
+      const synced = snapshotFromRemote(remote, makeInput(base), current);
       writeSnapshot(synced);
       set({ snapshot: synced });
     } catch (error) {
-      const offline = syncFailure(base, error);
+      const current = get().snapshot;
+      if (!current || current.clientSessionId !== base.clientSessionId || current.navStatus === 'ended') return;
+      const offline = syncFailure(current, error);
       set({ snapshot: offline });
     }
   },
@@ -210,9 +214,9 @@ export const useTravelStageNavigationStore = create<TravelStageNavigationState>(
 
   restoreIfMatching: (routeFingerprint) => {
     const current = get().snapshot;
-    if (!current || current.routeFingerprint !== routeFingerprint || current.navStatus === 'completed') return false;
-    const next = current.navStatus === 'ended' ? updateSnapshot(current, { navStatus: 'paused' }) : current;
-    writeSnapshot(next); set({ snapshot: next }); return true;
+    if (!current || current.routeFingerprint !== routeFingerprint) return false;
+    if (current.navStatus !== 'navigating' && current.navStatus !== 'paused') return false;
+    writeSnapshot(current); set({ snapshot: current }); return true;
   },
 
   clear: () => {
