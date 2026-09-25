@@ -179,7 +179,7 @@ const AccessibilityManagePage: React.FC = () => {
       dataIndex: 'stationId',
       key: 'stationId',
       width: 150,
-      render: (id: string) => <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{id}</span>,
+      render: (id: string) => <span className="accessibility-station-id">{id}</span>,
     },
     {
       title: '站点名称',
@@ -187,10 +187,7 @@ const AccessibilityManagePage: React.FC = () => {
       key: 'stationName',
       width: 140,
       render: (name: string, record) => (
-        <Space>
-          <span>♿ {name}</span>
-          {record.accessibleRestroom && <Tag color="cyan">无障碍卫生间</Tag>}
-        </Space>
+        <div className="accessibility-station-name"><strong><span aria-hidden="true">♿</span> {name}</strong>{record.accessibleRestroom && <Tag color="cyan">无障碍卫生间</Tag>}</div>
       ),
     },
     {
@@ -198,7 +195,7 @@ const AccessibilityManagePage: React.FC = () => {
       key: 'coord',
       width: 150,
       render: (_, record) => (
-        <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--text-hint)' }}>
+        <span className="accessibility-coordinates">
           {record.lng.toFixed(5)}, {record.lat.toFixed(5)}
         </span>
       ),
@@ -212,12 +209,13 @@ const AccessibilityManagePage: React.FC = () => {
           return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="无入口" />;
         }
         return (
-          <Space direction="vertical" size={4} style={{ width: '100%' }}>
+          <div className="accessibility-entrance-list">
             {entrances.map((e, i) => {
               const meta = STATUS_META[e.status] || STATUS_META.unknown;
               return (
-                <Space key={i} size={6} wrap>
-                  <Tag>{e.name}</Tag>
+                <div className="accessibility-entrance" key={i}>
+                  <Tag className="accessibility-entrance-name">{e.name}</Tag>
+                  <div className="accessibility-entrance-tags">
                   {e.elevator && <Tag color="geekblue">🛗</Tag>}
                   {e.ramp && <Tag color="cyan">↗️</Tag>}
                   {e.stairsOnly && <Tag color="red">⚠️楼梯</Tag>}
@@ -225,14 +223,12 @@ const AccessibilityManagePage: React.FC = () => {
                   <Tag color={meta.color}>{meta.label}</Tag>
                   {e.lastVerifiedAt && <Tag color="blue">核验 {formatDate(e.lastVerifiedAt)}</Tag>}
                   {e.note && <Tag color="purple">{e.note}</Tag>}
-                  <Button type="link" size="small" icon={<EditOutlined />} onClick={(ev) => { ev.stopPropagation(); openEditEntrance(record.stationId, e); }}>编辑</Button>
-                  <Popconfirm title="确认删除该入口？" onConfirm={() => void removeEntrance(e)}>
-                    <Button type="link" size="small" danger icon={<DeleteOutlined />} onClick={(ev) => ev.stopPropagation()}>删除</Button>
-                  </Popconfirm>
-                </Space>
+                  </div>
+                  <span className="accessibility-entrance-actions"><Button type="link" size="small" icon={<EditOutlined />} onClick={(ev) => { ev.stopPropagation(); openEditEntrance(record.stationId, e); }}>编辑</Button><Popconfirm title="确认删除该入口？" onConfirm={() => void removeEntrance(e)}><Button type="link" size="small" danger icon={<DeleteOutlined />} onClick={(ev) => ev.stopPropagation()}>删除</Button></Popconfirm></span>
+                </div>
               );
             })}
-          </Space>
+          </div>
         );
       },
     },
@@ -257,7 +253,7 @@ const AccessibilityManagePage: React.FC = () => {
       width: 180,
       fixed: 'right',
       render: (_, record) => (
-        <Space>
+        <Space className="accessibility-row-actions" direction="vertical" size={2}>
           <Button type="link" size="small" icon={<PlusOutlined />} onClick={(e) => { e.stopPropagation(); openCreateEntrance(record.stationId); }}>加入口</Button>
           <Button type="link" size="small" icon={<EditOutlined />} onClick={(e) => { e.stopPropagation(); openEditStation(record); }}>编辑</Button>
           <Popconfirm title="确认删除该站点？（将级联删除入口）" onConfirm={() => void removeStation(record)}>
@@ -279,16 +275,27 @@ const AccessibilityManagePage: React.FC = () => {
         <p className="page-desc">维护地铁/公交站点的无障碍入口、电梯、坡道与障碍状态。当前数据仅用于功能展示，增删改仅保存在本次管理端会话，不会同步到市民端，也不代表官方实时核验结果。</p>
       </div>
 
+      <div className="accessibility-summary" aria-label="无障碍设施概览">
+        <div className="accessibility-summary-card"><span>站点总数</span><strong>{total}</strong><small>当前后端记录</small></div>
+        <div className="accessibility-summary-card"><span>当前页入口</span><strong>{stations.reduce((count, station) => count + (station.entrances?.length || 0), 0)}</strong><small>已加载站点</small></div>
+        <div className="accessibility-summary-card"><span>已确认入口</span><strong>{stations.reduce((count, station) => count + (station.entrances || []).filter(entrance => entrance.status === 'verified').length, 0)}</strong><small>人工确认状态</small></div>
+        <div className="accessibility-summary-card"><span>待处理状态</span><strong className="is-warning">{stations.reduce((count, station) => count + (station.entrances || []).filter(entrance => entrance.status !== 'verified').length, 0)}</strong><small>待确认或存在障碍</small></div>
+      </div>
+
       <div className="filter-bar">
-        <Input
-          placeholder="搜索站点名称/ID"
-          prefix={<span>🔍</span>}
-          style={{ width: 240, marginRight: 8 }}
+        <div className="accessibility-filter-field">
+          <span className="accessibility-filter-label">站点检索</span>
+          <Input
+          placeholder="输入站点名称或 ID"
+          aria-label="搜索站点名称或 ID"
+          prefix={<span aria-hidden="true">⌕</span>}
+          style={{ width: 280 }}
           value={search}
           onChange={(e) => { setSearch(e.target.value); setPage(1); }}
           allowClear
-        />
-        <Button icon={<ReloadOutlined />} onClick={() => void fetchList()}>刷新</Button>
+          />
+        </div>
+        <Button icon={<ReloadOutlined />} onClick={() => void fetchList()}>刷新数据</Button>
         <Button type="primary" icon={<PlusOutlined />} style={{ marginLeft: 'auto' }} onClick={openCreateStation}>新增站点</Button>
       </div>
 
@@ -304,7 +311,8 @@ const AccessibilityManagePage: React.FC = () => {
           onChange: (p, ps) => { setPage(p); setPageSize(ps); },
         }}
         scroll={{ x: 1100 }}
-        style={{ background: '#fff', borderRadius: 8 }}
+        className="accessibility-table"
+        style={{ background: '#fff', borderRadius: 12 }}
       />
 
       {/* 站点新增/编辑弹窗 */}

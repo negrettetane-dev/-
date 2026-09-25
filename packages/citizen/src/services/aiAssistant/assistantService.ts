@@ -91,6 +91,7 @@ function withConversationContext(input: string, ctx: AssistantContext): IntentPa
     inherited.origin ||= previous.origin;
     inherited.mode ||= previous.mode;
     inherited.targetTime ||= previous.targetTime;
+    inherited.preference ||= previous.preference;
     if (inherited.destination && inherited.origin && inherited.mode && inherited.targetTime) break;
   }
   return {
@@ -99,6 +100,7 @@ function withConversationContext(input: string, ctx: AssistantContext): IntentPa
     origin: current.origin || inherited.origin || ctx.originName,
     mode: current.mode || inherited.mode,
     targetTime: current.targetTime || inherited.targetTime,
+    preference: current.preference || inherited.preference,
   };
 }
 
@@ -126,11 +128,16 @@ async function handleRouteDecisionShell(input: string, parsed: IntentParseResult
     : /省力|老人|老年|长辈/.test(input) ? '省力出行（长辈推荐）'
       : /视障/.test(input) ? '视障用户' : '普通用户';
   const priorities = [
-    /快|时间优先/.test(input) && '时间优先',
-    /便宜|费用优先/.test(input) && '费用优先',
-    /低碳|环保/.test(input) && '低碳优先',
-    /少走路/.test(input) && '少步行',
-    /少换乘|不换乘/.test(input) && '少换乘',
+    parsed.preference === 'fastest' && '时间优先',
+    parsed.preference === 'cheapest' && '费用优先',
+    parsed.preference === 'low-carbon' && '低碳优先',
+    parsed.preference === 'least-walking' && '少步行',
+    parsed.preference === 'least-transfer' && '少换乘',
+    parsed.preference === 'no-transfer' && '不换乘',
+    parsed.preference === 'least-walking' && '少走路',
+    parsed.preference === 'fastest' && '时间优先',
+    parsed.preference === 'cheapest' && '费用优先',
+    parsed.preference === 'low-carbon' && '低碳优先',
     /电梯|行李/.test(input) && '电梯优先',
     traveler === '省力出行（长辈推荐）' ? '省力优先' : traveler !== '普通用户' && '无障碍优先',
   ].filter(Boolean).join('、') || '综合均衡';
@@ -273,18 +280,18 @@ async function handleRouteDecisionShell(input: string, parsed: IntentParseResult
       if (/(无障碍|电梯|行李)/.test(input) || traveler !== '普通用户') {
         if (card.kind === 'accessibility') return -1;
       }
-      if (/快|尽量快|时间优先|不想堵车/.test(input)) {
+      if (parsed.preference === 'fastest' || /不想堵车/.test(input)) {
         if (card.kind === 'accessibility') return 99;
         const durationRow = card.rows?.find(row => row.label === '预计用时');
         const durationMinutes = durationRow ? Number.parseFloat(durationRow.value) : Number.POSITIVE_INFINITY;
         return Number.isFinite(durationMinutes) ? durationMinutes : 98;
       }
-      if (/低碳|环保/.test(input)) {
+      if (parsed.preference === 'low-carbon') {
         if (/公交|地铁/.test(title)) return 0;
         if (/新能源/.test(title)) return 2;
         if (/驾车/.test(title)) return 3;
       }
-      if (/便宜|费用优先|少换乘|不换乘/.test(input)) {
+      if (parsed.preference === 'cheapest' || parsed.preference === 'least-transfer' || parsed.preference === 'no-transfer') {
         if (/公交|地铁/.test(title)) return 0;
         if (/新能源/.test(title)) return 2;
         if (/驾车/.test(title)) return 3;
@@ -498,7 +505,7 @@ function extractTransitQuery(text: string): string {
 }
 
 function extractTransitRouteQuery(text: string): { origin: string; destination: string } | null {
-  const match = text.match(/从\s*(.+?)\s*(?:到|去)\s*(.+?)(?=的?(?:步行距离|走路距离|总距离|全程距离|多少公里|换乘次数|换乘|费用|多少钱|价格|预计用时|用时|多久|需要多久|多长时间|要多久|路线|怎么走|怎么坐)|$)/);
+  const match = text.match(/从\s*(.+?)\s*(?:到|去)\s*(.+?)(?=的?(?:步行距离|走路距离|总距离|全程距离|多少公里|换乘次数|换几次|费用|多少钱|价格|预计用时|用时|多久|需要多久|多长时间|要多久|路线|怎么走|怎么坐|少换乘|不换乘|少走路|少步行|最快|最便宜|低碳|环保)|$)/);
   if (!match) return null;
   const origin = match[1].replace(/(?:开|出发)\s*$/g, '').replace(/[，,。！？?\s]+$/g, '').trim();
   const destination = match[2].replace(/[，,。！？?\s]+$/g, '').trim();
@@ -506,6 +513,8 @@ function extractTransitRouteQuery(text: string): { origin: string; destination: 
 }
 
 function extractRouteMetricQuery(text: string): { origin: string; destination: string; metric: RouteMetric } | null {
+  // “少换乘/少走路”等是路线优化偏好，不是查询换乘次数等指标。
+  if (/少换乘|不换乘|少走路|少步行|最快|最便宜|低碳|环保/.test(text)) return null;
   const route = extractTransitRouteQuery(text);
   if (!route) return null;
   const metric = /步行距离|走路距离/.test(text)

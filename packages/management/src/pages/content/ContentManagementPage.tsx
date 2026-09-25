@@ -8,6 +8,13 @@ const CATEGORIES = ['系统公告', '出行提醒', '服务通知', '活动通�
 const STATUS_LABELS: Record<ContentStatus, { color: string; label: string }> = { draft: { color: 'default', label: '草稿' }, scheduled: { color: 'orange', label: '定时发布' }, published: { color: 'green', label: '已发布' } };
 const emptyDraft: ContentNewsInput = { title: '', category: '系统公告', summary: '', content: '', status: 'draft', scheduledAt: null };
 const toInput = (item: ContentNews): ContentNewsInput => ({ title: item.title, category: item.category, summary: item.summary, content: item.content, status: item.status, scheduledAt: item.scheduledAt || null });
+const formatLocalDateTime = (value?: string | null) => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const pad = (part: number) => String(part).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+};
 
 export default function ContentManagementPage() {
   const [news, setNews] = useState<ContentNews[]>([]);
@@ -39,7 +46,7 @@ export default function ContentManagementPage() {
       <div style={{ marginBottom: 12 }}><b>类型</b><Select style={{ width: '100%', marginTop: 4 }} value={editNews?.data.category} options={CATEGORIES.map(value => ({ value, label: value }))} onChange={value => updateField('category', value)} /></div>
       <div style={{ marginBottom: 12 }}><b>摘要</b><Input.TextArea rows={2} value={editNews?.data.summary} onChange={e => updateField('summary', e.target.value)} /></div>
       <div style={{ marginBottom: 12 }}><b>正文</b><Input.TextArea rows={8} value={editNews?.data.content} onChange={e => updateField('content', e.target.value)} /></div>
-      <Space align="center"><b>发布方式</b><Select value={editNews?.data.status} options={[{ value: 'draft', label: '保存为草稿' }, { value: 'published', label: '立即发布' }, { value: 'scheduled', label: '定时发送' }]} onChange={(status: ContentStatus) => setEditNews(current => current && { ...current, data: { ...current.data, status, scheduledAt: status === 'scheduled' ? current.data.scheduledAt : null } })} /><Input type="datetime-local" value={editNews?.data.scheduledAt ? editNews.data.scheduledAt.slice(0, 16) : ''} disabled={editNews?.data.status !== 'scheduled'} onChange={event => updateField('scheduledAt', event.target.value ? new Date(event.target.value).toISOString() : null)} /></Space>
+      <Space align="center"><b>发布方式</b><Select value={editNews?.data.status} options={[{ value: 'draft', label: '保存为草稿' }, { value: 'published', label: '立即发布' }, { value: 'scheduled', label: '定时发送' }]} onChange={(status: ContentStatus) => setEditNews(current => current && { ...current, data: { ...current.data, status, scheduledAt: status === 'scheduled' ? current.data.scheduledAt : null } })} /><Input type="datetime-local" value={formatLocalDateTime(editNews?.data.scheduledAt)} disabled={editNews?.data.status !== 'scheduled'} onChange={event => updateField('scheduledAt', event.target.value ? new Date(event.target.value).toISOString() : null)} /></Space>
     </Modal>
   </div>;
 }
