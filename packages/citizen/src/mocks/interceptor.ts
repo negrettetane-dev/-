@@ -470,7 +470,8 @@ export function fetchInterceptor() {
       }
 
       const now = new Date();
-      const expires = new Date(now.getTime() + 30 * 86400000); // 30天有效期
+      const expires = new Date(now);
+      expires.setMonth(expires.getMonth() + 2);
       addRedemption({
         id: 'rd_' + Date.now().toString(36),
         user_id: userId,

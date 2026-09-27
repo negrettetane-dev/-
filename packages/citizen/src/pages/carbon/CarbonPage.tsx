@@ -3,8 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { getCarbonConfig, getPointRules, type RedemptionRecord, type CitizenCarbonConfig, type CitizenPointRule } from '../../stores/persistence';
 import { apiGet, apiPost } from '../../services/apiClient';
 import { useAuthStore } from '../../stores/authStore';
-import { resolveRedemptionStatus, formatDateSafe, formatExpiryDate } from '@zhitu/shared';
+import { resolveRedemptionStatus, formatExpiryDate } from '@zhitu/shared';
 import styles from './Carbon.module.css';
+import { normalizeRedemptions } from '../../services/redemptionService';
 
 interface CarbonRecord { id:string; type:string; date:string; distance:number; duration:number; carbonSaved:number; points:number; route?:string }
 interface Stats { totalPoints:number; totalCarbonSaved:number; treeEquivalent:number; carDistanceSaved:number; rankPercent:number; records:CarbonRecord[] }
@@ -47,7 +48,7 @@ const CarbonPage: React.FC = () => {
       apiGet<{ points: number }>('/points'),
       apiGet<Partial<Stats>>('/carbon/stats'),
       apiGet<Reward[]>('/rewards'),
-      apiGet<RedemptionRecord[]>('/redemptions'),
+      apiGet<unknown>('/redemptions'),
     ]).then(([points, base, rewardList, redemptionList]) => {
         setStats({
           totalPoints: points.points,
@@ -58,7 +59,7 @@ const CarbonPage: React.FC = () => {
           records: base.records ?? [],
         });
         setRewards(rewardList);
-        setRedemptions(redemptionList);
+        setRedemptions(normalizeRedemptions(redemptionList, rewardList));
       })
       .catch(() => setStats(prev => prev || { totalPoints: 0, totalCarbonSaved: 0, treeEquivalent: 0, carDistanceSaved: 0, rankPercent: 0, records: [] }));
   }, [isLoggedIn]);
@@ -268,7 +269,7 @@ const CarbonPage: React.FC = () => {
           <div className={styles.rewardGrid}>
             {redemptions.slice(0, 2).map(r => {
               const status = resolveRedemptionStatus(r.status, r.expires_at);
-              const redeemedDate = formatDateSafe(r.redeemed_at, '兑换时间未知');
+              const redeemedDate = r.redeemed_at ? new Date(r.redeemed_at).toLocaleString('zh-CN', { hour12: false }) : '兑换时间未知';
               const expiryDate = formatExpiryDate(r.expires_at);
               return (
                 <div key={r.id} className={styles.rewardCard} style={{opacity:0.85}}>
