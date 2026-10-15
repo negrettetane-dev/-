@@ -20,12 +20,12 @@ export default defineConfig(({ mode }) => {
     host: '0.0.0.0',
     proxy: {
       '/api': {
-        target: env.VITE_API_PROXY_TARGET || 'https://9tr30463os14.vicp.fun',
+        target: env.VITE_API_PROXY_TARGET || 'https://frp-hat.com:30104',
         changeOrigin: true,
         secure: false,
       },
       '/uploads': {
-        target: env.VITE_API_PROXY_TARGET || 'https://9tr30463os14.vicp.fun',
+        target: env.VITE_API_PROXY_TARGET || 'https://frp-hat.com:30104',
         changeOrigin: true,
         secure: false,
       },

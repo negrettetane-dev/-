@@ -17,12 +17,12 @@ export default defineConfig(({ mode }) => {
       port: 3001,
       proxy: {
         '/api': {
-          target: env.VITE_API_PROXY_TARGET || 'https://frp-ice.com:51836',
+          target: env.VITE_API_PROXY_TARGET || 'https://frp-hat.com:30104',
           changeOrigin: true,
           secure: false,
         },
         '/uploads': {
-          target: env.VITE_API_PROXY_TARGET || 'https://frp-ice.com:51836',
+          target: env.VITE_API_PROXY_TARGET || 'https://frp-hat.com:30104',
           changeOrigin: true,
           secure: false,
         },
