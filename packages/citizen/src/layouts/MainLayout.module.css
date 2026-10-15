@@ -64,12 +64,12 @@
 .loginArea { display: flex; gap: 8px; }
 .loginBtn {
   padding: 8px 20px; border: 1px solid var(--primary); background: #fff;
-  color: var(--primary); border-radius: 6px; font-size: 14px; cursor: pointer;
+  color: var(--primary); border-radius: 999px; font-size: 14px; cursor: pointer;
 }
 .loginBtn:hover { background: var(--primary-light); }
 .registerBtn {
   padding: 8px 20px; background: var(--primary); color: #fff;
-  border: none; border-radius: 6px; font-size: 14px; cursor: pointer;
+  border: none; border-radius: 999px; font-size: 14px; cursor: pointer;
 }
 .registerBtn:hover { opacity: 0.9; }
 
