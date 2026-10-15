@@ -28,16 +28,57 @@ import { generateSystemLogs } from '../../mocks/mockData';import { addOperationL
 
 const { Text } = Typography;
 
+const GENERAL_SETTINGS_KEY = 'zhitu_admin_general_settings';
+const DEFAULT_GENERAL_SETTINGS = {
+  timezone: 'Asia/Shanghai',
+  language: 'zh-CN',
+};
+
 function BasicSettings() {
+  const [initialValues] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(GENERAL_SETTINGS_KEY) || '{}');
+      return {
+        timezone: saved.timezone || DEFAULT_GENERAL_SETTINGS.timezone,
+        language: saved.language || DEFAULT_GENERAL_SETTINGS.language,
+      };
+    } catch {
+      return DEFAULT_GENERAL_SETTINGS;
+    }
+  });
+
+  const saveSettings = (values: typeof DEFAULT_GENERAL_SETTINGS) => {
+    try {
+      localStorage.setItem(GENERAL_SETTINGS_KEY, JSON.stringify(values));
+      message.success('通用设置已保存到当前浏览器');
+    } catch {
+      message.error('保存失败，请检查浏览器存储权限');
+    }
+  };
+
   return (
     <Card title="基本配置" style={{ marginBottom: 16 }}>
-      <Form layout="vertical">
+      <Form layout="vertical" initialValues={initialValues} onFinish={saveSettings}>
+        <Typography.Title level={4}>通用设置</Typography.Title>
+        <Form.Item name="timezone" label="时区">
+          <Select options={[
+            { value: 'UTC', label: '协调世界时（UTC）' },
+            { value: 'Asia/Shanghai', label: '北京时间（UTC+8）' },
+            { value: 'UTC-5', label: '美国东部标准时间（UTC-5）' },
+            { value: 'UTC-8', label: '美国太平洋标准时间（UTC-8）' },
+            { value: 'UTC+1', label: '中欧标准时间（UTC+1）' },
+          ]} />
+        </Form.Item>
+        <Form.Item name="language" label="语言">
+          <Select options={[
+            { value: 'en', label: '英语' },
+            { value: 'zh-CN', label: '简体中文' },
+            { value: 'ja', label: '日语' },
+            { value: 'fr', label: '法语' },
+            { value: 'de', label: '德语' },
+          ]} />
+        </Form.Item>
         <Row gutter={24}>
-          <Col span={12}>
-            <Form.Item label="平台名称">
-              <Input defaultValue="智途云枢 · 城市交通智慧管理平台" />
-            </Form.Item>
-          </Col>
           <Col span={12}>
             <Form.Item label="数据刷新间隔 (秒)">
               <InputNumber defaultValue={10} min={5} max={60} style={{ width: '100%' }} />
@@ -71,8 +112,8 @@ function BasicSettings() {
             </Form.Item>
           </Col>
         </Row>
-        <Button type="primary" icon={<SaveOutlined />}>
-          保存配置
+        <Button type="primary" icon={<SaveOutlined />} htmlType="submit">
+          保存通用设置
         </Button>
       </Form>
     </Card>
@@ -234,7 +275,7 @@ export default function SettingsPage() {
     },
     {
       key: 'users',
-      label: <span><UserOutlined /> 用户管理</span>,
+      label: <span><UserOutlined /> 管理成员管理</span>,
       children: <UserManagement />,
     },
     {
