@@ -143,21 +143,16 @@ const ParkingPage: React.FC = () => {
 
   return (
     <div className={styles.page}>
-      <div style={{ fontSize: 12, color: '#ad8b00', background: '#fffbe6', padding: '6px 10px', borderRadius: 8, marginBottom: 10 }}>
-        余位 / 空闲桩为演示余位，数据来源待确认
-      </div>
       {navError && (
         <div style={{ fontSize: 13, color: '#f5222d', background: '#fff1f0', padding: '8px 10px', borderRadius: 8, marginBottom: 10 }}>
           ⚠️ {navError}
         </div>
       )}
-      <div className={styles.tabRow}>
-        <button className={`${styles.tab} ${tab==='parking'?styles.tabActive:''}`} onClick={()=>setTab('parking')}>🅿️ 停车场</button>
-        <button className={`${styles.tab} ${tab==='charging'?styles.tabActive:''}`} onClick={()=>setTab('charging')}>⚡ 充电桩</button>
-      </div>
-
-      {/* 视图切换 */}
-      <div style={{display:'flex', justifyContent:'flex-end', marginBottom:8}}>
+      <div className={styles.toolbar}>
+        <div className={styles.tabRow}>
+          <button className={`${styles.tab} ${tab==='parking'?styles.tabActive:''}`} onClick={()=>setTab('parking')}>🅿️ 停车场</button>
+          <button className={`${styles.tab} ${tab==='charging'?styles.tabActive:''}`} onClick={()=>setTab('charging')}>⚡ 充电桩</button>
+        </div>
         <button onClick={()=>setViewMode(viewMode==='list'?'map':'list')}
           style={{padding:'6px 14px',border:'1px solid var(--primary)',borderRadius:20,background:viewMode==='map'?'var(--primary)':'#fff',color:viewMode==='map'?'#fff':'var(--primary)',fontSize:13,cursor:'pointer'}}>
           {viewMode==='list'?'🗺️ 地图视图':'📋 列表视图'}

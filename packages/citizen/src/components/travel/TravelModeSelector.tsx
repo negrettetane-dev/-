@@ -44,15 +44,18 @@ const TravelModeItem: React.FC<TravelModeItemProps> = ({ mode, label, icon, acti
     const bounds = itemRef.current?.getBoundingClientRect();
     return bounds ? currentX - bounds.left - bounds.width / 2 : Number.POSITIVE_INFINITY;
   });
-  const targetSize = useTransform(mouseDistance, [-160, 0, 160], [56, 70, 56]);
+  const targetSize = useTransform(mouseDistance, [-160, 0, 160], [52, 74, 52]);
   const size = useSpring(targetSize, { mass: 0.1, stiffness: 150, damping: 12 });
+  const targetLift = useTransform(mouseDistance, [-160, 0, 160], [0, -14, 0]);
+  const lift = useSpring(targetLift, { mass: 0.1, stiffness: 150, damping: 12 });
+  const iconScale = useTransform(size, [52, 74], [1, 1.2]);
 
   return (
     <motion.button
       ref={itemRef}
       type="button"
       className={`${styles.option} ${active ? styles.active : ''}`}
-      style={{ width: size, height: size }}
+      style={{ width: size, height: size, y: lift }}
       onClick={() => onSelect(mode)}
       onHoverStart={() => setIsHovered(true)}
       onHoverEnd={() => setIsHovered(false)}
@@ -76,7 +79,7 @@ const TravelModeItem: React.FC<TravelModeItemProps> = ({ mode, label, icon, acti
           </motion.span>
         )}
       </AnimatePresence>
-      <span className={styles.icon} aria-hidden="true">{icon}</span>
+      <motion.span className={styles.icon} style={{ scale: iconScale }} aria-hidden="true">{icon}</motion.span>
     </motion.button>
   );
 };
@@ -93,7 +96,7 @@ const TravelModeDock: React.FC<TravelModeSelectorProps> = ({ value, onChange, cl
       className={`${styles.selector} ${className}`}
       role="group"
       aria-label="选择出行方式"
-      onMouseMove={event => mouseX.set(event.pageX)}
+      onMouseMove={event => mouseX.set(event.clientX)}
       onMouseLeave={() => mouseX.set(Number.POSITIVE_INFINITY)}
       style={{ viewTransitionName: 'travel-mode-selector' }}
     >
