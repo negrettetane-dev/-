@@ -9,6 +9,10 @@ export type ReportCategory =
   | 'signal_fault'  // 信号灯故障
   | 'accident_clue' // 交通事故线索
   | 'barrier'       // 道路障碍
+  | 'accessibility_elevator' // 无障碍电梯故障
+  | 'accessibility_ramp' // 无障碍坡道或入口异常
+  | 'accessibility_path' // 盲道/无障碍通道障碍
+  | 'accessibility_station' // 站点无障碍设施异常
   | 'other';
 
 export const REPORT_CATEGORIES: { value: ReportCategory; label: string; icon: string }[] = [

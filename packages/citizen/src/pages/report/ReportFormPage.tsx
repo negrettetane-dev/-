@@ -1,9 +1,20 @@
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiPost } from '../../services/apiClient';
+import { getCurrentResolvedLocation } from '../../services/locationService';
+import type { ReportLocation, DeviceLocation } from '../../types/reportLocation';
+import ReportLocationPicker from './ReportLocationPicker';
 import styles from './Report.module.css';
 
 const MAX_PHOTOS = 6;
+
+interface AiAssessment {
+  category: string;
+  severity: 'low' | 'medium' | 'high';
+  location: string;
+  department: string;
+  confidence: number;
+}
 
 const CATEGORIES = [
   { value:'pothole', label:'路面坑洼', icon:'🕳️' },
@@ -13,13 +24,12 @@ const CATEGORIES = [
   { value:'signal_fault', label:'信号灯故障', icon:'🚦' },
   { value:'accident_clue', label:'事故线索', icon:'🚨' },
   { value:'barrier', label:'道路障碍', icon:'🚧' },
+  { value:'accessibility_elevator', label:'无障碍电梯故障', icon:'🛗' },
+  { value:'accessibility_ramp', label:'坡道/入口异常', icon:'♿' },
+  { value:'accessibility_path', label:'盲道/通道障碍', icon:'🦯' },
+  { value:'accessibility_station', label:'站点设施异常', icon:'🚉' },
   { value:'other', label:'其他问题', icon:'📝' },
 ];
-const CATEGORY_LABELS: Record<string,string> = {
-  pothole:'路面坑洼', streetlight:'路灯损坏', illegal_park:'违停占道',
-  manhole:'井盖破损', signal_fault:'信号灯故障', accident_clue:'事故线索',
-  barrier:'道路障碍', other:'其他问题',
-};
 
 const ReportFormPage: React.FC = () => {
   const navigate = useNavigate();
@@ -31,11 +41,51 @@ const ReportFormPage: React.FC = () => {
   const [phone, setPhone] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [validationError, setValidationError] = useState('');
+  const [aiAssessment, setAiAssessment] = useState<AiAssessment | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
+
+  // ===== 事件位置：设备当前位置 与 用户确认的事件位置 分离 =====
+  // deviceLocation：设备原始定位（保留审核用）
+  const [deviceLocation, setDeviceLocation] = useState<DeviceLocation | null>(null);
+  // eventLocation：用户最终确认的事件位置（自动定位结果 或 手动/搜索选点）
+  const [eventLocation, setEventLocation] = useState<ReportLocation | null>(null);
+  const [locating, setLocating] = useState(true);
+  const [locationError, setLocationError] = useState('');
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  const startLocate = useCallback(() => {
+    setLocating(true);
+    setLocationError('');
+    getCurrentResolvedLocation()
+      .then(res => {
+        const locatedAt = new Date().toISOString();
+        // 设备定位（GCJ-02，高德返回）
+        setDeviceLocation({ longitude: res.lng, latitude: res.lat, accuracy: res.accuracy, locatedAt });
+        // 事件位置默认 = 设备位置（自动定位，已确认）
+        setEventLocation({
+          address: res.address,
+          longitude: res.lng,
+          latitude: res.lat,
+          locationType: 'auto',
+          locationStatus: 'verified',
+          accuracy: res.accuracy,
+          city: res.city,
+          locatedAt,
+        });
+        setLocationError('');
+      })
+      .catch(() => {
+        setDeviceLocation(null);
+        setEventLocation(null);
+        setLocationError('无法获取当前位置，可手动选择事件位置');
+      })
+      .finally(() => setLocating(false));
+  }, []);
+
+  useEffect(() => { startLocate(); }, [startLocate]);
 
   // 点击"添加照片"触发隐藏的 file input
-  const handleAddPhoto = () => {
-    fileInputRef.current?.click();
-  };
+  const handleAddPhoto = () => { fileInputRef.current?.click(); };
 
   // 选择文件后：保存 File 对象 + 生成缩略图预览
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -46,7 +96,6 @@ const ReportFormPage: React.FC = () => {
     const newUrls = newFiles.map(f => URL.createObjectURL(f));
     setPhotoFiles(prev => [...prev, ...newFiles]);
     setPreviewUrls(prev => [...prev, ...newUrls]);
-    // 清空 input.value，允许再次选择同一文件
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -62,6 +111,13 @@ const ReportFormPage: React.FC = () => {
     previewUrls.forEach(u => URL.revokeObjectURL(u));
   };
 
+  // 地图选点/搜索确认：作为事件位置，locationType 由弹窗判定（manual/search）
+  const handlePickerConfirm = (loc: ReportLocation) => {
+    setEventLocation(loc);
+    setPickerOpen(false);
+    setLocationError('');
+  };
+
   const handleSubmit = async () => {
     if (!category) { setValidationError('请选择问题类型'); return; }
     if (!description.trim()) { setValidationError('请填写问题描述'); return; }
@@ -71,15 +127,45 @@ const ReportFormPage: React.FC = () => {
       await apiPost('/report/submit', {
         category,
         description: description.trim(),
-        lng: 116.40,
-        lat: 39.90,
-        address: '北京市西城区天安门附近',
+        phone: phone.trim() || undefined,
+        // 事件位置：有则提交；无定位且未手动选择时，允许无位置提交但标记 failed
+        ...(eventLocation
+          ? {
+              eventLocation,
+              // 冗余字段（兼容旧后端 / 便于管理端直接读）
+              lng: eventLocation.longitude,
+              lat: eventLocation.latitude,
+              address: eventLocation.address,
+              locationType: eventLocation.locationType,
+              locationStatus: eventLocation.locationStatus,
+            }
+          : { locationStatus: 'failed' as const }),
+        // 设备原始定位（保留审核追溯）
+        ...(deviceLocation ? { deviceLocation } : {}),
+        aiAssessment: aiAssessment || undefined,
+        imageUploadStatus: photoFiles.length ? 'pending_backend_upload' : 'none',
       });
       revokeAllPreviews();
       setSubmitted(true);
     } catch (error) {
       setValidationError(error instanceof Error ? error.message : '提交失败，请检查网络后重试');
     }
+  };
+
+  const analyzeReport = () => {
+    if (!category || !description.trim()) { setValidationError('请先选择问题类型并填写描述，再进行 AI 识别'); return; }
+    setAnalyzing(true);
+    window.setTimeout(() => {
+      const high = ['signal_fault', 'accident_clue', 'accessibility_elevator'].includes(category);
+      setAiAssessment({
+        category,
+        severity: high ? 'high' : ['barrier', 'accessibility_path'].includes(category) ? 'medium' : 'low',
+        location: eventLocation?.address || '位置待确认',
+        department: category.startsWith('accessibility') ? '无障碍设施维护部门' : category === 'signal_fault' ? '交通信号管理部门' : '城市道路设施维护部门',
+        confidence: high ? 0.88 : 0.76,
+      });
+      setAnalyzing(false);
+    }, 450);
   };
 
   return (
@@ -112,7 +198,6 @@ const ReportFormPage: React.FC = () => {
             ({photoFiles.length}/{MAX_PHOTOS})
           </span>
         </div>
-        {/* 隐藏的真实文件选择器 */}
         <input
           ref={fileInputRef}
           type="file"
@@ -122,20 +207,12 @@ const ReportFormPage: React.FC = () => {
           onChange={handleFileChange}
         />
         <div className={styles.photoArea}>
-          {/* 已选图片缩略图 */}
           {previewUrls.map((url, i) => (
             <div key={i} className={styles.photoWrap}>
               <img className={styles.photoImg} src={url} alt={`照片 ${i + 1}`} />
-              <button
-                className={styles.photoRemove}
-                onClick={() => handleRemovePhoto(i)}
-                title="删除此图片"
-              >
-                ✕
-              </button>
+              <button className={styles.photoRemove} onClick={() => handleRemovePhoto(i)} title="删除此图片">✕</button>
             </div>
           ))}
-          {/* 添加按钮 */}
           {photoFiles.length < MAX_PHOTOS && (
             <div className={styles.photoSlot} onClick={handleAddPhoto}>
               <span style={{fontSize:24}}>+</span>
@@ -148,7 +225,7 @@ const ReportFormPage: React.FC = () => {
         </div>
         {photoFiles.length > 0 && (
           <div style={{fontSize:12,color:'#ad6800',marginTop:6}}>
-            当前后端尚未提供图片上传接口，本次只提交事件文字与位置，所选图片不会上传。
+            已选 {photoFiles.length} 张图片，等待上传接口接入后随工单提交；当前不会伪装为已上传。
           </div>
         )}
       </div>
@@ -159,11 +236,61 @@ const ReportFormPage: React.FC = () => {
         <textarea className={styles.descInput} placeholder="请详细描述您发现的交通问题..." value={description} onChange={e=>setDescription(e.target.value)}/>
       </div>
 
-      {/* Location */}
       <div className={styles.formSection}>
-        <div className={styles.formTitle}>📍 位置信息（自动定位）</div>
-        <div style={{fontSize:13,color:'var(--text-secondary)',padding:'8px',background:'var(--bg-page)',borderRadius:8}}>
-          北京市西城区天安门附近 · 📍 已自动定位
+        <div className={styles.formTitle}>✨ AI 识别结果</div>
+        {!aiAssessment ? (
+          <><p className={styles.aiHint}>根据问题文字、类别和位置生成事件类型、严重程度、地点与推荐处理部门，提交前可修改。</p><button type="button" className={styles.locationBtn} onClick={analyzeReport} disabled={analyzing}>{analyzing ? '正在识别…' : '开始 AI 识别'}</button></>
+        ) : (
+          <div className={styles.aiResult}>
+            <label>事件类型<select value={aiAssessment.category} onChange={event => setAiAssessment(current => current ? { ...current, category: event.target.value } : current)}>{CATEGORIES.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
+            <label>严重程度<select value={aiAssessment.severity} onChange={event => setAiAssessment(current => current ? { ...current, severity: event.target.value as AiAssessment['severity'] } : current)}><option value="low">低</option><option value="medium">中</option><option value="high">高</option></select></label>
+            <label>识别地点<input value={aiAssessment.location} onChange={event => setAiAssessment(current => current ? { ...current, location: event.target.value } : current)} /></label>
+            <label>推荐处理部门<input value={aiAssessment.department} onChange={event => setAiAssessment(current => current ? { ...current, department: event.target.value } : current)} /></label>
+            <div className={styles.aiConfidence}>识别置信度 {Math.round(aiAssessment.confidence * 100)}% · 正式提交前请核对</div>
+            <button type="button" className={styles.reanalyzeBtn} onClick={analyzeReport}>重新识别</button>
+          </div>
+        )}
+      </div>
+
+      {/* Location：设备当前位置 与 事件发生位置 分离 */}
+      <div className={styles.formSection}>
+        <div className={styles.formTitle}>📍 位置信息</div>
+        {/* 当前已确认的事件位置 */}
+        <div style={{fontSize:13,color:'var(--text-secondary)',padding:'8px 10px',background:'var(--bg-page)',borderRadius:8}}>
+          {locating ? '正在获取当前位置…'
+            : eventLocation ? `${eventLocation.address}`
+              : locationError ? `⚠️ ${locationError}`
+              : '请选择事件发生位置'}
+          {eventLocation && !locating && (
+            <div style={{marginTop:4,fontSize:11,color:'var(--text-hint)'}}>
+              {eventLocation.locationType === 'auto' ? '已自动定位'
+                : eventLocation.locationType === 'search' ? `已搜索选点${eventLocation.poiName ? ` · ${eventLocation.poiName}` : ''}`
+                : '已手动选点'}
+              {eventLocation.accuracy != null ? ` · 精度约${Math.round(eventLocation.accuracy)}m` : ''}
+              · 坐标 {eventLocation.longitude.toFixed(4)}, {eventLocation.latitude.toFixed(4)}
+            </div>
+          )}
+        </div>
+        {/* 操作：重新定位 / 修改位置 */}
+        <div style={{display:'flex',gap:10,marginTop:10}}>
+          <button
+            type="button"
+            className={styles.locationBtn}
+            onClick={startLocate}
+            disabled={locating}
+          >
+            📍 重新定位
+          </button>
+          <button
+            type="button"
+            className={styles.locationBtn}
+            onClick={() => setPickerOpen(true)}
+          >
+            ✏️ 修改位置
+          </button>
+        </div>
+        <div style={{fontSize:11,color:'var(--text-hint)',marginTop:8}}>
+          💡 事件位置默认取当前位置；若事件发生在别处（远处坑洞/事故现场/已离开地点），可手动选点或搜索。
         </div>
       </div>
 
@@ -190,6 +317,16 @@ const ReportFormPage: React.FC = () => {
           <button className={styles.submitBtn} onClick={handleSubmit}>📤 提交上报</button>
         </>
       )}
+
+      {/* 位置选择弹窗（地图选点 + 搜索） */}
+      {pickerOpen && (
+        <ReportLocationPicker
+          initial={eventLocation ? { lng: eventLocation.longitude, lat: eventLocation.latitude, address: eventLocation.address } : null}
+          onConfirm={handlePickerConfirm}
+          onCancel={() => setPickerOpen(false)}
+        />
+      )}
+
       <div style={{height:32}}/>
     </div>
   );

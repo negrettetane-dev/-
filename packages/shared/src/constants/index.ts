@@ -1,7 +1,7 @@
 // ===== 应用配置常量 =====
 
-/** 城市中心坐标 (以成都为例) */
-export const CITY_CENTER: [number, number] = [104.07, 30.67];
+/** 城市中心坐标（本项目为北京） */
+export const CITY_CENTER: [number, number] = [116.397, 39.909];
 
 /** 默认地图缩放级别 */
 export const DEFAULT_MAP_ZOOM = 13;

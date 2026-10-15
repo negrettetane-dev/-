@@ -38,13 +38,25 @@ export interface PointTransaction {
   amount: number; reason: string; operator: string; time: number;
 }
 
+export interface AdminNotification {
+  id: string; userId: string; type: 'event' | 'carbon' | 'weather' | 'system'; title: string; content: string; createdAt: number; read: boolean;
+}
+
 export interface OperationLog {
   id: string; operator: string; module: string; action: string;
   target: string; detail: string; ip: string; time: number;
 }
 
 export interface PointRule {
-  id: string; name: string; action: string; points: number; enabled: boolean;
+  id: string; name: string; action: string; points: number; enabled: boolean; distanceKm?: number; maxDaily?: number;
+}
+
+export interface CarbonConfig {
+  carbonFactors: Record<string, number>;
+  pointsPerKm?: Record<string, number>;
+  maxTripDistanceKm: number;
+  distanceSource: 'gps_track';
+  riskRules: { speedAnomaly: boolean; gpsJump: boolean; duplicateTrip: boolean; cancelledTrip: boolean; crossDayToStartDate: boolean };
 }
 
 // ====== 事件/工单（共享公民端 localStorage key） ======
@@ -86,9 +98,29 @@ export function getCitizenUsers(): CitizenUser[] {
 }
 
 export function adjustUserPoints(userId: string, amount: number, reason: string, operator: string): void {
-  const current = get<number>('user_points', 1250);
-  set('user_points', current + amount);
+  // 按 userId 精准写入目标用户积分：注册账号更新其 carbonCredits；内置演示账号 u1 写全局 user_points
+  const accounts = get<any[]>('user_accounts', []);
+  const acc = accounts.find(a => a.id === userId);
+  if (acc) {
+    acc.carbonCredits = Math.max(0, (acc.carbonCredits || 0) + amount);
+    set('user_accounts', accounts);
+  } else {
+    const current = get<number>('user_points', 1250);
+    set('user_points', Math.max(0, current + amount));
+  }
   addPointTransaction({ id:'pt_'+Date.now().toString(36), userId, type:'adjust', amount, reason, operator, time:Date.now() });
+  addAdminNotification({ id: 'n_' + Date.now().toString(36), userId, type: 'carbon', title: amount > 0 ? '碳积分已到账' : '碳积分变动提醒', content: `${amount > 0 ? '你的账户获得' : '你的账户扣减'} ${Math.abs(amount)} 碳积分${reason ? `：${reason}` : ''}`, createdAt: Date.now(), read: false });
+}
+
+const NOTIFICATIONS_KEY = 'notifications';
+export function getAdminNotifications(userId?: string): AdminNotification[] {
+  const all = get<AdminNotification[]>(NOTIFICATIONS_KEY, []);
+  return userId ? all.filter(item => item.userId === userId) : all;
+}
+export function addAdminNotification(notification: AdminNotification): void {
+  const all = getAdminNotifications();
+  all.unshift(notification);
+  set(NOTIFICATIONS_KEY, all.slice(0, 200));
 }
 
 // ====== 积分 ======
@@ -112,21 +144,44 @@ export function getPointRules(): PointRule[] {
     { id:'pr4', name:'步行', action:'walk', points:10, enabled:true },
     { id:'pr5', name:'有效事件上报', action:'valid_report', points:20, enabled:true },
     { id:'pr6', name:'每日签到', action:'daily_checkin', points:3, enabled:true },
+    { id:'pr7', name:'新能源汽车出行', action:'new_energy_vehicle_ride', points:1, enabled:true },
   ]);
 }
 
 export function setPointRules(rules: PointRule[]): void { set('point_rules', rules); }
 
+export function getCarbonConfig(): CarbonConfig {
+  const fallback: CarbonConfig = { carbonFactors: { walk: 1.0, bike: 0.8, metro: 0.6, bus: 0.5, new_energy_vehicle: 0.2 }, pointsPerKm: { walk: 1, bike: 1, metro: 1, bus: 1, new_energy_vehicle: 1 }, maxTripDistanceKm: 100, distanceSource: 'gps_track', riskRules: { speedAnomaly: true, gpsJump: true, duplicateTrip: true, cancelledTrip: true, crossDayToStartDate: true } };
+  const saved = get<Partial<CarbonConfig>>('carbon_config', {});
+  return { ...fallback, ...saved, carbonFactors: { ...fallback.carbonFactors, ...(saved.carbonFactors || {}) }, pointsPerKm: { ...fallback.pointsPerKm, ...(saved.pointsPerKm || {}) }, riskRules: { ...fallback.riskRules, ...(saved.riskRules || {}) } };
+}
+export function setCarbonConfig(config: CarbonConfig): void { set('carbon_config', config); }
+
+export interface CarbonReward { id: string; name: string; cost: number; stock: number; enabled: boolean; description?: string; }
+export function getCarbonRewards(): CarbonReward[] { return get<CarbonReward[]>('carbon_rewards', [
+  { id: 'rw1', name: '公交9折优惠券', cost: 200, stock: 999, enabled: true, description: '乘坐公交享9折优惠，有效期30天' },
+  { id: 'rw2', name: '地铁5次免费卡', cost: 500, stock: 500, enabled: true, description: '地铁免费乘坐5次' },
+  { id: 'rw3', name: '共享单车月卡', cost: 800, stock: 200, enabled: true, description: '美团单车月卡，30天无限次' },
+  { id: 'rw4', name: '停车费抵扣券', cost: 150, stock: 1000, enabled: true, description: '合作停车场5元抵扣券' },
+]); }
+export function setCarbonRewards(rewards: CarbonReward[]): void { set('carbon_rewards', rewards); }
+
 export function getRedemptionRecords(): any[] { return get<any[]>('redemptions', []); }
 
 // ====== 管理员 ======
 
+const DEFAULT_ADMIN_USERS: AdminUser[] = [
+  { id:'a1', username:'admin', realName:'系统管理员', role:'super_admin', department:'信息中心', phone:'13800000001', email:'admin@zhitu.com', status:'active', lastLogin:Date.now() },
+  { id:'a2', username:'handler', realName:'张伟', role:'event_handler', department:'运营部', phone:'13800000002', email:'zhangwei@zhitu.com', status:'active', lastLogin:Date.now() },
+  { id:'a3', username:'content', realName:'李明', role:'content_admin', department:'宣传部', phone:'13800000003', email:'liming@zhitu.com', status:'active', lastLogin:Date.now() },
+];
+
 export function getAdminUsers(): AdminUser[] {
-  return get<AdminUser[]>('admin_users', [
-    { id:'a1', username:'admin', realName:'系统管理员', role:'super_admin', department:'信息中心', phone:'13800000001', email:'admin@zhitu.com', status:'active', lastLogin:Date.now() },
-    { id:'a2', username:'handler', realName:'张伟', role:'event_handler', department:'运营部', phone:'13800000002', email:'zhangwei@zhitu.com', status:'active', lastLogin:Date.now() },
-    { id:'a3', username:'content', realName:'李明', role:'content_admin', department:'宣传部', phone:'13800000003', email:'liming@zhitu.com', status:'active', lastLogin:Date.now() },
-  ]);
+  return get<AdminUser[]>('admin_users', DEFAULT_ADMIN_USERS);
+}
+
+export function setAdminUsers(users: AdminUser[]): void {
+  set('admin_users', users);
 }
 
 // ====== 操作日志 ======

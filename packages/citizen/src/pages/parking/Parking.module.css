@@ -1,5 +1,6 @@
 .page { }
-.tabRow { display: flex; gap: 8px; margin-bottom: 20px; background: #fff; padding: 6px; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); width: fit-content; }
+.toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
+.tabRow { display: flex; gap: 8px; background: #fff; padding: 6px; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); width: fit-content; }
 .tab { padding: 10px 24px; border: none; border-radius: 8px; background: transparent; font-size: 15px; cursor: pointer; transition: all 0.2s; color: var(--text-secondary); }
 .tabActive { background: var(--primary); color: #fff; font-weight: 600; }
 

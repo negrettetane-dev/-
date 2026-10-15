@@ -1,0 +1,36 @@
+.overlay { position: fixed; z-index: 1200; inset: 0; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(15, 23, 42, 0.55); }
+.modal { width: min(480px, 100%); border-radius: 16px; background: #fff; overflow: hidden; box-shadow: 0 22px 70px rgba(15, 23, 42, 0.3); max-height: 92vh; display: flex; flex-direction: column; }
+
+.modalHeader { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid #f0f0f0; }
+.modalTitle { font-size: 17px; font-weight: 700; }
+.modalClose { font-size: 18px; color: var(--text-hint); cursor: pointer; padding: 4px; }
+
+.mapWrap { position: relative; height: 300px; flex-shrink: 0; }
+.mapContainer { width: 100%; height: 100%; background: #e8edf2; }
+.mapError { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: #fff; color: #f5222d; font-size: 14px; padding: 20px; text-align: center; }
+.mapHint { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); background: rgba(255,255,255,0.95); color: #333; font-size: 13px; padding: 6px 14px; border-radius: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); white-space: nowrap; }
+
+.searchRow { display: flex; gap: 8px; padding: 12px 16px; }
+.searchInput { flex: 1; min-width: 0; border: 1px solid #e5e9ef; border-radius: 8px; padding: 10px 12px; font-size: 14px; }
+.searchInput:focus { border-color: var(--primary); outline: none; }
+.searchBtn { flex-shrink: 0; padding: 10px 18px; border: 0; border-radius: 8px; background: var(--primary); color: #fff; font-size: 14px; font-weight: 600; cursor: pointer; }
+.searchBtn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.searchResults { max-height: 180px; overflow-y: auto; padding: 0 16px 8px; }
+.searchResultItem { padding: 10px 12px; border-radius: 8px; cursor: pointer; transition: background 0.15s; }
+.searchResultItem:hover { background: #f0f5ff; }
+.searchResultName { font-size: 14px; font-weight: 600; }
+.searchResultAddr { font-size: 12px; color: var(--text-hint); margin-top: 2px; }
+.searchError { padding: 0 16px 8px; font-size: 13px; color: #f5222d; }
+
+.pickerBody { padding: 12px 16px; border-top: 1px solid #f0f0f0; }
+.pickerResolving { font-size: 13px; color: var(--text-hint); }
+.pickerAddress { font-size: 14px; color: #1f2533; font-weight: 500; line-height: 1.6; }
+.pickerError { font-size: 13px; color: #f5222d; }
+.coordText { font-size: 12px; color: var(--text-hint); margin-top: 6px; }
+
+.modalActions { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 16px; border-top: 1px solid #f0f0f0; }
+.cancelBtn, .confirmBtn { border-radius: 9px; padding: 10px 20px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.cancelBtn { border: 1px solid #e5e9ef; background: #fff; color: var(--text-primary); }
+.confirmBtn { border: 1px solid var(--primary); background: var(--primary); color: #fff; }
+.confirmBtn:disabled { opacity: 0.5; cursor: not-allowed; }

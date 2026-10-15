@@ -91,7 +91,7 @@ const MetroDetailPage: React.FC = () => {
         <div className={styles.arrivalRow}>
           <div className={styles.arrivalItem}>
             <span className={styles.arrivalLabel}>下一班</span>
-            <span className={styles.arrivalVal} style={{ color: '#1677ff' }}>{formatCountdown(nextSec)}</span>
+            <span className={styles.arrivalVal}>{formatCountdown(nextSec)}</span>
             <span className={styles.arrivalCrowd} style={{ color: crowd.color }}>{crowd.emoji} {crowd.label}</span>
           </div>
           <div className={styles.arrivalItem}>

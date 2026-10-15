@@ -7,6 +7,13 @@
   position: sticky;
   top: 0;
   z-index: 100;
+  view-transition-name: main-navigation;
+}
+
+::view-transition-old(main-navigation),
+::view-transition-new(main-navigation) {
+  animation: none;
+  mix-blend-mode: normal;
 }
 .headerInner {
   max-width: 1280px;
@@ -49,7 +56,7 @@
 .userName { font-size: 14px; font-weight: 600; }
 .userPhone { font-size: 11px; color: var(--text-hint); }
 .logoutBtn {
-  padding: 5px 12px; border: 1px solid #eee; background: #fff;
+  padding: 5px 12px; border: 1px solid #f4cfd9; background: #fff;
   border-radius: 6px; font-size: 12px; color: var(--text-secondary); cursor: pointer;
 }
 .logoutBtn:hover { color: var(--danger); border-color: var(--danger); }
@@ -57,12 +64,12 @@
 .loginArea { display: flex; gap: 8px; }
 .loginBtn {
   padding: 8px 20px; border: 1px solid var(--primary); background: #fff;
-  color: var(--primary); border-radius: 6px; font-size: 14px; cursor: pointer;
+  color: var(--primary); border-radius: 999px; font-size: 14px; cursor: pointer;
 }
 .loginBtn:hover { background: var(--primary-light); }
 .registerBtn {
   padding: 8px 20px; background: var(--primary); color: #fff;
-  border: none; border-radius: 6px; font-size: 14px; cursor: pointer;
+  border: none; border-radius: 999px; font-size: 14px; cursor: pointer;
 }
 .registerBtn:hover { opacity: 0.9; }
 

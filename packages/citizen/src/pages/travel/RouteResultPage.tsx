@@ -1,43 +1,42 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { AMAP_KEY, loadAMap } from '../../lib/amap';
 import { formatDistance } from '@zhitu/shared';
+import { getRouteForecast } from '../../services/routeForecastService';
+import { hasSegmentContent, resolveRouteLocations, resolveWaypointCoords, planAmapRoute, planRouteCandidates, planTransitCandidates, buildTransitRouteOptions, type PlannedRoute, type SegmentData, type RouteCandidate, type TransitRouteOption } from '../../services/routePlanningService';
+import type { RouteForecastPoint, TravelMode as ForecastMode } from '../../types/routeForecast';
+import { calculateRouteScore, recommendBestRoute, generateRecommendationReason, generateDepartureAdvice } from '../../utils/routeRecommendation';
+import { isValidDepartureAt, labelForDepartureAt, computeDepartureState, saveDepartureState } from '../../utils/departureTime';
+import RouteForecastPanel from '../../components/travel/RouteForecastPanel';
+import TravelModeSelector, { normalizeTravelMode, type RouteTravelMode, type TravelModeOption } from '../../components/travel/TravelModeSelector';
+import AccessibleRouteCard from '../../components/travel/AccessibleRouteCard';
+import { buildAccessibleOptions, getAccessibilityPreferenceHint, type AccessibleRouteOption } from '../../services/accessibilityService';
+import { ACCESSIBILITY_PREFERENCES, normalizeAccessibilityPreferences, type AccessibilityPreference } from '../../types/accessibilityPreference';
+import { getFacilityForStation, getFacilitySource, loadAccessibilityFacilities, subscribeAccessibilityFacilities } from '../../data/accessibilityFacilities';
+import { useAuthStore } from '../../stores/authStore';
+import { useTripStore } from '../../stores/tripStore';
+import { useTravelPlanStore } from '../../stores/travelPlanStore';
+import { useTravelLocationStore } from '../../stores/travelLocationStore';
+import { isTransitSupported } from '../../services/transitEligibility';
+import { estimateDriveImpact } from '../../services/routeCarbonEstimator';
+import { fromLegacyRouteMode } from '../../types/travelMode';
+import { getCarePreferences, setCarePreferences } from '../../stores/persistence';
+import { buildTravelStages, createTravelRouteFingerprint } from '../../services/routePlanningService';
+import { useTravelStageNavigationStore } from '../../stores/travelStageNavigationStore';
+import TravelStageTimeline from '../../components/travel/TravelStageTimeline';
+import { watchNavigationLocation, distanceBetweenMeters } from '../../services/navigationLocationService';
+import { getTransitLineStatus, type TransitRealtimeStatus } from '../../services/transitService';
+import type { Trip, TripRouteStrategy } from '../../types/trip';
 import styles from './Travel.module.css';
 
+/** 到达判定阈值：当前车辆与终点剩余距离 ≤ 50m 即视为到达（避免 GPS 误差导致永不触发） */
+const ARRIVAL_THRESHOLD_METERS = 50;
+
 // ===== 统一路线类型 =====
-type TravelMode = 'drive' | 'bus' | 'bike' | 'walk';
+type TravelMode = RouteTravelMode;
 
 // 合法的交通方式（用于校验 URL state 传入的 mode）
 const VALID_MODES: TravelMode[] = ['drive', 'bus', 'bike', 'walk'];
-
-interface PlannedRoute {
-  mode: TravelMode;
-  distance: number;
-  duration: number;
-  path: [number, number][];
-  polyline: [number, number][];
-  segments?: SegmentData[];
-  cost?: number;
-  calories?: number;
-  bikeLaneRatio?: number;
-  congestionSegments?: { level: string; ratio: number }[];
-  aiAdvice?: string;
-  error?: string;
-}
-
-interface SegmentData {
-  type: 'walk' | 'metro' | 'bus';
-  lineName?: string;
-  fromStation?: string;
-  toStation?: string;
-  fromStop?: string;
-  toStop?: string;
-  crowding?: string;
-  nextBusArrival?: number;
-  stationCount?: number;
-  duration?: number;
-  instruction?: string;
-}
 
 interface RouteCardData {
   id: string;
@@ -57,7 +56,7 @@ interface RouteCardData {
 
 const MODE_META: Record<TravelMode, { icon: string; label: string; color: string }> = {
   drive: { icon: '🚗', label: '驾车', color: '#1677ff' },
-  bus: { icon: '🚌', label: '公交地铁', color: '#52c41a' },
+  bus: { icon: '🚌', label: '公交地铁', color: '#722ed1' },
   bike: { icon: '🚲', label: '骑行', color: '#faad14' },
   walk: { icon: '🚶', label: '步行', color: '#722ed1' },
 };
@@ -86,65 +85,84 @@ function getTransportLabel(type?: string): string {
   return '';
 }
 
-const ROUTE_TIMEOUT_MS = 15000;
-
-function withTimeout<T>(promise: Promise<T>, label: string, timeoutMs = ROUTE_TIMEOUT_MS): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const timer = window.setTimeout(() => reject(new Error(`${label} timeout`)), timeoutMs);
-    promise.then(
-      (value) => {
-        window.clearTimeout(timer);
-        resolve(value);
-      },
-      (error) => {
-        window.clearTimeout(timer);
-        reject(error);
-      },
-    );
-  });
+function getStageTransportIcon(kind?: string): string {
+  if (kind === 'walk' || kind === 'transfer') return '🚶';
+  if (kind === 'metro') return '🚇';
+  if (kind === 'bus') return '🚌';
+  if (kind === 'bike') return '🚲';
+  if (kind === 'drive') return '🚗';
+  return '📍';
 }
 
-const DEST_COORDS: Record<string, [number, number]> = {
-  '天安门广场': [116.397, 39.909], '天安门': [116.397, 39.909],
-  '故宫博物院': [116.403, 39.918], '王府井步行街': [116.417, 39.914],
-  '王府井': [116.417, 39.914], '国贸CBD': [116.461, 39.909],
-  '国贸': [116.461, 39.909], '三里屯太古里': [116.455, 39.932],
-  '三里屯': [116.455, 39.932], '北京南站': [116.385, 39.863],
-  '北京西站': [116.322, 39.895], '北京站': [116.433, 39.903],
-  '首都国际机场': [116.608, 40.080], '大兴国际机场': [116.422, 39.516],
-  '中关村': [116.316, 39.983], '西单': [116.380, 39.913],
-  '望京SOHO': [116.489, 39.996], '颐和园': [116.278, 39.999],
-  '鸟巢': [116.395, 39.993], '南锣鼓巷': [116.410, 39.938],
-  '朝阳大悦城': [116.524, 39.924], '金融街': [116.361, 39.915],
-  '北京大学': [116.310, 39.993], '清华大学': [116.332, 40.001],
-  '王府井地下停车场': [116.415, 39.912],
-  '国贸CBD地下停车场': [116.462, 39.907],
-  '三里屯地下停车场': [116.454, 39.930],
-  '中关村购物中心停车场': [116.317, 39.981],
-  '北京南站停车场': [116.383, 39.861],
-};
+function getNearestPathIndex(path: [number, number][], point?: [number, number]): number | null {
+  if (!point || !path.length) return null;
+  let nearestIndex = 0;
+  let nearestDistance = Number.POSITIVE_INFINITY;
+  path.forEach((candidate, index) => {
+    const distance = distanceBetweenMeters({ lng: candidate[0], lat: candidate[1] }, { lng: point[0], lat: point[1] });
+    if (distance < nearestDistance) { nearestDistance = distance; nearestIndex = index; }
+  });
+  return nearestIndex;
+}
 
-const ORIGIN_ADDRESSES = [
-  '北京市朝阳区建国路88号·SOHO现代城',
-  '北京市海淀区中关村大街27号·中关村广场',
-  '北京市东城区东长安街1号·东方广场',
-];
+function getStageMapPath(stage: { path?: [number, number][]; startCoord?: [number, number]; endCoord?: [number, number] }, routePath: [number, number][]): [number, number][] {
+  const startIndex = getNearestPathIndex(routePath, stage.startCoord);
+  const endIndex = getNearestPathIndex(routePath, stage.endCoord);
+  if (startIndex != null && endIndex != null && startIndex !== endIndex) {
+    const from = Math.min(startIndex, endIndex);
+    const to = Math.max(startIndex, endIndex);
+    const slice = routePath.slice(from, to + 1);
+    if (slice.length >= 2) return startIndex <= endIndex ? slice : slice.reverse();
+  }
+  if (stage.path && stage.path.length >= 2) return stage.path;
+  if (stage.startCoord && stage.endCoord) return [stage.startCoord, stage.endCoord];
+  return routePath;
+}
 
 const RouteResultPage: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { origin = '我的位置', destination = '目的地', waypoints = [] } = (location.state || {}) as {
+  const { origin = '我的位置', destination = '目的地', waypoints = [], originCoords = null, destinationCoords = null, departureMode: stateDepartureMode, departureAt: stateDepartureAt, departureTimeLabel: stateDepartureTimeLabel, departureTime = '现在出发' } = (location.state || {}) as {
     origin?: string;
     destination?: string;
     waypoints?: string[];
     mode?: string;
+    originCoords?: { lng: number; lat: number } | null;
+    destinationCoords?: { lng: number; lat: number } | null;
+    departureMode?: 'now' | 'plus30' | 'plus60' | 'custom';
+    departureAt?: string;
+    departureTimeLabel?: string;
+    departureTime?: string;
   };
   const requestedMode = (location.state as { mode?: string } | null)?.mode;
-  const initMode = requestedMode === 'new-energy'
-    ? 'drive'
-    : requestedMode === 'accessible'
-      ? 'bus'
-      : requestedMode as TravelMode | undefined;
+  const initialDisplayMode: TravelModeOption = ['ev', 'driving', 'transit', 'riding', 'walking', 'accessible'].includes(requestedMode || '')
+    ? requestedMode as TravelModeOption
+    : 'driving';
+  const initMode = normalizeTravelMode(initialDisplayMode);
+
+  // ===== 出发时间：真实业务时间一律用 departureAt（ISO） =====
+  // 优先 router state（HomePage startRoute 传递）；旧链接无则读 sessionStorage；最后回退当前时间。
+  const departureAt = useMemo(() => {
+    if (isValidDepartureAt(stateDepartureAt)) return stateDepartureAt as string;
+    try {
+      const raw = sessionStorage.getItem('zhitu_travel_departure');
+      if (raw) {
+        const parsed = JSON.parse(raw) as { departureAt?: string };
+        if (isValidDepartureAt(parsed.departureAt)) return parsed.departureAt as string;
+      }
+    } catch { /* ignore */ }
+    return new Date().toISOString();
+  }, [stateDepartureAt]);
+
+  // 展示标签：新模型用 departureTimeLabel；旧链接退化为 departureTime 中文文本
+  const departureLabel = stateDepartureMode === 'now'
+    ? ''
+    : (stateDepartureTimeLabel
+        ? stateDepartureTimeLabel
+        : (departureTime !== '现在出发' ? departureTime : labelForDepartureAt(departureAt)));
+
+  // 预测以实际出发时间为基准（router state 不可变，用 ref 稳定引用）
+  const departureAtRef = useRef(departureAt);
 
   // 核心状态：selectedMode 必须来自出行规划页选择的交通方式
   const [isPlanning, setIsPlanning] = useState(true);
@@ -152,59 +170,168 @@ const RouteResultPage: React.FC = () => {
   const [selectedMode, setSelectedMode] = useState<TravelMode>(
     initMode && VALID_MODES.includes(initMode) ? initMode : 'drive'
   );
+  const [selectedDisplayMode, setSelectedDisplayMode] = useState<TravelModeOption>(initialDisplayMode);
   const [unavailableNote, setUnavailableNote] = useState('');
   const [cardData, setCardData] = useState<RouteCardData[]>([]);
+
+  // 未来拥堵预测（模拟 Service）
+  const [forecasts, setForecasts] = useState<Partial<Record<TravelMode, RouteForecastPoint[]>>>({});
+  const [forecastLoading, setForecastLoading] = useState(false);
+  const [forecastError, setForecastError] = useState('');
+  const [recommendationId, setRecommendationId] = useState<TravelMode | null>(null);
+  const [departureAdvice, setDepartureAdvice] = useState('');
+  const [compareOpen, setCompareOpen] = useState(false);
+  const [comparisonStatus, setComparisonStatus] = useState<Partial<Record<TravelMode, 'loading' | 'ready' | 'unavailable'>>>({});
+
+  // 无障碍出行：从高德真实多方案中按无障碍目标重排出的候选
+  const [accessibleOptions, setAccessibleOptions] = useState<AccessibleRouteOption[]>([]);
+  const [accessibleSelectedId, setAccessibleSelectedId] = useState<'accessible' | 'fastest' | 'least-walk' | null>(null);
+  const [accessibleUnavailableNote, setAccessibleUnavailableNote] = useState('');
+  const userId = useAuthStore(state => state.user?.id || 'legacy');
+  // 无障碍模式派生状态（须在组件顶部、所有 effect 依赖数组之前定义，避免 TDZ）
+  const accessibleActive = selectedDisplayMode === 'accessible';
+  const [accessibilityPreferences, setAccessibilityPreferences] = useState<AccessibilityPreference[]>(() => {
+    try {
+      const saved = normalizeAccessibilityPreferences(JSON.parse(sessionStorage.getItem('zhitu_accessibility_preferences') || 'null'));
+      if (saved.length) return saved;
+      const profilePreferences = getCarePreferences(userId);
+      return profilePreferences.length ? profilePreferences : ['wheelchair'];
+    } catch {
+      const profilePreferences = getCarePreferences(userId);
+      return profilePreferences.length ? profilePreferences : ['wheelchair'];
+    }
+  });
+  const accessibleSelected = accessibleOptions.find(o => o.id === accessibleSelectedId) || accessibleOptions[0] || null;
+
+  // 多候选路线（驾车/骑行/步行：时间最短 + 距离最短；去重后可能 1 条）
+  const [routeCandidates, setRouteCandidates] = useState<Partial<Record<TravelMode, RouteCandidate[]>>>({});
+  const [selectedCandidateIdx, setSelectedCandidateIdx] = useState<Partial<Record<TravelMode, number>>>({});
+  const selectedCandidate = (mode: TravelMode) => {
+    const list = routeCandidates[mode] || [];
+    const idx = selectedCandidateIdx[mode] ?? 0;
+    return list[idx] || null;
+  };
+
+  // 公交/地铁多候选（推荐/少换乘/少步行）
+  const [transitOptions, setTransitOptions] = useState<TransitRouteOption[]>([]);
+  const [selectedTransitOptionId, setSelectedTransitOptionId] = useState<TransitRouteOption['id'] | null>(null);
 
   // 导航状态
   const [navActive, setNavActive] = useState(false);
   const [navMode, setNavMode] = useState<TravelMode | null>(null);
   const [navDistance, setNavDistance] = useState(0);
   const [navRouteError, setNavRouteError] = useState('');
+  const [stageArrivalPending, setStageArrivalPending] = useState(false);
+  const [stageActionBusy, setStageActionBusy] = useState(false);
+  const [transitRealtime, setTransitRealtime] = useState<TransitRealtimeStatus | null>(null);
+  const isLoggedIn = useAuthStore(state => state.isLoggedIn);
 
-  // 起终点
-  const startCoord = useRef<[number, number]>([116.397, 39.908]);
-  const endCoord = useRef<[number, number]>([116.458, 39.920]);
-  const [displayOrigin, setDisplayOrigin] = useState('我的位置');
-  const [displayDest, setDisplayDest] = useState('目的地');
+  // ===== 导航状态机：idle → navigating → arrived → ended =====
+  const [navStatus, setNavStatus] = useState<'idle' | 'navigating' | 'arrived' | 'ended'>('idle');
+  const navStatusRef = useRef<'idle' | 'navigating' | 'arrived' | 'ended'>('idle');
+  const stageSnapshot = useTravelStageNavigationStore(state => state.snapshot);
+  const startStageNavigation = useTravelStageNavigationStore(state => state.startNavigation);
+  const completeStage = useTravelStageNavigationStore(state => state.completeCurrentStage);
+  const confirmStage = useTravelStageNavigationStore(state => state.confirmCurrentStage);
+  const pauseStageNavigation = useTravelStageNavigationStore(state => state.pauseNavigation);
+  const resumeStageNavigation = useTravelStageNavigationStore(state => state.resumeNavigation);
+  const endStageNavigation = useTravelStageNavigationStore(state => state.endNavigation);
+  const addStageReminder = useTravelStageNavigationStore(state => state.addReminder);
+  const reportStageLocation = useTravelStageNavigationStore(state => state.reportLocation);
+  const lastReportedLocationRef = useRef(0);
+  const restoreStageNavigation = useTravelStageNavigationStore(state => state.restoreIfMatching);
+  const [arrivedTrip, setArrivedTrip] = useState<Trip | null>(null);
+  const hasCompletedTripRef = useRef(false);
+  const navDistanceRef = useRef(0);
+  const navDurationRef = useRef(0);
+  const navigationLocationCleanupRef = useRef<(() => void) | null>(null);
+  const walkArrivalCountRef = useRef(0);
+
+  // 起终点：没有解析成功前保持 null，禁止用天安门等固定位置冒充用户起点。
+  const startCoord = useRef<[number, number] | null>(null);
+  const endCoord = useRef<[number, number] | null>(null);
+  const [displayOrigin, setDisplayOrigin] = useState(origin || '我的位置');
+  const [displayDest, setDisplayDest] = useState(destination || '目的地');
+  const [locationsReady, setLocationsReady] = useState(false);
+  const [locationError, setLocationError] = useState('');
+  const [facilityVersion, setFacilityVersion] = useState(0);
 
   // ===== 唯一地图实例 refs（导航复用同一张地图，不创建第二张） =====
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<any>(null);
   const trafficLayerRef = useRef<any>(null);
   const polylineRef = useRef<any>(null);
+  const routePolylineRefs = useRef<Partial<Record<TravelMode, any>>>({});
   const startMarkerRef = useRef<any>(null);
   const endMarkerRef = useRef<any>(null);
+  const waypointMarkersRef = useRef<any[]>([]);
   const carMarkerRef = useRef<any>(null);
   const movePathRef = useRef<[number, number][]>([]);
   const pathIdxRef = useRef(0);
   const moveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const routeRequestIdRef = useRef(0);
   const [mapReady, setMapReady] = useState(false);
   const [mapError, setMapError] = useState('');
+  // 无障碍设施标记（♿/🛗/⚠️），仅无障碍模式绘制，进入导航时清除
+  const accessibleMarkersRef = useRef<any[]>([]);
 
-  // ===== 解析起终点 =====
   useEffect(() => {
-    if (origin === '我的位置' || !origin || origin.includes('坐标') || origin.startsWith('经度')) {
-      setDisplayOrigin(ORIGIN_ADDRESSES[Math.floor(Math.random() * ORIGIN_ADDRESSES.length)]);
-      startCoord.current = [116.38 + Math.random() * 0.08, 39.89 + Math.random() * 0.05];
-    } else {
-      setDisplayOrigin(origin);
-      const sm = DEST_COORDS[origin];
-      if (sm) startCoord.current = sm;
-    }
-    const dm = Object.entries(DEST_COORDS).find(([k]) => destination.includes(k) || k.includes(destination));
-    if (dm) {
-      endCoord.current = dm[1];
-      setDisplayDest(dm[0]);
-    } else {
-      setDisplayDest(destination);
-    }
-  }, [origin, destination]);
+    return subscribeAccessibilityFacilities(() => {
+      if (selectedDisplayMode !== 'accessible') return;
+      setFacilityVersion(version => version + 1);
+    });
+  }, [selectedDisplayMode]);
+
+  useEffect(() => {
+    let cancelled = false;
+    // 立即使上一次起终点对应的规划请求失效，避免旧请求晚返回后重新画回旧路线。
+    routeRequestIdRef.current += 1;
+    startCoord.current = null;
+    endCoord.current = null;
+    setLocationsReady(false);
+    setLocationError('');
+    setRouteResults({});
+    setComparisonStatus(Object.fromEntries(VALID_MODES.map(mode => [mode, 'loading'])) as Partial<Record<TravelMode, 'loading'>>);
+
+    resolveRouteLocations(origin, destination, originCoords, destinationCoords)
+      .then(({ start, end, originLabel, destinationLabel }) => {
+        if (cancelled) return;
+        startCoord.current = start;
+        endCoord.current = end;
+        setDisplayOrigin(originLabel);
+        setDisplayDest(destinationLabel);
+        setLocationsReady(true);
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        console.error('Location resolve failed:', error);
+        startCoord.current = null;
+        endCoord.current = null;
+        setDisplayOrigin(origin || '请选择起点');
+        setDisplayDest(destination || '请选择终点');
+        setLocationError('无法解析起点或终点，请返回重新定位或从搜索结果中选择地点');
+        setIsPlanning(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [origin, destination, originCoords, destinationCoords]);
 
   // ===== 三路并发规划 =====
   useEffect(() => {
+    if (!locationsReady || !startCoord.current || !endCoord.current) {
+      setIsPlanning(false);
+      return;
+    }
+    // 请求序号：起点/终点变化后，旧请求结果不再覆盖
+    const requestId = ++routeRequestIdRef.current;
     setIsPlanning(true);
     setRouteResults({});
     setUnavailableNote('');
+    setTransitOptions([]);
+    setSelectedTransitOptionId(null);
+    setAccessibleOptions([]);
+    setAccessibleSelectedId(null);
+    setAccessibleUnavailableNote('');
 
     // 加载 mock 卡片数据作为展示兜底
     const query = new URLSearchParams({ origin, dest: destination, mode: selectedMode });
@@ -214,201 +341,195 @@ const RouteResultPage: React.FC = () => {
       .then(r => r.json())
       .then(d => { if (d.data) setCardData(Array.isArray(d.data) ? d.data : [d.data]); });
 
-    // 真实 AMap 三路规划
-    withTimeout(loadAMap(), 'AMap load').then((AMap: any) => {
-      const s = startCoord.current;
-      const e = endCoord.current;
-      const startLngLat = new AMap.LngLat(s[0], s[1]);
-      const endLngLat = new AMap.LngLat(e[0], e[1]);
+    // 真实 AMap 规划：统一走 routePlanningService（唯一实现），不再在结果页重复维护 planner
+    const s = startCoord.current;
+    const e = endCoord.current;
+    if (!s || !e) { setIsPlanning(false); return; }
 
-      // --- 驾车 ---
-      const planDrive = (): Promise<PlannedRoute> => withTimeout(new Promise((resolve, reject) => {
-        AMap.plugin(['AMap.Driving'], () => {
-          const drv = new AMap.Driving({ policy: AMap.DrivingPolicy.LEAST_TIME });
-          drv.search(startLngLat, endLngLat, (status: string, result: any) => {
-            if (status === 'complete' && result.routes?.length) {
-              const r = result.routes[0];
-              resolve({
-                mode: 'drive', distance: r.distance, duration: r.time,
-                path: extractRoutePath(r),
-                polyline: extractRoutePath(r),
-                congestionSegments: [{ level: 'slow', ratio: 0.3 }, { level: 'free', ratio: 0.7 }],
-                aiAdvice: '建议避开长安街东段，走三环辅路可节省约8分钟',
-              });
-            } else {
-              console.warn('Driving route failed:', result.info);
-              reject(new Error(result.info || '驾车路线规划失败'));
-            }
-          });
-        });
-      }), 'Driving route');
+    // 公交/地铁：调用前先判断同城（city/adcode 可用时提前拦截，不调高德公交接口）
+    if (selectedMode === 'bus') {
+      const transitCheck = isTransitSupported(
+        useTravelLocationStore.getState().origin,
+        useTravelPlanStore.getState().destination,
+      );
+      if (!transitCheck.supported) {
+        setRouteResults({});
+        setUnavailableNote(transitCheck.message || '🚌 暂不支持跨城市公交/地铁规划。');
+        setIsPlanning(false);
+        return;
+      }
+    }
 
-      // --- 公交 ---
-      const planTransit = (): Promise<PlannedRoute> => withTimeout(new Promise((resolve, reject) => {
-        AMap.plugin(['AMap.Transfer'], () => {
-          const transfer = new AMap.Transfer({
-            policy: AMap.TransferPolicy.LEAST_TIME,
-            city: '北京',
-            nightflag: false,
-          });
-          transfer.search(startLngLat, endLngLat, (status: string, result: any) => {
-            if (status === 'complete' && result.plans?.length) {
-              const plan = result.plans[0];
-              // 提取各段路径和换乘信息（按高德真实 segment 结构解析：
-              //   walking / bus.buslines / railway / transit，兼容多种字段别名）
-              const segs: SegmentData[] = [];
-              const paths: [number, number][] = [];
-              plan.segments.forEach((seg: any) => {
-                // 1) 步行段
-                if (seg.walking) {
-                  segs.push({ type: 'walk', instruction: `步行 ${formatDistance(seg.walking.distance || 0)}`, duration: seg.walking.duration });
-                  if (Array.isArray(seg.walking.path)) paths.push(...seg.walking.path);
-                  return;
-                }
-                // 2) 公交/地铁段（高德 Transfer 实际结构：seg.bus.buslines[] 候选线路）
-                if (seg.bus?.buslines?.length) {
-                  // 只取主选线路 buslines[0]，不要把所有候选线路都渲染
-                  const line = seg.bus.buslines[0];
-                  const rawType = String(line.type || line.lineType || seg.bus.type || '').toLowerCase();
-                  const isMetro = ['subway', 'metro', 'railway', 'rail', 'tram', 'train', '高铁', '动车', '地铁'].some(k => rawType.includes(k));
-                  segs.push({
-                    type: isMetro ? 'metro' : 'bus',
-                    lineName: line.name || line.lineName || line.route || '',
-                    fromStation: line.departure_stop?.name || line.departureStop?.name || line.startStation?.name || '',
-                    toStation: line.arrival_stop?.name || line.arrivalStop?.name || line.endStation?.name || '',
-                    stationCount: line.station_count || line.stationCount,
-                    duration: seg.bus.duration || line.duration,
-                  });
-                  if (Array.isArray(line.path)) paths.push(...line.path);
-                  else if (Array.isArray(seg.bus.path)) paths.push(...seg.bus.path);
-                  return;
-                }
-                // 3) 铁路 / 轨道交通段
-                if (seg.railway) {
-                  const rw = seg.railway;
-                  segs.push({
-                    type: 'metro',
-                    lineName: rw.name || rw.lineName || '轨道交通',
-                    fromStation: rw.departure_stop?.name || rw.startStation?.name || '',
-                    toStation: rw.arrival_stop?.name || rw.endStation?.name || '',
-                    stationCount: rw.station_count || rw.stationCount,
-                    duration: rw.duration,
-                  });
-                  if (Array.isArray(rw.path)) paths.push(...rw.path);
-                  return;
-                }
-                // 4) 兜底：旧版 transit 结构 / 纯指令段
-                if (seg.transit) {
-                  const t = seg.transit;
-                  const rawType = String(t.type || t.transitType || '').toLowerCase();
-                  const isMetro = ['subway', 'metro', 'railway', 'rail', 'tram', 'train', '高铁', '动车', '地铁'].some(k => rawType.includes(k));
-                  segs.push({
-                    type: isMetro ? 'metro' : 'bus',
-                    lineName: t.name || t.line || t.route || t.transitName || '',
-                    fromStation: (t.departureStop || t.startStation || t.onStation)?.name || '',
-                    toStation: (t.arrivalStop || t.endStation || t.offStation)?.name || '',
-                    stationCount: t.stationCount,
-                    duration: seg.transit.duration,
-                  });
-                  if (seg.transit.path) paths.push(...seg.transit.path);
-                  return;
-                }
-                // 5) 纯指令段兜底
-                if (seg.instruction) {
-                  const text = seg.instruction.text || seg.instruction.instruction || '';
-                  segs.push({ type: text.includes('步行') ? 'walk' : 'bus', instruction: text, duration: 0 });
-                }
-              });
-              // 只有高德返回了真实路径才视为成功；无路径不补模拟路线（按需求隐藏该方案）
-              if (!paths.length) {
-                console.warn('Transit route has no path segments');
-                reject(new Error('公交路线无路径数据'));
-                return;
-              }
-              resolve({
-                mode: 'bus', distance: plan.distance || 9200,
-                duration: plan.time, path: paths,
-                polyline: paths,
-                segments: segs, cost: plan.cost || 5,
-              });
-            } else {
-              console.warn('Transit route failed:', result.info);
-              reject(new Error(result.info || '公交路线规划失败'));
-            }
-          });
-        });
-      }), 'Transit route');
+    // 无障碍出行：取全部真实公交候选 → 按无障碍目标重排（无障碍推荐/时间较短/移动较少）
+    // 真实起点城市：从 origin store 读取（高德 Transfer 不再写死「北京」）
+    const originLoc = useTravelLocationStore.getState().origin;
+    const transitCity = originLoc?.city || originLoc?.province || null;
+    // 途经点：解析成坐标（驾车/骑行/步行支持；公交不支持，忽略并提示）
+    const resolveWp = async () => {
+      const coords = waypoints.length
+        ? (await resolveWaypointCoords(waypoints, transitCity)).map(w => w.coord)
+        : [];
+      if (selectedMode === 'bus' && coords.length) {
+        setUnavailableNote('🚌 公交/地铁模式不支持途经点，已忽略途经点规划。');
+      } else {
+        setUnavailableNote('');
+      }
+      return coords;
+    };
 
-      // --- 骑行 ---
-      const planRiding = (): Promise<PlannedRoute> => withTimeout(new Promise((resolve, reject) => {
-        AMap.plugin(['AMap.Riding'], () => {
-          const riding = new AMap.Riding({});
-          riding.search(startLngLat, endLngLat, (status: string, result: any) => {
-            if (status === 'complete' && result.routes?.length) {
-              const r = result.routes[0];
-              resolve({
-                mode: 'bike', distance: r.distance, duration: r.time,
-                path: extractRoutePath(r),
-                polyline: extractRoutePath(r),
-                calories: Math.round(r.distance / 1000 * 30),
-              });
-            } else {
-              console.warn('Riding route failed:', result.info);
-              reject(new Error(result.info || '骑行路线规划失败'));
-            }
-          });
-        });
-      }), 'Riding route');
+    // 无障碍：走无障碍候选
+    const planAccessible = async (): Promise<PlannedRoute> => {
+      await loadAccessibilityFacilities();
+      const candidates = await planTransitCandidates(s, e, transitCity);
+      const accessible = buildAccessibleOptions(candidates, accessibilityPreferences);
+      setAccessibleOptions(accessible);
+      setAccessibleUnavailableNote('');
+      if (accessible.length === 0) throw new Error('transit-no-valid-segment');
+      setAccessibleSelectedId(accessible[0].id);
+      return accessible[0].route;
+    };
 
-      // --- 步行（独立规划，不复用公交/驾车） ---
-      const planWalking = (): Promise<PlannedRoute> => withTimeout(new Promise((resolve, reject) => {
-        AMap.plugin(['AMap.Walking'], () => {
-          const walking = new AMap.Walking({});
-          walking.search(startLngLat, endLngLat, (status: string, result: any) => {
-            if (status === 'complete' && result.routes?.length) {
-              const r = result.routes[0];
-              resolve({
-                mode: 'walk', distance: r.distance, duration: r.time,
-                path: extractRoutePath(r),
-                polyline: extractRoutePath(r),
-                calories: Math.round(r.distance / 1000 * 45),
-              });
-            } else {
-              console.warn('Walking route failed:', result.info);
-              reject(new Error(result.info || '步行路线规划失败'));
-            }
-          });
-        });
-      }), 'Walking route');
+    // 驾车/骑行/步行：多候选（时间最短 + 距离最短，去重后可能 1 条）
+    const planCandidates = async (): Promise<PlannedRoute> => {
+      const wp = await resolveWp();
+      const candidates = await planRouteCandidates(selectedMode, s, e, transitCity, wp);
+      if (candidates.length) {
+        setRouteCandidates(prev => ({ ...prev, [selectedMode]: candidates }));
+        setSelectedCandidateIdx(prev => ({ ...prev, [selectedMode]: 0 }));
+        return candidates[0].route;
+      }
+      // 无候选（理论上不该到）→ 回退单条
+      return planAmapRoute(selectedMode, s, e, transitCity, wp);
+    };
 
-      // 真实结果驱动：高德规划成功才保留该路线，失败不展示、不补模拟路线
-      Promise.allSettled([planDrive(), planTransit(), planRiding(), planWalking()])
-        .then((results: PromiseSettledResult<PlannedRoute>[]) => {
-          const res: Partial<Record<TravelMode, PlannedRoute>> = {};
-          results.forEach((r) => {
-            if (r.status === 'fulfilled') {
-              res[r.value.mode] = r.value;
-              console.log(`${r.value.mode} 规划成功，路径点数:`, r.value.path.length);
-            } else {
-              const mode = VALID_MODES[results.indexOf(r)];
-              console.error(`${mode} 规划失败（不展示该方案）:`, r.reason);
-              // 失败：不赋值 → 页面不显示该方式
-            }
+    // 公交：真实候选方案按普通出行目标重排，首个候选作为默认路线
+    const planBus = async (): Promise<PlannedRoute> => {
+      const waypointCoords = await resolveWp();
+      if (waypoints.some(point => point.trim()) && waypointCoords.length !== waypoints.filter(point => point.trim()).length) {
+        throw new Error('TRANSIT_WAYPOINT_RESOLVE_FAILED');
+      }
+      const candidates = await planTransitCandidates(s, e, transitCity, waypointCoords);
+      const options = buildTransitRouteOptions(candidates);
+      if (!options.length) throw new Error('transit-no-valid-segment');
+      setTransitOptions(options);
+      setSelectedTransitOptionId(options[0].id);
+      return options[0].route;
+    };
+
+    const planTask = selectedMode === 'bus'
+      ? (selectedDisplayMode === 'accessible' ? planAccessible() : planBus())
+      : planCandidates();
+
+    planTask
+      .then((route) => {
+        if (requestId !== routeRequestIdRef.current) return;
+        setRouteResults({ [route.mode]: route });
+        setComparisonStatus(current => ({ ...current, [route.mode]: 'ready' }));
+        setUnavailableNote('');
+        setIsPlanning(false);
+
+        if (accessibleActive) return;
+        const planComparisonRoute = async (mode: TravelMode): Promise<PlannedRoute> => {
+          if (mode === 'bus') {
+            const transitCheck = isTransitSupported(useTravelLocationStore.getState().origin, useTravelPlanStore.getState().destination);
+            if (!transitCheck.supported || waypoints.some(point => point.trim())) throw new Error('TRANSIT_UNAVAILABLE');
+            const candidates = await planTransitCandidates(s, e, transitCity);
+            const option = buildTransitRouteOptions(candidates)[0];
+            if (!option) throw new Error('EMPTY_ROUTE');
+            return option.route;
+          }
+          const waypointCoords = mode === 'drive' ? await resolveWp() : [];
+          const candidates = await planRouteCandidates(mode, s, e, transitCity, waypointCoords);
+          if (!candidates.length) throw new Error('EMPTY_ROUTE');
+          return candidates[0].route;
+        };
+        void Promise.allSettled(VALID_MODES.filter(mode => mode !== route.mode).map(async mode => ({ mode, route: await planComparisonRoute(mode) })))
+          .then(results => {
+            if (requestId !== routeRequestIdRef.current) return;
+            const nextRoutes: Partial<Record<TravelMode, PlannedRoute>> = {};
+            const nextStatuses: Partial<Record<TravelMode, 'ready' | 'unavailable'>> = {};
+            results.forEach((result, index) => {
+              const mode = VALID_MODES.filter(candidate => candidate !== route.mode)[index];
+              if (result.status === 'fulfilled') { nextRoutes[result.value.mode] = result.value.route; nextStatuses[result.value.mode] = 'ready'; }
+              else nextStatuses[mode] = 'unavailable';
+            });
+            setRouteResults(current => ({ ...current, ...nextRoutes }));
+            setComparisonStatus(current => ({ ...current, ...nextStatuses }));
           });
-          setRouteResults(res);
-          // 若用户选中的方式不可用，自动切换到第一个可用方案
-          const firstAvailable = VALID_MODES.find(m => res[m]);
-          setSelectedMode(prev => (prev && res[prev] ? prev : (firstAvailable || 'drive')));
-          setUnavailableNote(initMode && !res[initMode] ? `该起终点暂无可用${MODE_META[initMode].label}路线` : '');
-          setIsPlanning(false);
-        });
-    }).catch((e) => {
-      console.error('AMap load failed:', e);
-      setMapError('地图加载失败，请检查高德 Key / 安全密钥 / 域名白名单');
-      setRouteResults({});
-      setIsPlanning(false);
-    });
-  }, [origin, destination, waypoints]);
+      })
+      .catch((error) => {
+        if (requestId !== routeRequestIdRef.current) return;
+        console.error(`${selectedMode} 规划失败（不展示该方案）:`, error);
+        setRouteResults({});
+        setRouteCandidates(prev => ({ ...prev, [selectedMode]: [] }));
+        const msg = error instanceof Error ? error.message : '';
+        if (selectedMode === 'bus' && msg.includes('TRANSIT_WAYPOINTS_UNSUPPORTED')) {
+          setUnavailableNote('🚌 公交/地铁路线暂不支持途经点，请删除途经点后继续。');
+        } else if (selectedMode === 'bus' && msg.includes('CROSS_CITY_TRANSIT_UNSUPPORTED')) {
+          setUnavailableNote('🚌 当前起终点不在同一城市，暂不支持跨城市公交/地铁规划。');
+        } else if (selectedMode === 'bus' && msg.includes('transit-no-valid-segment')) {
+          setUnavailableNote('🚌 暂无可用公交/地铁方案。');
+        } else if (msg.includes('TOO_MANY_WAYPOINTS')) {
+          setUnavailableNote('驾车路线最多支持 16 个途经点，请删除部分途经点后重试。');
+        } else if (msg.includes('LONG_DISTANCE')) {
+          setUnavailableNote(`起终点距离过远，${MODE_META[selectedMode].label}耗时过长，建议换乘公交或驾车。`);
+        } else if (msg.includes('EMPTY_ROUTE')) {
+          setUnavailableNote(`暂未找到可用${MODE_META[selectedMode].label}路线，请稍后重试。`);
+        } else {
+          setUnavailableNote(`该起终点暂无可用${MODE_META[selectedMode].label}路线`);
+        }
+        setIsPlanning(false);
+      });
+  }, [origin, destination, waypoints, originCoords, locationsReady, selectedMode, selectedDisplayMode, facilityVersion, accessibilityPreferences]);
+
+  // ===== 规划完成后加载每条成功路线的未来拥堵预测（模拟 Service） =====
+  useEffect(() => {
+    if (isPlanning) return;
+    let cancelled = false;
+    setForecastLoading(true);
+    setForecastError('');
+
+    const modes = VALID_MODES.filter(m => routeResults[m]);
+    Promise.all(modes.map(async (mode) => {
+      const result = await getRouteForecast(mode, departureAtRef.current);
+      return { mode, points: result.points };
+    }))
+      .then(items => {
+        if (cancelled) return;
+        const map: Partial<Record<TravelMode, RouteForecastPoint[]>> = {};
+        items.forEach(({ mode, points }) => { map[mode] = points; });
+        setForecasts(map);
+        setForecastLoading(false);
+        // 智能推荐 + 出发时间建议（基于当前选中方案）
+        const best = recommendBestRoute(modes.map(m => {
+          const r = routeResults[m]!;
+          return {
+            mode: m, label: MODE_META[m].label,
+            distance: r.distance, duration: r.duration, toll: r.cost ?? 0,
+            forecast: map[m] || undefined,
+          };
+        }));
+        if (best) setRecommendationId(best.mode);
+        const selected = routeResults[selectedMode];
+        if (selected) {
+          setDepartureAdvice(generateDepartureAdvice(map[selectedMode] || []));
+        }
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setForecastError('预测服务暂不可用');
+        setForecastLoading(false);
+      });
+
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPlanning]);
+
+  // ===== 切换路线时更新出发时间建议 =====
+  useEffect(() => {
+    setDepartureAdvice(generateDepartureAdvice(forecasts[selectedMode] || []));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedMode, forecasts]);
 
   // ===== 唯一地图初始化（只创建一次，导航复用） =====
   useEffect(() => {
@@ -419,27 +540,15 @@ const RouteResultPage: React.FC = () => {
     loadAMap().then((AMap: any) => {
       if (disposed || !mapContainerRef.current || mapRef.current) return;
       const map = new AMap.Map(mapContainerRef.current, {
-        zoom: 13, center: startCoord.current,
+        zoom: 11, center: [116.397, 39.909],
         viewMode: '3D', pitch: 0, rotation: 0,
         resizeEnable: true, showBuildingBlock: true,
       });
       const trafficLayer = new AMap.TileLayer.Traffic({ zIndex: 10 });
       map.add(trafficLayer);
 
-      const startIcon = new AMap.Marker({
-        position: startCoord.current,
-        icon: makeMarkerIcon(AMap, '#52c41a', '起', 28),
-      });
-      const endIcon = new AMap.Marker({
-        position: endCoord.current,
-        icon: makeMarkerIcon(AMap, '#f5222d', '终', 28),
-      });
-      map.add([startIcon, endIcon]);
-
       mapRef.current = map;
       trafficLayerRef.current = trafficLayer;
-      startMarkerRef.current = startIcon;
-      endMarkerRef.current = endIcon;
       setMapReady(true);
     }).catch((e: unknown) => {
       if (disposed) return;
@@ -454,8 +563,10 @@ const RouteResultPage: React.FC = () => {
       mapRef.current = null;
       trafficLayerRef.current = null;
       polylineRef.current = null;
+      routePolylineRefs.current = {};
       startMarkerRef.current = null;
       endMarkerRef.current = null;
+      waypointMarkersRef.current = [];
       carMarkerRef.current = null;
     };
   }, []);
@@ -467,46 +578,195 @@ const RouteResultPage: React.FC = () => {
     const AMap = (window as any).AMap;
     if (!AMap) return;
 
-    if (startMarkerRef.current) { map.remove(startMarkerRef.current); }
+    let cancelled = false;
+
+    if (startMarkerRef.current) { map.remove(startMarkerRef.current); startMarkerRef.current = null; }
+    if (endMarkerRef.current) { map.remove(endMarkerRef.current); endMarkerRef.current = null; }
+    waypointMarkersRef.current.forEach(marker => map.remove(marker));
+    waypointMarkersRef.current = [];
+    if (!locationsReady || !startCoord.current || !endCoord.current) return;
+
     startMarkerRef.current = new AMap.Marker({
       position: startCoord.current,
       icon: makeMarkerIcon(AMap, '#52c41a', '起', 28),
     });
-    if (endMarkerRef.current) { map.remove(endMarkerRef.current); }
     endMarkerRef.current = new AMap.Marker({
       position: endCoord.current,
       icon: makeMarkerIcon(AMap, '#f5222d', '终', 28),
     });
     map.add([startMarkerRef.current, endMarkerRef.current]);
-    map.setCenter(startCoord.current);
-  }, [origin, destination, mapReady]);
 
-  // ===== 切换路线时重绘 polyline（导航时不自动 setFitView） =====
+    const city = useTravelLocationStore.getState().origin?.city || null;
+    resolveWaypointCoords(waypoints, city).then(items => {
+      if (cancelled || !mapRef.current || !items.length) return;
+      const markers = items.map((item, index) => new AMap.Marker({
+        position: item.coord,
+        content: `<div style="width:28px;height:28px;border-radius:50%;background:#faad14;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:14px;">${index + 1}</div>`,
+        offset: new AMap.Pixel(-14, -14),
+        title: `途经点${index + 1}：${item.name}`,
+        zIndex: 90,
+      }));
+      map.add(markers);
+      waypointMarkersRef.current = markers;
+    });
+    map.setCenter(startCoord.current);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [origin, destination, originCoords, mapReady, locationsReady, waypoints]);
+
+  // ===== 多路线 Polyline：同时绘制所有可用方案，当前高亮、其他淡化 =====
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
-    const route = routeResults[selectedMode];
-    if (!route?.path?.length) return;
-
-    if (polylineRef.current) { map.remove(polylineRef.current); polylineRef.current = null; }
-
-    const color = MODE_META[selectedMode].color;
     const AMap = (window as any).AMap;
     if (!AMap?.Polyline) return;
 
-    const pl = new AMap.Polyline({
-      path: route.path,
-      strokeColor: color,
-      strokeWeight: selectedMode === 'bike' ? 4 : 5,
-      strokeOpacity: 0.85,
-      strokeStyle: selectedMode === 'bus' ? 'dashed' : 'solid',
-      lineJoin: 'round', lineCap: 'round',
+    // 清除旧 Polyline
+    Object.values(routePolylineRefs.current).forEach(pl => { if (pl) map.remove(pl); });
+    routePolylineRefs.current = {};
+
+    const modes = VALID_MODES.filter(m => routeResults[m]?.path?.length);
+    if (!modes.length) return;
+
+    modes.forEach((mode) => {
+      const route = routeResults[mode]!;
+      const isSelected = mode === selectedMode;
+      const pl = new AMap.Polyline({
+        path: route.path,
+        strokeColor: MODE_META[mode].color,
+        strokeWeight: isSelected ? 7 : 5,
+        strokeOpacity: isSelected ? 0.95 : 0.3,
+        strokeStyle: mode === 'bus' ? 'dashed' : 'solid',
+        outlineColor: '#ffffff',
+        outlineWidth: mode === 'bus' ? 2 : 0,
+        lineJoin: 'round', lineCap: 'round',
+      });
+      map.add(pl);
+      routePolylineRefs.current[mode] = pl;
     });
-    map.add(pl);
-    polylineRef.current = pl;
-    // 仅在普通规划状态调整视野；导航状态保持导航视角
-    if (!navActive) map.setFitView([pl], false, [80, 60, 80, 60]);
+
+    // 导航状态保持导航视角，不 setFitView
+    if (!navActive) {
+      const selectedPl = routePolylineRefs.current[selectedMode];
+      if (selectedPl) map.setFitView([selectedPl], false, [80, 60, 80, 60]);
+    }
   }, [selectedMode, routeResults, mapReady, navActive]);
+
+  // ===== 无障碍模式：绘制 ♿/🛗/⚠️ 设施节点标记（复用唯一地图） =====
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    const AMap = (window as any).AMap;
+    if (!AMap) return;
+
+    // 清除旧标记
+    accessibleMarkersRef.current.forEach(m => { try { map.remove(m); } catch { /* ignore */ } });
+    accessibleMarkersRef.current = [];
+
+    if (!accessibleActive || !accessibleSelected || !accessibleSelected.route.path?.length || navActive) return;
+
+    // 途经站点的无障碍设施 → 标记
+    const stationNames = accessibleSelected.metrics.stationNames;
+    stationNames.forEach(name => {
+      const facility = getFacilityForStation(name);
+      if (!facility || !Number.isFinite(facility.lng) || !Number.isFinite(facility.lat) || (facility.lng === 0 && facility.lat === 0)) return;
+      const best = facility.entrances.slice().sort((a, b) =>
+        Number(b.wheelchairAccessible && b.elevator) - Number(a.wheelchairAccessible && a.elevator) ||
+        Number(b.wheelchairAccessible) - Number(a.wheelchairAccessible) ||
+        Number(b.ramp) - Number(a.ramp),
+      )[0];
+      const isObstacle = best?.stairsOnly || best?.status === 'obstacle';
+      const hasElevator = best?.elevator;
+      const emoji = isObstacle ? '⚠️' : hasElevator ? '🛗' : '♿';
+      const color = isObstacle ? '#f5222d' : hasElevator ? '#13c2c2' : '#722ed1';
+      const marker = new AMap.Marker({
+        position: [facility.lng, facility.lat],
+        content: `<div style="width:30px;height:30px;border-radius:50%;background:${color};border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;font-size:15px;">${emoji}</div>`,
+        offset: new AMap.Pixel(-15, -15),
+        title: `${facility.stationName} · ${best?.name || ''}${best?.elevator ? ' 电梯' : ''}${best?.status === 'verified' ? ' · 已确认' : best?.status === 'unknown' ? ' · 待确认' : ' · 存在障碍'}`,
+      });
+      marker.on('click', () => {
+        new AMap.InfoWindow({
+          content: `<div style="padding:10px 12px;font-size:13px;min-width:180px"><b>♿ ${facility.stationName}</b><br/>${facility.entrances.map(e => `${e.name} ${e.elevator ? '🛗' : ''}${e.ramp ? '↗️' : ''}${e.stairsOnly ? '⚠️楼梯' : '♿'} ${e.status === 'verified' ? '🟢已确认' : e.status === 'unknown' ? '🟡待确认' : '🔴存在障碍'}`).join('<br/>')}</div>`,
+          offset: new AMap.Pixel(0, -30),
+        }).open(map, [facility.lng, facility.lat]);
+      });
+      map.add(marker);
+      accessibleMarkersRef.current.push(marker);
+    });
+  }, [accessibleActive, accessibleSelected, accessibleSelectedId, mapReady, navActive]);
+
+  // ===== 导航模式：复用唯一地图，只切换视角 + 车辆 Marker =====
+  useEffect(() => {
+    navigationLocationCleanupRef.current?.();
+    navigationLocationCleanupRef.current = null;
+    walkArrivalCountRef.current = 0;
+    const stage = stageSnapshot?.stages[stageSnapshot.currentStageIndex];
+    if (!navActive || !stageSnapshot || stageSnapshot.navStatus !== 'navigating' || !stage) return;
+    if (stage.kind !== 'walk' && stage.kind !== 'transfer') return;
+    if (!stage.autoComplete || !stage.endCoord) return;
+    navigationLocationCleanupRef.current = watchNavigationLocation((position) => {
+      if (position.accuracy > 100) return;
+      if (position.timestamp - lastReportedLocationRef.current >= 10000) {
+        lastReportedLocationRef.current = position.timestamp;
+        void reportStageLocation(position);
+      }
+      const distance = distanceBetweenMeters({ lng: position.lng, lat: position.lat }, { lng: stage.endCoord![0], lat: stage.endCoord![1] });
+      if (distance <= 60) walkArrivalCountRef.current += 1;
+      else walkArrivalCountRef.current = 0;
+      if (walkArrivalCountRef.current >= 2) {
+        completeStage('location');
+        walkArrivalCountRef.current = 0;
+      }
+    });
+    return () => {
+      navigationLocationCleanupRef.current?.();
+      navigationLocationCleanupRef.current = null;
+    };
+  }, [navActive, stageSnapshot?.currentStageIndex, stageSnapshot?.navStatus, stageSnapshot?.stages, completeStage]);
+
+  useEffect(() => {
+    if (!navActive || !stageSnapshot || stageSnapshot.navStatus !== 'navigating') return;
+    const stage = stageSnapshot.stages[stageSnapshot.currentStageIndex];
+    if (!stage || (stage.kind !== 'bus' && stage.kind !== 'metro') || !stage.endCoord) return;
+    const cleanup = watchNavigationLocation((position) => {
+      if (position.accuracy > 150) return;
+      if (position.timestamp - lastReportedLocationRef.current >= 10000) {
+        lastReportedLocationRef.current = position.timestamp;
+        void reportStageLocation(position);
+      }
+      const distance = distanceBetweenMeters({ lng: position.lng, lat: position.lat }, { lng: stage.endCoord![0], lat: stage.endCoord![1] });
+      const level = distance <= 80 ? 'arriving' : distance <= 220 ? 'near' : null;
+      if (level && !stageSnapshot.reminderKeys.includes(`${stage.id}:${level}`)) {
+        addStageReminder(`${stage.id}:${level}`);
+        if (level === 'arriving') setStageArrivalPending(true);
+        setNavRouteError(level === 'arriving' ? `已接近${stage.toStation || '下车站'}，请准备下车并确认` : `即将到达${stage.toStation || '下车站'}`);
+      }
+    });
+    return cleanup;
+  }, [navActive, stageSnapshot, addStageReminder]);
+
+  useEffect(() => {
+    const stage = stageSnapshot?.stages[stageSnapshot.currentStageIndex];
+    if (!navActive || stageSnapshot?.navStatus !== 'navigating' || !stage?.lineName || (stage.kind !== 'bus' && stage.kind !== 'metro')) {
+      setTransitRealtime(null);
+      return;
+    }
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const status = await getTransitLineStatus(stage.lineName!);
+        if (!cancelled) setTransitRealtime(status);
+      } catch {
+        if (!cancelled) setTransitRealtime(null);
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(refresh, 30000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [navActive, stageSnapshot?.currentStageIndex, stageSnapshot?.navStatus, stageSnapshot?.stages]);
 
   // ===== 导航模式：复用唯一地图，只切换视角 + 车辆 Marker =====
   useEffect(() => {
@@ -515,11 +775,99 @@ const RouteResultPage: React.FC = () => {
     if (!map || !mapReady) return;
 
     const navRoute = routeResults[navMode];
+    const resolvedStart = startCoord.current;
+    if (!resolvedStart) {
+      setNavRouteError('起点坐标无效，请返回重新选择起点');
+      return;
+    }
     if (!navRoute?.path?.length) {
       setNavRouteError('当前路线无可用路径');
       return;
     }
     setNavRouteError('');
+
+    // 阶段导航保留车辆 Marker 和运动轨迹，但不让旧逻辑直接把整条路线判定为到达。
+    if (stageSnapshot) {
+      Object.entries(routePolylineRefs.current).forEach(([m, pl]) => {
+        if (pl) pl.setOptions({ visible: m === navMode });
+      });
+      if (moveTimerRef.current) { clearInterval(moveTimerRef.current); moveTimerRef.current = null; }
+      if (carMarkerRef.current) { map.remove(carMarkerRef.current); carMarkerRef.current = null; }
+      const AMap = (window as any).AMap;
+      if (!AMap) return;
+      const stage = stageSnapshot.stages[stageSnapshot.currentStageIndex];
+      if (stageSnapshot.navStatus === 'completed' || stageSnapshot.navStatus === 'ended') return;
+      const stagePath = stage?.kind === 'arrive' ? null : getStageMapPath(stage || {}, navRoute.path);
+      if (stage?.kind === 'arrive') {
+        void completeStage('system');
+        setNavStatus('arrived');
+        navStatusRef.current = 'arrived';
+        return;
+      }
+      if (!stagePath?.length) return;
+      const modeIcon = getStageTransportIcon(stage?.kind);
+      const markerColor = accessibleActive ? '#722ed1' : MODE_META[navMode].color;
+      const carMarker = new AMap.Marker({
+        position: stagePath[0], anchor: 'center',
+        icon: new AMap.Icon({
+          image: 'data:image/svg+xml,' + encodeURIComponent(
+            `<svg xmlns="http://www.w3.org/2000/svg" width="44" height="44"><circle cx="22" cy="22" r="20" fill="${markerColor}" stroke="#fff" stroke-width="3"/><text x="22" y="29" text-anchor="middle" fill="#fff" font-size="20">${modeIcon}</text></svg>`
+          ), size: new AMap.Size(44, 44),
+        }),
+      });
+      map.add(carMarker);
+      carMarkerRef.current = carMarker;
+      movePathRef.current = stagePath;
+      pathIdxRef.current = 0;
+      navDistanceRef.current = Math.round(stage?.distanceMeters || navRoute.distance);
+      navDurationRef.current = Math.round(stage?.durationSeconds || navRoute.duration);
+      setNavDistance(navDistanceRef.current);
+      map.setZoom(16);
+      map.setPitch(0);
+      map.setRotation(0);
+      map.setCenter(stagePath[0]);
+      map.resize?.();
+      const moveTimer = setInterval(() => {
+        const path = movePathRef.current;
+        if (!path.length || !carMarkerRef.current) return;
+        const nextIndex = pathIdxRef.current + 1;
+        if (nextIndex >= path.length) {
+          clearInterval(moveTimer);
+          if (moveTimerRef.current === moveTimer) moveTimerRef.current = null;
+          const end = path[path.length - 1];
+          carMarkerRef.current.setPosition(end);
+          map.setCenter(end);
+          setNavDistance(0);
+          if (stage?.kind === 'walk' || stage?.kind === 'transfer') {
+            void completeStage('system');
+          } else if (stage?.kind === 'bus' || stage?.kind === 'metro') {
+            setStageArrivalPending(true);
+            setNavRouteError(`已到达${stage.toStation || '下车站'}，请确认下车`);
+          }
+          return;
+        }
+        pathIdxRef.current = nextIndex;
+        const next = path[pathIdxRef.current];
+        carMarkerRef.current.setPosition(next);
+        map.setCenter(next);
+        setNavDistance(Math.max(0, navDistanceRef.current - Math.ceil((stage?.distanceMeters || navRoute.distance) / path.length)));
+        navDurationRef.current = Math.max(0, navDurationRef.current - 1);
+      }, 250);
+      moveTimerRef.current = moveTimer;
+      return () => {
+        Object.values(routePolylineRefs.current).forEach(pl => { if (pl) pl.setOptions({ visible: true }); });
+        if (moveTimerRef.current === moveTimer) { clearInterval(moveTimer); moveTimerRef.current = null; }
+        if (carMarkerRef.current && map) map.remove(carMarkerRef.current);
+        carMarkerRef.current = null;
+        movePathRef.current = [];
+        pathIdxRef.current = 0;
+      };
+    }
+
+    // 导航时只显示当前路线，隐藏其他方案的 Polyline
+    Object.entries(routePolylineRefs.current).forEach(([m, pl]) => {
+      if (pl) pl.setOptions({ visible: m === navMode });
+    });
 
     // 清理旧的移动 Timer 和车辆 Marker
     if (moveTimerRef.current) { clearInterval(moveTimerRef.current); moveTimerRef.current = null; }
@@ -529,12 +877,13 @@ const RouteResultPage: React.FC = () => {
     if (!AMap) return;
 
     // 创建唯一车辆 Marker
-    const modeIcon = MODE_META[navMode].icon;
+    const modeIcon = accessibleActive ? '♿' : MODE_META[navMode].icon;
+    const markerColor = accessibleActive ? '#722ed1' : MODE_META[navMode].color;
     const carMarker = new AMap.Marker({
-      position: startCoord.current, anchor: 'center',
+      position: resolvedStart, anchor: 'center',
       icon: new AMap.Icon({
         image: 'data:image/svg+xml,' + encodeURIComponent(
-          `<svg xmlns="http://www.w3.org/2000/svg" width="44" height="44"><circle cx="22" cy="22" r="20" fill="${MODE_META[navMode].color}" stroke="#fff" stroke-width="3"/><text x="22" y="29" text-anchor="middle" fill="#fff" font-size="20">${modeIcon}</text></svg>`
+          `<svg xmlns="http://www.w3.org/2000/svg" width="44" height="44"><circle cx="22" cy="22" r="20" fill="${markerColor}" stroke="#fff" stroke-width="3"/><text x="22" y="29" text-anchor="middle" fill="#fff" font-size="20">${modeIcon}</text></svg>`
         ),
         size: new AMap.Size(44, 44),
       }),
@@ -544,13 +893,14 @@ const RouteResultPage: React.FC = () => {
 
     movePathRef.current = navRoute.path;
     pathIdxRef.current = 0;
-    setNavDistance(Math.round(navRoute.distance));
+    navDistanceRef.current = Math.round(navRoute.distance);
+    setNavDistance(navDistanceRef.current);
 
     // 导航视角（不重建地图）
     map.setZoom(16);
     map.setPitch(60);
     map.setRotation(0);
-    map.setCenter(startCoord.current);
+    map.setCenter(resolvedStart);
     map.resize?.();
 
     // 车辆移动动画
@@ -558,65 +908,358 @@ const RouteResultPage: React.FC = () => {
       const p = movePathRef.current;
       const idx = pathIdxRef.current;
       if (!p.length || !carMarkerRef.current) return;
-      if (idx >= p.length - 1) {
+      // 到达判定：走完路径 或 剩余距离 ≤ ARRIVAL_THRESHOLD_METERS=50m
+      if (idx >= p.length - 1 || navDistanceRef.current <= ARRIVAL_THRESHOLD_METERS) {
         clearInterval(moveTimer);
         if (moveTimerRef.current === moveTimer) moveTimerRef.current = null;
+        navDistanceRef.current = 0;
         setNavDistance(0);
+        handleArrived();
         return;
       }
       pathIdxRef.current += 1;
       const next = p[pathIdxRef.current];
       carMarkerRef.current.setPosition(next);
       map.setCenter(next);
-      setNavDistance(d => Math.max(0, d - (navRoute.distance / p.length)));
+      navDistanceRef.current = Math.max(0, navDistanceRef.current - (navRoute.distance / p.length));
+      setNavDistance(navDistanceRef.current);
     }, 150);
     moveTimerRef.current = moveTimer;
 
     return () => {
-      // 只清理导航资源，不销毁主地图
+      // 只清理导航资源，不销毁主地图；恢复所有路线可见
+      Object.values(routePolylineRefs.current).forEach(pl => { if (pl) pl.setOptions({ visible: true }); });
       if (moveTimerRef.current) { clearInterval(moveTimerRef.current); moveTimerRef.current = null; }
       if (carMarkerRef.current && map) { map.remove(carMarkerRef.current); }
       carMarkerRef.current = null;
       movePathRef.current = [];
       pathIdxRef.current = 0;
     };
-  }, [navActive, navMode, mapReady]);
+  }, [navActive, navMode, mapReady, stageSnapshot?.currentStageIndex, stageSnapshot?.navStatus]);
 
-  // ===== 退出导航：恢复普通视角，保留地图 =====
-  const stopNavigation = () => {
+  // ===== 到达处理：停止一切导航逻辑，只保留地图/终点Marker/路线 =====
+  // 到达判定：车辆走完路径（剩余距离 ≤ ARRIVAL_THRESHOLD_METERS=50m）。幂等。
+  const handleArrived = () => {
+    if (navStatusRef.current === 'arrived') return;
+    navStatusRef.current = 'arrived';
+    setNavStatus('arrived');
+    setNavDistance(0);
+    // 停止车辆移动模拟/定位更新/距离/ETA/下一步骤切换
+    if (moveTimerRef.current) { clearInterval(moveTimerRef.current); moveTimerRef.current = null; }
+    // 地图聚焦终点（不重建地图）
+    const map = mapRef.current;
+    const end = endCoord.current;
+    if (map && end) { map.setCenter(end); map.setZoom(16); }
+    // 完成 Trip：只执行一次（hasCompletedTripRef 幂等，防重复 completeTrip / 重复加积分）
+    if (isLoggedIn && !hasCompletedTripRef.current) {
+      hasCompletedTripRef.current = true;
+      void useTripStore.getState().completeActiveTrip()
+        .then(trip => { if (trip) setArrivedTrip(trip); })
+        .catch(() => undefined);
+    }
+  };
+
+  const completeCurrentStage = async () => {
+    const current = stageSnapshot?.stages[stageSnapshot.currentStageIndex];
+    if (!current || stageSnapshot?.navStatus !== 'navigating' || stageActionBusy) return;
+    setStageActionBusy(true);
+    try {
+      if (current.kind === 'arrive') await confirmStage();
+      else await completeStage(current.requiresConfirmation ? 'confirmation' : 'manual');
+      setStageArrivalPending(false);
+      setNavRouteError('');
+    } finally {
+      setStageActionBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    if (stageSnapshot?.navStatus !== 'completed') return;
+    setStageArrivalPending(false);
+    setNavRouteError('');
+    handleArrived();
+  }, [stageSnapshot?.navStatus]);
+
+  // ===== 开始导航：先校验路线有效性（最终一道防线），再置状态机 + 登录用户创建 Trip =====
+  const startNavigation = (mode: TravelMode) => {
+    // 防重复进入：导航中/已到达/已结束时不允许再次启动导航（避免重复创建 Trip）
+    if (navStatusRef.current === 'navigating' || navStatusRef.current === 'arrived' || navStatusRef.current === 'ended') {
+      setNavRouteError('当前已有进行中的导航');
+      return;
+    }
+    // 路线数据必须与请求模式匹配：transit 绝不能用 driving path 冒充
+    const route = routeResults[mode];
+    if (!route) {
+      setNavRouteError('路线数据无效，请返回重新规划');
+      return;
+    }
+    if (route.mode !== mode) {
+      setNavRouteError('路线数据无效，请返回重新规划');
+      return;
+    }
+    if (mode === 'bus') {
+      const hasValidSegment = (route.segments || []).some(s => s.type === 'bus' || s.type === 'metro' || s.type === 'walk');
+      if (!hasValidSegment) {
+        setNavRouteError('当前公交路线数据无效，请重新规划。');
+        return;
+      }
+    }
+    setSelectedMode(mode);
+    setNavMode(mode);
+    const stageOrigin = useTravelLocationStore.getState().origin;
+    const stageDestination = useTravelPlanStore.getState().destination || {
+      name: displayDest, address: displayDest, lng: endCoord.current?.[0] ?? null, lat: endCoord.current?.[1] ?? null, source: 'manual' as const,
+    };
+    const stages = buildTravelStages(route, stageOrigin, stageDestination);
+    const routeFingerprint = createTravelRouteFingerprint(route, stageOrigin, stageDestination);
+    const restored = restoreStageNavigation(routeFingerprint);
+    if (!restored) {
+      void startStageNavigation({
+        sessionId: typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `stage_${Date.now()}`,
+        routeFingerprint,
+        origin: stageOrigin,
+        destination: stageDestination,
+        routeMode: route.mode,
+        route,
+        stages,
+      });
+    }
+    navStatusRef.current = 'navigating';
+    setNavStatus('navigating');
+    setNavActive(true);
+    hasCompletedTripRef.current = false;
+    setArrivedTrip(null);
+    if (isLoggedIn) {
+      const s = startCoord.current, e = endCoord.current;
+      const route = routeResults[mode];
+      if (s && e && route) {
+        const clientSessionId = typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : `nav_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+        const selectedCandidateTag = mode === 'drive' ? selectedCandidate('drive')?.tag : undefined;
+        const routeStrategy: TripRouteStrategy = mode === 'bus'
+          ? (accessibleActive ? 'accessible' : selectedTransitOptionId === 'least-walk' ? 'shortest' : 'fastest')
+          : mode === 'drive'
+            ? (selectedCandidateTag || 'fastest')
+            : 'fastest';
+        void useTripStore.getState().startTrip({
+          clientSessionId,
+          mode,
+          profile: selectedDisplayMode === 'ev' ? 'ev' : 'standard',
+          routeStrategy,
+          origin: { name: displayOrigin, address: displayOrigin, lng: s[0], lat: s[1] },
+          destination: { name: displayDest, address: displayDest, lng: e[0], lat: e[1] },
+          routeSnapshot: {
+            estimatedDistance: route.distance,
+            estimatedDuration: route.duration,
+            routeProvider: 'amap',
+            path: route.path,
+          },
+          dataSource: 'real',
+        }).catch(() => undefined);
+      }
+    }
+  };
+
+  // ===== 清理导航临时资源（不清地图、不清用户规划条件） =====
+  const clearNavigationResources = () => {
     if (moveTimerRef.current) { clearInterval(moveTimerRef.current); moveTimerRef.current = null; }
     const map = mapRef.current;
     if (map && carMarkerRef.current) { map.remove(carMarkerRef.current); }
     carMarkerRef.current = null;
+    if (map) {
+      accessibleMarkersRef.current.forEach(m => { try { map.remove(m); } catch { /* ignore */ } });
+    }
+    accessibleMarkersRef.current = [];
     movePathRef.current = [];
     pathIdxRef.current = 0;
+    Object.values(routePolylineRefs.current).forEach(pl => { if (pl) pl.setOptions({ visible: true }); });
+  };
+
+  // ===== 结束导航：清理 + 保留规划条件 + 返回首页规划页 =====
+  const endNavigation = () => {
+    clearNavigationResources();
+    navigationLocationCleanupRef.current?.();
+    navigationLocationCleanupRef.current = null;
+    // 中途结束（未完成）→ Trip 标记取消，不标已完成
+    if (navStatusRef.current === 'navigating') {
+      void useTripStore.getState().cancelActiveTrip().catch(() => undefined);
+    }
+    navStatusRef.current = 'ended';
+    endStageNavigation();
+    setNavStatus('ended');
     setNavActive(false);
     setNavMode(null);
+    // 保留规划条件：出发时间写 storage + 起终点/方式写 travelPlanStore，供首页恢复
+    try {
+      saveDepartureState({
+        departureMode: stateDepartureMode ?? (departureLabel ? 'custom' : 'now'),
+        departureAt,
+        departureTimeLabel: departureLabel || '现在出发',
+      });
+      const end = endCoord.current;
+      useTravelPlanStore.getState().setDestination({
+        name: displayDest, address: displayDest,
+        lng: end?.[0] ?? null, lat: end?.[1] ?? null, source: 'manual',
+      });
+      if (navMode) useTravelPlanStore.getState().setMode(fromLegacyRouteMode(navMode));
+    } catch { /* ignore */ }
     requestAnimationFrame(() => {
-      map?.setPitch(0);
-      map?.setRotation(0);
-      map?.resize?.();
-      if (polylineRef.current) map?.setFitView([polylineRef.current], false, [80, 60, 80, 60]);
+      mapRef.current?.setPitch(0);
+      mapRef.current?.setRotation(0);
+      mapRef.current?.resize?.();
+      const selectedPl = routePolylineRefs.current[selectedMode];
+      if (selectedPl) mapRef.current?.setFitView([selectedPl], false, [80, 60, 80, 60]);
     });
+    // 返回首页规划页（PR#7 架构下规划入口在首页）
+    navigate('/', { replace: true });
+  };
+
+  // ===== 退出导航（×）：到达后直接结束；未到达需确认 =====
+  const handleCloseNav = () => {
+    if (navStatusRef.current === 'arrived') { endNavigation(); return; }
+    if (window.confirm('确定结束本次导航吗？')) endNavigation();
   };
 
   const congestionColor = (l: string) =>
     ({ free: '#52c41a', slow: '#fadb14', congested: '#ff7a00', blocked: '#f5222d' } as Record<string, string>)[l] || '#999';
   const formatDuration = (s: number) => s < 3600 ? `${Math.floor(s / 60)}分钟` : `${Math.floor(s / 3600)}h${Math.floor((s % 3600) / 60)}min`;
+  const selectTravelMode = (mode: TravelModeOption) => {
+    setSelectedDisplayMode(mode);
+    setSelectedMode(normalizeTravelMode(mode));
+  };
+
+  // ===== 无障碍出行：默认选中「无障碍推荐」方案，写入地图/导航数据 =====
+  useEffect(() => {
+    // 无障碍模式 + 有候选 + 尚未选中时：默认选「无障碍推荐」，并把该方案写入 routeResults.bus 供地图/导航使用
+    if (!accessibleActive || !accessibleOptions.length || accessibleSelectedId) return;
+    const first = accessibleOptions[0];
+    if (!first) return;
+    setAccessibleSelectedId(first.id);
+    setRouteResults(prev => prev?.bus ? prev : { ...prev, bus: first.route });
+  }, [accessibleActive, accessibleOptions, accessibleSelectedId]);
+
+  // 无障碍模式：切换候选方案时同步更新地图路线（复用 routeResults.bus）
+  const selectAccessibleOption = (option: AccessibleRouteOption) => {
+    setAccessibleSelectedId(option.id);
+    setRouteResults(prev => ({ ...prev, bus: option.route }));
+  };
+
+  // 驾车/骑行/步行：切换候选（时间最短/距离最短）→ 写回 routeResults[mode] 供地图/导航复用
+  const selectCandidate = (mode: TravelMode, idx: number) => {
+    const list = routeCandidates[mode];
+    const candidate = list?.[idx];
+    if (!candidate) return;
+    setSelectedCandidateIdx(prev => ({ ...prev, [mode]: idx }));
+    setRouteResults(prev => ({ ...prev, [mode]: candidate.route }));
+  };
+
+  // 公交/地铁：切换真实候选 → 写回 routeResults.bus 供地图/导航复用
+  const selectTransitOption = (option: TransitRouteOption) => {
+    setSelectedTransitOptionId(option.id);
+    setRouteResults(prev => ({ ...prev, bus: option.route }));
+  };
+
+  // ===== 无障碍模式开始导航（复用现有 bus 导航逻辑，仅改文案/设施提示） =====
+  const startAccessibleNavigation = (option: AccessibleRouteOption) => {
+    // 防重复进入：导航中/已到达/已结束时不允许再次启动导航
+    if (navStatusRef.current === 'navigating' || navStatusRef.current === 'arrived' || navStatusRef.current === 'ended') {
+      setNavRouteError('当前已有进行中的导航');
+      return;
+    }
+    // 硬性规则兜底：仅楼梯 → 不建议开始无障碍导航
+    if (option.metrics.stairsRiskCount > 0 && option.score.level === 'not_recommended') {
+      setNavRouteError('当前方案存在仅楼梯出入口，不建议轮椅用户选择，请更换方案。');
+      return;
+    }
+    setSelectedMode('bus');
+    setRouteResults(prev => ({ ...prev, bus: option.route }));
+    setNavMode('bus');
+    navStatusRef.current = 'navigating';
+    setNavStatus('navigating');
+    setNavActive(true);
+    hasCompletedTripRef.current = false;
+    setArrivedTrip(null);
+    if (isLoggedIn) {
+      const s = startCoord.current, e = endCoord.current;
+      if (s && e) {
+        const clientSessionId = typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : `nav_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+        void useTripStore.getState().startTrip({
+          clientSessionId,
+          mode: 'bus',
+          profile: 'accessible',
+          routeStrategy: 'accessible',
+          origin: { name: displayOrigin, address: displayOrigin, lng: s[0], lat: s[1] },
+          destination: { name: displayDest, address: displayDest, lng: e[0], lat: e[1] },
+          routeSnapshot: {
+            estimatedDistance: option.route.distance,
+            estimatedDuration: option.route.duration,
+            routeProvider: 'amap',
+            path: option.route.path,
+          },
+          dataSource: 'real',
+        }).catch(() => undefined);
+      }
+    }
+  };
 
   // 只有高德规划成功的方案才展示
   const availableModes = VALID_MODES.filter(m => routeResults[m]);
+  const displayedModes = routeResults[selectedMode] ? [selectedMode] : [];
   const navRoute = navMode ? routeResults[navMode] : null;
 
   // ===== 单一 return：唯一地图容器始终挂载，导航只切换布局与覆盖层 =====
   return (
     <div className={navActive ? styles.navFullscreen : styles.page}>
       {!navActive && (
-        <div className={styles.resultHeader}>
-          <span onClick={() => navigate(-1)} style={{ cursor: 'pointer', fontSize: 18 }}>←</span>
-          <div className={styles.resultRoute}>
-            <span>{waypoints.length ? [displayOrigin, ...waypoints, displayDest].join(' → ') : `${displayOrigin} → ${displayDest}`}</span>
+        <div className={styles.resultTopRow}>
+          <div className={styles.resultHeader}>
+            <button type="button" className={styles.backBtn} onClick={() => navigate(-1)} aria-label="返回">←</button>
+            <div className={styles.resultRoute}>
+              <span>{waypoints.length ? [displayOrigin, ...waypoints, displayDest].join(' → ') : `${displayOrigin} → ${displayDest}`}</span>
+            </div>
           </div>
+          <TravelModeSelector value={selectedDisplayMode} onChange={selectTravelMode} className={styles.resultModeSelector} />
+        </div>
+      )}
+
+      {/* 无障碍偏好：仅在无障碍路线结果页显示，不新增首页交通方式 */}
+      {!navActive && accessibleActive && (
+        <section style={{ padding: '12px 14px', marginBottom: 12, borderRadius: 12, background: '#fff', border: '1px solid var(--border-color)' }} aria-labelledby="result-accessibility-preferences-title">
+          <div id="result-accessibility-preferences-title" style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>选择您的出行需求</div>
+          <div style={{ color: 'var(--text-secondary)', fontSize: 12, marginBottom: 10 }}>请选择一项，路线会按当前需求重新排序</div>
+          <div role="radiogroup" aria-label="出行需求" style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            {ACCESSIBILITY_PREFERENCES.map(meta => {
+              const preference = meta.value;
+              const active = accessibilityPreferences.includes(preference);
+              return (
+                <button
+                  key={preference}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => setAccessibilityPreferences(() => {
+                    const next = [preference];
+                    sessionStorage.setItem('zhitu_accessibility_preferences', JSON.stringify(next));
+                    setCarePreferences(next, userId);
+                    return next;
+                  })}
+                  style={{ border: `1px solid ${active ? 'var(--primary)' : 'var(--border-color)'}`, background: active ? 'var(--primary-light)' : '#fff', color: active ? 'var(--primary)' : 'var(--text-primary)', borderRadius: 18, padding: '7px 10px', cursor: 'pointer', fontSize: 12 }}
+                >
+                  {meta.icon} {meta.label}
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* 出发时间提示（非「现在出发」时显示） */}
+      {!navActive && departureLabel && (
+        <div style={{ padding: '8px 14px', background: '#f0f5ff', borderRadius: 8, fontSize: 12, color: '#1677ff', marginBottom: 12, lineHeight: 1.6 }}>
+          🕐 出发：{departureLabel}
         </div>
       )}
 
@@ -642,10 +1285,20 @@ const RouteResultPage: React.FC = () => {
       {/* 加载中（仅普通模式） */}
       {!navActive && isPlanning && (
         <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--text-hint)', background: '#fff', borderRadius: 12, marginBottom: 16 }}>
-          <div>🚗 正在规划驾车路线...</div>
-          <div>🚌 正在规划公交路线...</div>
-          <div>🚲 正在规划骑行路线...</div>
-          <div>🚶 正在规划步行路线...</div>
+          <div>{accessibleActive ? '♿ 正在规划无障碍路线...' : `${MODE_META[selectedMode].icon} 正在规划${MODE_META[selectedMode].label}路线...`}</div>
+        </div>
+      )}
+
+      {!navActive && locationError && (
+        <div style={{ padding: 14, background: '#fff2f0', color: '#a8071a', border: '1px solid #ffccc7', borderRadius: 10, marginBottom: 16 }}>
+          <div style={{ fontWeight: 600 }}>⚠️ {locationError}</div>
+          <button
+            type="button"
+            onClick={() => navigate(-1)}
+            style={{ marginTop: 10, border: 0, borderRadius: 6, padding: '7px 14px', background: '#1677ff', color: '#fff', cursor: 'pointer' }}
+          >
+            返回重新选择
+          </button>
         </div>
       )}
 
@@ -653,67 +1306,166 @@ const RouteResultPage: React.FC = () => {
       {navActive && (
         <>
           <div className={styles.navTopBar}>
-            <span className={styles.navCloseBtn} onClick={stopNavigation}>✕ 退出导航</span>
+            <span className={styles.navCloseBtn} onClick={handleCloseNav}>✕ 退出导航</span>
             <span className={styles.navModeTag}>
-              {navMode ? `${MODE_META[navMode].icon} ${MODE_META[navMode].label}` : ''}
+              {navMode ? (accessibleActive ? '♿ 无障碍出行' : `${MODE_META[navMode].icon} ${MODE_META[navMode].label}`) : ''}
             </span>
           </div>
-          <div className={styles.navBottomCard}>
-            <div className={styles.navNextAction}>
-              <span className={styles.navTurnIcon}>↗️</span>
-              <div>
-                <div className={styles.navTurnText}>沿当前路线行驶</div>
-                <div className={styles.navTurnSub}>{Math.round(navDistance)}m 后继续前行</div>
+          {stageSnapshot && (
+            <div className={styles.navStageOverlay}>
+              <TravelStageTimeline
+              stages={stageSnapshot.stages}
+              currentStageIndex={stageSnapshot.currentStageIndex}
+              navStatus={stageSnapshot.navStatus}
+              syncState={stageSnapshot.syncState}
+              transitStatus={transitRealtime}
+              actionBusy={stageActionBusy}
+              onComplete={completeCurrentStage}
+              onResume={resumeStageNavigation}
+            />
+            </div>
+          )}
+          {navStatus === 'arrived' ? (
+            /* ===== 已到达：不再显示 剩余距离/ETA/速度/导航步骤 ===== */
+            <div className={styles.navArrivedCard}>
+              <div className={styles.navArrivedIcon}>✅</div>
+              <div className={styles.navArrivedTitle}>已到达</div>
+              <div className={styles.navArrivedDest}>您已到达：{displayDest}</div>
+              <div className={styles.navArrivedMeta}>
+                <span>📏 距离 {formatDistance(navRoute?.distance || 0)}</span>
+                <span>⏱ 耗时 {navRoute ? formatDuration(navRoute.duration) : '--'}</span>
+              </div>
+              <div className={styles.navArrivedActions}>
+                {isLoggedIn && arrivedTrip && (
+                  <button className={styles.navArrivedBtn} onClick={() => navigate(`/travel/settlement/${arrivedTrip.id}`)}>查看结算结果</button>
+                )}
+                <button className={styles.navArrivedBtnPrimary} onClick={endNavigation}>结束导航</button>
               </div>
             </div>
-            <div className={styles.navStats}>
-              <div className={styles.navStatItem}>
-                <span className={styles.navStatVal}>{(navDistance / 1000).toFixed(1)}</span>
-                <span className={styles.navStatLabel}>剩余 km</span>
+          ) : (
+            <div className={styles.navBottomCard}>
+              <div className={styles.navNextAction}>
+                <span className={styles.navTurnIcon}>↗️</span>
+                <div>
+                  <div className={styles.navTurnText}>{navRouteError ? '已到达当前站点' : '沿当前路线行驶'}</div>
+                  <div className={styles.navTurnSub}>{navRouteError ? '请确认下车，进入下一阶段' : `${Math.round(navDistance)}m 后继续前行`}</div>
+              <div className={styles.navTurnLive}>当前阶段 · 实时更新</div>
+                </div>
               </div>
-              <div className={styles.navStatDivider} />
-              <div className={styles.navStatItem}>
-                <span className={styles.navStatVal}>{navRoute ? formatDuration(navRoute.duration) : '--'}</span>
-                <span className={styles.navStatLabel}>预计到达</span>
+              <div className={styles.navStats}>
+                <div className={styles.navStatItem}>
+                  <span className={styles.navStatVal}>{navRouteError ? '—' : (navDistance / 1000).toFixed(1)}</span>
+                  <span className={styles.navStatLabel}>剩余 km</span>
+                </div>
+                <div className={styles.navStatDivider} />
+                <div className={styles.navStatItem}>
+                  <span className={styles.navStatVal}>{navRouteError ? '—' : formatDuration(navDurationRef.current)}</span>
+                  <span className={styles.navStatLabel}>预计到达</span>
+                </div>
+                <div className={styles.navStatDivider} />
+                <div className={styles.navStatItem}>
+                  <span className={styles.navStatVal}>
+                    {navMode === 'bike' ? '15' : navMode === 'walk' ? '5' : '32'}
+                  </span>
+                  <span className={styles.navStatLabel}>km/h</span>
+                </div>
               </div>
-              <div className={styles.navStatDivider} />
-              <div className={styles.navStatItem}>
-                <span className={styles.navStatVal}>
-                  {navMode === 'bike' ? '15' : navMode === 'walk' ? '5' : '32'}
-                </span>
-                <span className={styles.navStatLabel}>km/h</span>
-              </div>
+              {navRouteError ? (
+                <>
+                  <div style={{ fontSize: 12, color: '#faad14', textAlign: 'center', padding: '6px 8px', background: 'rgba(250,173,20,0.1)', borderRadius: 6 }}>
+                    ⚠️ {navRouteError}
+                  </div>
+                  {stageArrivalPending && stageSnapshot?.navStatus === 'navigating' && (
+                    <button
+                      type="button"
+                      className={styles.navStageConfirmBtn}
+                      disabled={stageActionBusy}
+                      onClick={completeCurrentStage}
+                    >
+                      {stageActionBusy ? '处理中…' : '确认已到站，进入下一阶段'}
+                    </button>
+                  )}
+                </>
+              ) : (
+                <div className={styles.navSimTip}>📍 {navMode ? MODE_META[navMode].label : ''}模式 · 高德路线 + 3D 导航</div>
+              )}
             </div>
-            {navRouteError ? (
-              <div style={{ fontSize: 12, color: '#faad14', textAlign: 'center', padding: '6px 8px', background: 'rgba(250,173,20,0.1)', borderRadius: 6 }}>
-                ⚠️ {navRouteError}
-              </div>
-            ) : (
-              <div className={styles.navSimTip}>📍 {navMode ? MODE_META[navMode].label : ''}模式 · 高德实时路线 + 3D 导航</div>
-            )}
-          </div>
+          )}
         </>
       )}
 
       {/* 仅渲染高德规划成功的方案；失败的方式不显示卡片 */}
       {unavailableNote && (
-        <div style={{ padding: 10, background: '#fff7e6', color: '#ad6800', borderRadius: 8, fontSize: 13, marginBottom: 12 }}>
-          ⚠️ {unavailableNote}，已为您切换至 {MODE_META[selectedMode].label}
+        <div style={{ padding: 10, background: '#fff7e6', color: '#ad6800', borderRadius: 8, fontSize: 13, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span>⚠️ {unavailableNote}</span>
+          {selectedMode === 'bus' && (
+            <button onClick={() => selectTravelMode('driving')} style={{ marginLeft: 'auto', padding: '6px 14px', border: 'none', borderRadius: 6, background: '#1677ff', color: '#fff', fontSize: 13, cursor: 'pointer' }}>
+              切换驾车
+            </button>
+          )}
         </div>
       )}
 
       <div className={styles.optionScroll}>
-        {availableModes.length === 0 ? (
+        {accessibleActive && (
+          <div style={{ padding: '10px 12px', marginBottom: 12, borderRadius: 10, background: '#f0f5ff', color: '#1d39c4', fontSize: 13, lineHeight: 1.6 }}>
+            <div style={{ fontWeight: 700 }}>已按以下需求规划</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+              {accessibilityPreferences.map(preference => {
+                const meta = ACCESSIBILITY_PREFERENCES.find(item => item.value === preference);
+                return meta && (
+                <span key={preference} style={{ background: '#fff', borderRadius: 14, padding: '3px 8px' }}>
+                  {meta.icon} {meta.label}
+                </span>
+                );
+              })}
+            </div>
+            <div style={{ color: '#597ef7', marginTop: 4 }}>{getAccessibilityPreferenceHint(accessibilityPreferences)}</div>
+          </div>
+        )}
+        {accessibleActive ? (
+          /* ===== 无障碍出行：多候选方案卡片 ===== */
+          isPlanning ? (
+            <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-hint)' }}>♿ 正在规划无障碍路线...</div>
+          ) : accessibleOptions.length === 0 ? (
+            <div>
+              <div style={{ textAlign: 'center', padding: 30, color: 'var(--text-hint)' }}>
+                {mapError ? `⚠️ ${mapError}` : '♿ 暂未找到完整无障碍路线'}
+              </div>
+              {!mapError && (
+                <div style={{ textAlign: 'center', fontSize: 13, color: 'var(--text-hint)', paddingBottom: 16 }}>
+                  当前候选路线均存在无障碍设施信息缺失或长距离移动路段
+                </div>
+              )}
+            </div>
+          ) : (
+            accessibleOptions.map(option => (
+              <AccessibleRouteCard
+                key={option.id}
+                option={option}
+                active={accessibleSelectedId === option.id}
+                onSelect={() => selectAccessibleOption(option)}
+                onStart={() => startAccessibleNavigation(option)}
+              />
+            ))
+          )
+        ) : displayedModes.length === 0 ? (
           <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-hint)' }}>
-            {mapError ? `⚠️ ${mapError}` : '该起终点暂无可用路线方案'}
+            {isPlanning ? '正在规划当前出行方式...' : mapError ? `⚠️ ${mapError}` : `该起终点暂无可用${MODE_META[selectedMode].label}路线`}
           </div>
         ) : (
-          availableModes.map((mode, i) => {
+          displayedModes.map((mode) => {
             const realRoute = routeResults[mode]!;
             const mock = cardData.find(d => d.mode === mode);
             const distance = realRoute.distance;
             const duration = realRoute.duration;
-            const badge = i === 0 ? '推荐' : i === 1 ? '备选' : i === 2 ? '绿色' : '健康';
+            const badge = mode === 'drive' ? '推荐' : mode === 'bus' ? '便捷' : mode === 'bike' ? '绿色' : '健康';
+            // 高德未返回真实值时显示「未知」，不伪造 0.0km/0分钟
+            const showDuration = duration > 0 ? formatDuration(duration) : '—';
+            const showDistance = distance > 0 ? `${(distance / 1000).toFixed(1)}km` : '—';
+            const driveEstimate = mode === 'drive'
+              ? estimateDriveImpact(distance, duration, selectedDisplayMode === 'ev' ? 'ev' : 'fuel')
+              : null;
 
             return (
               <div
@@ -721,16 +1473,81 @@ const RouteResultPage: React.FC = () => {
                 className={`${styles.routeCard} ${selectedMode === mode ? styles.routeCardActive : ''}`}
                 onClick={() => setSelectedMode(mode)}
               >
+                {/* 公交/地铁多候选：推荐、少换乘、少步行 */}
+                {mode === 'bus' && transitOptions.length > 1 && (
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+                    {transitOptions.map(option => {
+                      const active = selectedTransitOptionId === option.id;
+                      return (
+                        <button
+                          key={option.id}
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); selectTransitOption(option); }}
+                          style={{
+                            flex: 1, minWidth: 110, padding: '8px 12px', borderRadius: 10,
+                            border: active ? '2px solid #1677ff' : '1px solid #e5e9ef',
+                            background: active ? '#f0f5ff' : '#fff',
+                            color: active ? '#1677ff' : 'var(--text-secondary)',
+                            cursor: 'pointer', fontSize: 13, textAlign: 'left', lineHeight: 1.5,
+                          }}
+                        >
+                          <div style={{ fontWeight: 700 }}>{option.icon} {option.label}</div>
+                          <div style={{ fontSize: 12, opacity: 0.8 }}>
+                            {option.route.duration > 0 ? formatDuration(option.route.duration) : '—'}
+                            {option.route.distance > 0 ? ` · ${(option.route.distance / 1000).toFixed(1)}km` : ''}
+                          </div>
+                          <div style={{ fontSize: 11, opacity: 0.75 }}>
+                            换乘 {option.transferCount} 次 · 步行 {Math.round(option.walkingDistance)}m
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* 多候选切换条：驾车/骑行/步行的时间最短/距离最短（去重后可能仅 1 条） */}
+                {(routeCandidates[mode]?.length || 0) > 1 && (
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+                    {(routeCandidates[mode] || []).map((cand, idx) => {
+                      const active = (selectedCandidateIdx[mode] ?? 0) === idx;
+                      const candRoute = cand.route;
+                      return (
+                        <button
+                          key={cand.tag}
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); selectCandidate(mode, idx); }}
+                          style={{
+                            flex: 1, minWidth: 110, padding: '8px 12px', borderRadius: 10,
+                            border: active ? '2px solid #1677ff' : '1px solid #e5e9ef',
+                            background: active ? '#f0f5ff' : '#fff',
+                            color: active ? '#1677ff' : 'var(--text-secondary)',
+                            cursor: 'pointer', fontSize: 13, textAlign: 'left', lineHeight: 1.5,
+                          }}
+                        >
+                          <div style={{ fontWeight: 700 }}>{cand.icon} {cand.label}{cand.tag === 'low-carbon' ? '（估算）' : ''}</div>
+                          <div style={{ fontSize: 12, opacity: 0.8 }}>
+                            {candRoute.duration > 0 ? formatDuration(candRoute.duration) : '—'}
+                            {candRoute.distance > 0 ? ` · ${(candRoute.distance / 1000).toFixed(1)}km` : ''}
+                          </div>
+                          {cand.tag === 'low-carbon' && (() => {
+                            const estimate = estimateDriveImpact(candRoute.distance, candRoute.duration, selectedDisplayMode === 'ev' ? 'ev' : 'fuel');
+                            return estimate ? <div style={{ fontSize: 11, color: '#389e0d' }}>{estimate.label}</div> : null;
+                          })()}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
                 <div className={styles.routeCardHeader}>
                   <span style={{ fontSize: 18 }}>{MODE_META[mode].icon}</span>
                   <div>
-                    <span className={styles.routeDuration}>{formatDuration(duration)}</span>
-                    <span style={{ fontSize: 12, color: i === 0 ? '#52c41a' : 'var(--text-hint)', marginLeft: 4 }}>
+                    <span className={styles.routeDuration}>{showDuration}</span>
+                    <span style={{ fontSize: 12, color: '#722ed1', marginLeft: 4 }}>
                       {badge}
                     </span>
                   </div>
                   <span style={{ color: 'var(--text-secondary)', fontSize: 13 }}>
-                    {(distance / 1000).toFixed(1)}km
+                    {showDistance}
                   </span>
                 </div>
 
@@ -743,10 +1560,42 @@ const RouteResultPage: React.FC = () => {
                   </div>
                 )}
 
+                {mode === 'drive' && driveEstimate && (
+                  <div className={styles.aiAdvice} style={{ background: '#f6ffed', color: '#237804' }}>
+                    {selectedDisplayMode === 'ev' ? '⚡' : '🌱'} {driveEstimate.label}（估算）
+                    <span style={{ marginLeft: 8, fontSize: 11 }}>数据仅供路线比较：{driveEstimate.assumptions}</span>
+                  </div>
+                )}
+
+                {/* 新能源（EV）：底层复用驾车路线，叠加充电/能耗业务信息（模型估算） */}
+                {mode === 'drive' && selectedDisplayMode === 'ev' && (
+                  <>
+                    <div className={styles.bikeInfo}>
+                      <span>⚡ 底层引擎：驾车</span>
+                      <span>🔋 预计能耗按车型估算，数据为演示</span>
+                    </div>
+                    <div className={styles.aiAdvice} style={{ background: '#f0f5ff' }}>
+                      <span>🔌 附近充电站：</span>
+                      <span
+                        style={{ color: '#1677ff', cursor: 'pointer', fontWeight: 600 }}
+                        onClick={(e) => { e.stopPropagation(); navigate('/parking'); }}
+                      >
+                        查看充电站 →
+                      </span>
+                    </div>
+                  </>
+                )}
+
                 {/* 公交：换乘段 */}
                 {mode === 'bus' && realRoute.segments && (
                   <div className={styles.segments}>
-                    {realRoute.segments.map((s, j) => (
+                    {realRoute.segments.filter(hasSegmentContent).length === 0 ? (
+                      <div className={styles.segment}>
+                        <span className={styles.segmentIcon}>🚌</span>
+                        <span style={{ fontSize: 12, fontWeight: 500 }}>公交地铁方案</span>
+                        <span style={{ fontSize: 11, color: 'var(--text-hint)' }}>详细换乘信息暂不可用</span>
+                      </div>
+                    ) : realRoute.segments.filter(hasSegmentContent).map((s, j) => (
                       <div key={j} className={styles.segment}>
                         <span className={styles.segmentIcon}>{getTransportIcon(s.type)}</span>
                         <span style={{ fontSize: 12, fontWeight: 500 }}>
@@ -788,9 +1637,7 @@ const RouteResultPage: React.FC = () => {
 
                 <button className={styles.navBtn} onClick={(e) => {
                   e.stopPropagation();
-                  setSelectedMode(mode);
-                  setNavMode(mode);
-                  setNavActive(true);
+                  startNavigation(mode);
                 }}>
                   {MODE_META[mode].icon} 开始导航 · {MODE_META[mode].label}
                 </button>
@@ -799,26 +1646,140 @@ const RouteResultPage: React.FC = () => {
           })
         )}
       </div>
+
+      {/* ===== 智能推荐 + 出发时间建议 ===== */}
+      {!navActive && !isPlanning && accessibleActive && accessibleOptions.length > 0 ? (
+        /* ===== 无障碍智能推荐 ===== */
+        <div className={styles.forecastSection} style={{ background: '#f9f0ff', border: '1px solid #efdbff' }}>
+          <div className={styles.forecastTitle}>
+            🧠 无障碍智能推荐
+            <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-hint)' }}>无障碍优化</span>
+          </div>
+          <div className={styles.forecastReason}>
+            ♿ 推荐方案：<b>无障碍出行</b>
+            <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 6 }}>
+              {(() => {
+                const recommended = accessibleOptions[0];
+                const fastest = accessibleOptions.find(o => o.id === 'fastest') || null;
+                if (!recommended) return accessibleUnavailableNote || '当前没有可用的无障碍推荐。';
+                let text = `当前方案轮椅/步行移动约${Math.round(recommended.walkingDistance)}m，换乘 ${recommended.transferCount} 次。`;
+                if (fastest && fastest !== recommended) {
+                  const savedWalk = Math.max(0, fastest.walkingDistance - recommended.walkingDistance);
+                  const savedTransfer = Math.max(0, fastest.transferCount - recommended.transferCount);
+                  if (savedWalk > 0 || savedTransfer > 0) {
+                    text += `相比最短时间方案，减少${Math.round(savedWalk)}m 移动距离${savedTransfer > 0 ? `、${savedTransfer} 次换乘` : ''}。`;
+                  }
+                }
+                if (recommended.metrics.elevatorCoverage > 0) text += ' 🛗 途经站点优先选择设有电梯的出入口。';
+                return text;
+              })()}
+            </div>
+          </div>
+          <div className={styles.departAdvice} style={{ marginTop: 8, fontSize: 13, color: '#722ed1' }}>
+            {getFacilitySource() === 'backend'
+              ? '♿ 无障碍优化 · 已结合后台维护的设施数据'
+              : '♿ 无障碍优化 · 当前按步行距离和换乘次数排序'}
+          </div>
+        </div>
+      ) : !navActive && !isPlanning && availableModes.length > 0 && recommendationId ? (
+        <div className={styles.forecastSection} style={{ background: '#f0f5ff', border: '1px solid #d6e4ff' }}>
+          <div className={styles.forecastTitle}>
+            🧠 智能路线推荐
+            <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-hint)' }}>基于交通预测</span>
+          </div>
+          {(() => {
+            const rec = routeResults[recommendationId];
+            const reason = generateRecommendationReason(
+              { mode: recommendationId, label: MODE_META[recommendationId].label, distance: rec?.distance ?? 0, duration: rec?.duration ?? 0, toll: rec?.cost ?? 0, forecast: forecasts[recommendationId] },
+              availableModes.map(m => ({
+                mode: m, label: MODE_META[m].label,
+                distance: routeResults[m]?.distance ?? 0, duration: routeResults[m]?.duration ?? 0,
+                toll: routeResults[m]?.cost ?? 0, forecast: forecasts[m],
+              })),
+            );
+            return (
+              <div className={styles.forecastReason}>
+                {MODE_META[recommendationId].icon} 推荐方案：<b>{MODE_META[recommendationId].label}</b>
+                <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 6 }}>{reason}</div>
+              </div>
+            );
+          })()}
+          <div className={styles.departAdvice} style={{ marginTop: 8, fontSize: 13, color: '#1677ff' }}>
+            🕐 出发时间建议：{departureAdvice}
+          </div>
+        </div>
+      ) : null}
+
+      {/* ===== 未来拥堵预测面板（无障碍模式不展示拥堵预测，优先展示无障碍信息） ===== */}
+      {!navActive && !isPlanning && !accessibleActive && availableModes.length > 0 && (
+        <RouteForecastPanel
+          forecast={forecasts[selectedMode] || []}
+          loading={forecastLoading}
+          error={forecastError}
+          baseAt={departureLabel ? departureAt : undefined}
+          onRetry={() => { setForecastLoading(true); setForecastError(''); getRouteForecast(selectedMode, departureAtRef.current).then(r => {
+            setForecasts(prev => ({ ...prev, [selectedMode]: r.points }));
+            setForecastLoading(false);
+          }).catch(() => { setForecastError('预测服务暂不可用'); setForecastLoading(false); }); }}
+        />
+      )}
+
+      {/* ===== 路线横向比较（折叠） ===== */}
+      {!navActive && !isPlanning && !accessibleActive && (
+        <div className={styles.forecastSection} style={{ background: '#fff' }}>
+          <div className={styles.forecastTitle} style={{ cursor: 'pointer' }} onClick={() => setCompareOpen(!compareOpen)}>
+            📊 路线比较 {compareOpen ? '▾' : '▸'}
+          </div>
+          {compareOpen && (
+            <div className={styles.compareScroll}><table className={styles.compareTable}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid #f0f0f0', color: 'var(--text-hint)' }}>
+                  <th style={{ padding: 6, textAlign: 'left' }}>方案</th>
+                  <th style={{ padding: 6 }}>预计用时</th>
+                  <th style={{ padding: 6 }}>总距离</th>
+                  <th style={{ padding: 6 }}>步行距离</th>
+                  <th style={{ padding: 6 }}>换乘次数</th>
+                  <th style={{ padding: 6 }}>预计费用</th>
+                  <th style={{ padding: 6 }}>拥堵风险</th>
+                  <th style={{ padding: 6 }}>碳排放</th>
+                  <th style={{ padding: 6 }}>综合评分</th>
+                  <th style={{ padding: 6 }}>数据来源</th>
+                </tr>
+              </thead>
+              <tbody>
+                {VALID_MODES.map(m => {
+                  const r = routeResults[m];
+                  if (!r) return <tr key={m} style={{ borderBottom: '1px solid #f5f5f5' }}><td style={{ padding: 8 }}>{MODE_META[m].icon} {MODE_META[m].label}</td><td colSpan={9} style={{ padding: 8, color: 'var(--text-hint)' }}>{comparisonStatus[m] === 'loading' ? '正在规划…' : '当前条件下暂无可用方案'}</td></tr>;
+                  const fc = forecasts[m];
+                  const risk = fc?.[0]?.level === 'congested' || fc?.[0]?.level === 'blocked' ? '高' : fc?.[0]?.level === 'slow' ? '中' : fc?.length ? '低' : '待更新';
+                  const walkingDistance = (r.segments || []).filter(segment => segment.type === 'walk').reduce((sum, segment) => sum + Number((segment as SegmentData & { distance?: number }).distance || 0), 0);
+                  const transferCount = Math.max(0, (r.segments || []).filter(segment => segment.type === 'bus' || segment.type === 'metro').length - 1);
+                  const score = calculateRouteScore({ mode: m, label: MODE_META[m].label, distance: r.distance, duration: r.duration, toll: r.cost ?? 0, forecast: fc });
+                  return (
+                    <tr key={m} style={{ borderBottom: '1px solid #f5f5f5', background: selectedMode === m ? '#f0f5ff' : '#fff' }}>
+                      <td style={{ padding: 6, textAlign: 'left' }}>{MODE_META[m].icon} {MODE_META[m].label}</td>
+                      <td style={{ padding: 6, textAlign: 'center' }}>{formatDuration(r.duration)}</td>
+                      <td style={{ padding: 6, textAlign: 'center' }}>{(r.distance / 1000).toFixed(1)}km</td>
+                      <td style={{ padding: 6, textAlign: 'center' }}>{walkingDistance ? `${Math.round(walkingDistance)}m` : '-'}</td>
+                      <td style={{ padding: 6, textAlign: 'center' }}>{m === 'bus' ? `${transferCount} 次` : '-'}</td>
+                      <td style={{ padding: 6, textAlign: 'center' }}>{r.cost ? `¥${r.cost}` : '-'}</td>
+                      <td style={{ padding: 6, textAlign: 'center' }}>{risk}</td>
+                      <td style={{ padding: 6, textAlign: 'center' }}>{m === 'drive' ? '较高' : m === 'walk' || m === 'bike' ? '很低' : '较低'}<small>估算</small></td>
+                      <td style={{ padding: 6, textAlign: 'center', fontWeight: 600 }}>{score}</td>
+                      <td style={{ padding: 6, textAlign: 'center' }}>高德路线<br/><small>拥堵为交通预测</small></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table></div>
+          )}
+        </div>
+      )}
     </div>
   );
 };
 
 // ===== 工具函数 =====
-
-function extractRoutePath(route: any): [number, number][] {
-  if (Array.isArray(route?.path) && route.path.length) return route.path;
-  if (Array.isArray(route?.polyline) && route.polyline.length) return route.polyline;
-  const steps = Array.isArray(route?.steps)
-    ? route.steps
-    : route?.steps && typeof route.steps === 'object'
-      ? Object.values(route.steps)
-      : [];
-  return steps.flatMap((step: any) => {
-    if (Array.isArray(step?.path)) return step.path;
-    if (Array.isArray(step?.polyline)) return step.polyline;
-    return [];
-  });
-}
 
 function makeMarkerIcon(AMap: any, color: string, text: string, size: number) {
   return new AMap.Icon({

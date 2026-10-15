@@ -3,36 +3,45 @@
 .back { cursor: pointer; font-size: 14px; color: var(--primary); }
 .title { font-size: 18px; font-weight: 700; flex: 1; }
 .demoBadge { font-size: 12px; background: #fff7e6; color: #ad6800; padding: 3px 10px; border-radius: 12px; font-weight: 600; }
-
 .warnBanner { padding: 10px 14px; background: #fffbe6; border-radius: 8px; font-size: 13px; color: #ad6800; line-height: 1.5; margin-bottom: 14px; }
-
-.stationCard { background: #fff; border-radius: 12px; padding: 16px 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); margin-bottom: 14px; }
+.stationCard, .formCard, .resultCard { background: #fff; border-radius: 12px; padding: 16px 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); margin-bottom: 14px; }
 .stationName { font-size: 17px; font-weight: 700; margin-bottom: 10px; }
-.stationRow { display: flex; justify-content: space-between; padding: 6px 0; font-size: 13px; border-bottom: 1px solid #f5f5f5; }
+.stationRow { display: flex; justify-content: space-between; gap: 16px; padding: 6px 0; font-size: 13px; border-bottom: 1px solid #f5f5f5; }
 .stationRow:last-child { border-bottom: none; }
-.stationRow span:first-child { color: var(--text-hint); }
-.stationRow span:last-child { color: var(--text-primary); font-weight: 500; text-align: right; }
+.stationRow span:first-child { color: var(--text-hint); flex-shrink: 0; }
+.stationRow span:last-child { color: var(--text-primary); font-weight: 500; text-align: right; word-break: break-all; }
 .noStation { color: var(--text-secondary); font-size: 13px; display: flex; flex-direction: column; gap: 12px; align-items: flex-start; }
-
-.formCard { background: #fff; border-radius: 12px; padding: 16px 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); margin-bottom: 14px; }
-.formTitle { font-size: 15px; font-weight: 700; margin-bottom: 12px; }
-.label { display: block; font-size: 13px; color: var(--text-secondary); margin-bottom: 4px; }
-.input, .select { width: 100%; padding: 11px 14px; border: 1px solid var(--border-color, #e8e8e8); border-radius: 8px; font-size: 14px; margin-bottom: 12px; background: #fff; outline: none; }
-.input:focus, .select:focus { border-color: var(--primary); }
-.input:disabled, .select:disabled { background: #f5f5f5; color: #999; cursor: not-allowed; }
-.error { color: #f5222d; font-size: 13px; margin-bottom: 10px; }
-
+.formTitle { font-size: 15px; font-weight: 700; margin-bottom: 6px; }
+.formHint { color: var(--text-secondary); font-size: 13px; line-height: 1.6; margin-bottom: 14px; }
+.fileInput { display: none; }
+.uploadBtn, .secondaryBtn { width: 100%; padding: 11px 14px; color: var(--primary, #1677ff); background: var(--primary-light, #e6f4ff); border: 1px solid var(--primary, #1677ff); border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.secondaryBtn { width: auto; }
+.uploadBtn:hover, .secondaryBtn:hover { background: #d6ecff; }
+.uploadBtn:disabled { opacity: 0.55; cursor: not-allowed; }
+.fileName { margin-top: 9px; color: var(--text-hint); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.error { color: #cf1322; background: #fff1f0; border: 1px solid #ffccc7; font-size: 13px; line-height: 1.5; margin-top: 12px; padding: 9px 10px; border-radius: 8px; }
+.resultCard { padding: 18px 20px; }
+.resultHeader { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.resultTitle { font-size: 16px; font-weight: 700; color: #389e0d; }
+.statusBadge { border-radius: 20px; padding: 4px 9px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.statusAvailable { color: #389e0d; background: #f6ffed; }
+.statusOccupied { color: #d46b08; background: #fff7e6; }
+.statusUnavailable { color: #cf1322; background: #fff1f0; }
+.deviceGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+.deviceGrid > div { display: flex; flex-direction: column; gap: 4px; padding: 9px 10px; background: var(--bg-page, #f5f7fa); border-radius: 7px; min-width: 0; }
+.deviceGrid span { color: var(--text-hint); font-size: 12px; }
+.deviceGrid b { color: var(--text-primary); font-size: 14px; overflow-wrap: anywhere; }
+.unavailableNote, .confirmedNote { padding: 9px 10px; border-radius: 8px; font-size: 13px; line-height: 1.5; margin-bottom: 12px; }
+.unavailableNote { color: #ad6800; background: #fffbe6; }
+.confirmedNote { color: #237804; background: #f6ffed; }
 .btn { width: 100%; padding: 12px; background: var(--primary, #1677ff); color: #fff; border: none; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; }
 .btn:hover { opacity: 0.9; }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.resetBtn { width: 100%; padding: 9px; border: none; background: transparent; color: var(--primary, #1677ff); cursor: pointer; font-size: 13px; margin-top: 4px; }
+.emptyHint { color: var(--text-hint); text-align: center; font-size: 13px; padding: 16px 10px; }
 
-.resultCard { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); text-align: center; }
-.resultTitle { font-size: 16px; font-weight: 700; color: #52c41a; margin-bottom: 10px; }
-.resultInfo { font-size: 14px; color: var(--text-secondary); line-height: 1.8; margin-bottom: 12px; }
-.resultInfo b { color: var(--text-primary); }
-
-.qrBox { position: relative; width: 220px; height: 220px; margin: 0 auto 12px; padding: 12px; background: #fff; border: 3px solid #52c41a; border-radius: 12px; }
-.qrSvg { width: 100%; height: 100%; }
-.qrOverlay { position: absolute; inset: 0; background: rgba(255,255,255,0.85); display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 12px; font-size: 15px; font-weight: 600; color: #f5222d; gap: 4px; }
-.qrTimer { font-size: 13px; color: var(--text-hint); margin-bottom: 12px; }
-.demoNote { font-size: 12px; color: #ad6800; background: #fffbe6; padding: 8px 12px; border-radius: 8px; line-height: 1.6; }
+@media (max-width: 420px) {
+  .page { padding-left: 12px; padding-right: 12px; }
+  .stationCard, .formCard, .resultCard { padding-left: 15px; padding-right: 15px; }
+  .deviceGrid { grid-template-columns: 1fr; }
+}

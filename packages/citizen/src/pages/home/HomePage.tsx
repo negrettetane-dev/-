@@ -1,46 +1,147 @@
-import React, { useEffect, useState, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { ArrowUpDown, LocateFixed, Plus, X } from 'lucide-react';
 import { loadAMap } from '../../lib/amap';
 import AIAssistant from '../../components/AIAssistant';
+import TravelModeSelector, { normalizeTravelMode, TRAVEL_MODE_OPTIONS, type TravelModeOption } from '../../components/travel/TravelModeSelector';
 import styles from './HomePage.module.css';
 import { apiGet } from '../../services/apiClient';
+import { planAmapRoute, planRouteCandidates, planTransitCandidates, buildTransitRouteOptions, resolveRouteLocations, resolveWaypointCoords } from '../../services/routePlanningService';
+import { useTravelLocationStore } from '../../stores/travelLocationStore';
+import { useTravelPlanStore } from '../../stores/travelPlanStore';
+import DepartureTimeSelect from '../../components/travel/DepartureTimeSelect';
+import { restoreDepartureState, type DepartureState } from '../../utils/departureTime';
+import { fromLegacyRouteMode, parseTravelMode } from '../../types/travelMode';
+import { useElderly } from '../../App';
 
-interface Alert { id:string; category:string; title:string; summary:string; severity:string; publishTime:number }
-interface News { id:string; title:string; summary:string; source:string; publishTime:number }
+interface News { id:string; category:string; title:string; summary:string; source:string; publishTime:number }
 interface Snapshot { cityIndex:number; avgSpeed:number; congestedRoadCount:number; totalRoadCount:number; trend24h:{hour:number;index:number}[] }
+/** 实时路况（模拟数据）：来自 /traffic/congestion 的路段拥堵快照 */
+interface LiveRoad { id:string; name:string; direction:string; speed:number; congestionLevel:'free'|'slow'|'congested'|'blocked' }
+
+const HOME_NEWS_CATEGORY_PRIORITY = ['control', 'construction', 'metro', 'bus', 'holiday'];
+
+/** publishTime 是否属于今天 */
+function isToday(ts: number): boolean {
+  const d = new Date(ts);
+  const now = new Date();
+  return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+}
+
+/** 首页相关分类优先级：control/construction/metro/bus/holiday 靠前，其余靠后 */
+function categoryPriority(category: string): number {
+  const idx = HOME_NEWS_CATEGORY_PRIORITY.indexOf(category as (typeof HOME_NEWS_CATEGORY_PRIORITY)[number]);
+  return idx === -1 ? HOME_NEWS_CATEGORY_PRIORITY.length : idx;
+}
 
 const HomePage: React.FC = () => {
   const navigate = useNavigate();
+  const { elderlyMode, disableElderlyMode } = useElderly();
+  const [searchParams] = useSearchParams();
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<any>(null);
-  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const homeRoutePolyline = useRef<any>(null);
+  const homeWaypointMarkers = useRef<any[]>([]);
+  const homeRouteWaypointCoords = useRef<[number, number][]>([]);
+  const homeRouteRequestId = useRef(0);
   const [news, setNews] = useState<News[]>([]);
+  const [newsFailed, setNewsFailed] = useState(false);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
+  const [snapshotFailed, setSnapshotFailed] = useState(false);
+  // 实时路况（模拟数据）：右侧顶部突出展示
+  const [liveRoads, setLiveRoads] = useState<LiveRoad[]>([]);
+  const [liveRoadsFailed, setLiveRoadsFailed] = useState(false);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [mapError, setMapError] = useState('');
-  const [query, setQuery] = useState('');
-  const [suggestions, setSuggestions] = useState<string[]>([]);
+  // 首页路线规划状态提示（避免「高亮按钮但地图没反应」的无反馈问题）
+  const [routePreviewStatus, setRoutePreviewStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [routePreviewMessage, setRoutePreviewMessage] = useState('');
+  const { origin, setOrigin, locate, clear: clearOrigin, status: locationStatus, error: locationError } = useTravelLocationStore();
+  const [destination, setDestination] = useState('');
+  const [waypoints, setWaypoints] = useState<string[]>([]);
+  const [departure, setDeparture] = useState<DepartureState>(restoreDepartureState);
+  const [selectedMode, setSelectedMode] = useState<TravelModeOption>('driving');
+  const quickDestinations = ['天安门', '王府井', '北京南站', '国贸CBD', '三里屯', '北京西站'];
 
-  // 北京 POI 提示词库
-  const ALL_SUGGESTIONS = [
-    '天安门广场', '故宫博物院', '王府井步行街', '国贸CBD', '三里屯太古里',
-    '北京南站', '北京西站', '北京站', '首都国际机场', '大兴国际机场',
-    '中关村软件园', '西单大悦城', '望京SOHO', '五棵松体育馆', '颐和园',
-    '圆明园', '鸟巢·水立方', '簋街', '南锣鼓巷', '后海酒吧街',
-    '北京动物园', '朝阳大悦城', '蓝色港湾', '华熙LIVE', '金融街',
-    '北京大学', '清华大学', '中国人民大学', '北京航空航天大学', '北京理工大学',
-    '西二旗', '上地', '亦庄开发区', '通州万达', '回龙观', '天通苑',
-  ];
+  const setManualOrigin = (value: string) => setOrigin({
+    name: value,
+    address: value,
+    lng: null,
+    lat: null,
+    source: 'manual',
+    timestamp: Date.now(),
+  });
 
-  const handleQueryChange = (val: string) => {
-    setQuery(val);
-    if (val.trim().length > 0) {
-      const filtered = ALL_SUGGESTIONS.filter(s => s.includes(val.trim()));
-      setSuggestions(filtered.slice(0, 6));
-    } else {
-      setSuggestions([]);
-    }
+  const swapRoute = () => {
+    const previousOrigin = origin.address;
+    setManualOrigin(destination);
+    setDestination(previousOrigin);
+    setWaypoints(points => [...points].reverse());
   };
+
+  const startRoute = () => {
+    if (!origin.address.trim() || !destination.trim()) return;
+    const trimmedDestination = destination.trim();
+    const trimmedWaypoints = waypoints.map(point => point.trim()).filter(Boolean);
+    const travelPlan = useTravelPlanStore.getState();
+    travelPlan.setDestination({
+      name: trimmedDestination,
+      address: trimmedDestination,
+      lng: null,
+      lat: null,
+      source: 'manual',
+    });
+    travelPlan.setWaypoints(trimmedWaypoints);
+    travelPlan.setMode(selectedMode);
+    travelPlan.setDeparture(departure);
+    const openResult = () => navigate('/travel/result', {
+      state: {
+        origin: origin.address,
+        originCoords: origin.lng != null && origin.lat != null ? { lng: origin.lng, lat: origin.lat } : null,
+        originSource: origin.source,
+        destination: trimmedDestination,
+        waypoints: trimmedWaypoints,
+        mode: selectedMode,
+        departTime: departure.departureTimeLabel,
+        departureMode: departure.departureMode,
+        departureAt: departure.departureAt,
+        departureTimeLabel: departure.departureTimeLabel,
+      },
+    });
+    const transitionDocument = document as Document & {
+      startViewTransition?: (callback: () => void) => void;
+    };
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches || !transitionDocument.startViewTransition) {
+      openResult();
+      return;
+    }
+    transitionDocument.startViewTransition(openResult);
+  };
+
+  const selectTravelMode = (mode: TravelModeOption) => {
+    if (!destination.trim()) {
+      window.alert('请填写目的地');
+      return;
+    }
+    setSelectedMode(mode);
+  };
+
+  const queryDestination = searchParams.get('destination')?.trim() || '';
+  const queryOrigin = searchParams.get('origin')?.trim() || '';
+  const queryMode = parseTravelMode(searchParams.get('mode'));
+
+  // AI/分享链接参数优先；没有 URL 参数时才恢复上一次规划草稿。
+  useEffect(() => {
+    const draft = useTravelPlanStore.getState();
+    if (queryDestination) setDestination(queryDestination);
+    else if (draft.destination?.name && !destination) setDestination(draft.destination.name);
+
+    if (queryOrigin) setManualOrigin(queryOrigin);
+
+    if (queryMode) setSelectedMode(queryMode);
+    else if (draft.mode) setSelectedMode(fromLegacyRouteMode(draft.mode, draft.profile));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queryDestination, queryMode, queryOrigin]);
 
   // 加载高德地图（大图显示）
   useEffect(() => {
@@ -55,37 +156,10 @@ const HomePage: React.FC = () => {
           viewMode: '2D',
           resizeEnable: true,
         });
-        // 实时路况图层
+        // 实时路况图层（保留；不再叠加固定的“演示交通事件” Marker）
         map.add(new AMap.TileLayer.Traffic({ zIndex: 10 }));
         map.addControl(new AMap.Scale({ position: 'LB' }));
         map.addControl(new AMap.ToolBar({ position: 'RT', liteStyle: true }));
-        // 几个示例事件标记
-        const incidents = [
-          { position: [116.432, 39.940], title: '二环路东直门桥事故', type: 'accident' },
-          { position: [116.390, 39.858], title: '三环十里河施工', type: 'construction' },
-          { position: [116.390, 39.908], title: '长安街临时管制', type: 'control' },
-        ];
-        incidents.forEach(inc => {
-          const color = inc.type === 'accident' ? '#f5222d' : inc.type === 'construction' ? '#faad14' : '#1677ff';
-          const m = new AMap.Marker({
-            position: inc.position as [number, number],
-            icon: new AMap.Icon({
-              size: new AMap.Size(28, 28),
-              image: 'data:image/svg+xml,' + encodeURIComponent(
-                `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 28 28"><circle cx="14" cy="14" r="13" fill="${color}" stroke="#fff" stroke-width="2"/><text x="14" y="19" text-anchor="middle" font-size="13">${inc.type==='accident'?'✕':inc.type==='construction'?'▲':'⛔'}</text></svg>`
-              ),
-            }),
-            title: inc.title,
-          });
-          m.on('click', () => {
-            const win = new AMap.InfoWindow({
-              content: `<div style="padding:8px;font-size:13px"><b>${inc.title}</b><br/>北京市 · 实时交通事件</div>`,
-              offset: new AMap.Pixel(0, -30),
-            });
-            win.open(map, inc.position as [number, number]);
-          });
-          map.add(m);
-        });
         mapInstance.current = map;
         setMapLoaded(true);
       })
@@ -96,38 +170,207 @@ const HomePage: React.FC = () => {
     return () => { if (mapInstance.current) { mapInstance.current.destroy(); mapInstance.current = null; } };
   }, []);
 
+  useEffect(() => {
+    const map = mapInstance.current;
+    if (!map || !mapLoaded) return;
+
+    if (homeRoutePolyline.current) {
+      map.remove(homeRoutePolyline.current);
+      homeRoutePolyline.current = null;
+    }
+    homeWaypointMarkers.current.forEach(marker => map.remove(marker));
+    homeWaypointMarkers.current = [];
+    homeRouteWaypointCoords.current = [];
+
+    if (!origin.address.trim() || !destination.trim()) return;
+
+    const requestId = ++homeRouteRequestId.current;
+    const routeMode = normalizeTravelMode(selectedMode);
+    setRoutePreviewStatus('loading');
+    setRoutePreviewMessage(`正在规划${TRAVEL_MODE_OPTIONS.find(m => m.key === selectedMode)?.label || ''}路线...`);
+    resolveRouteLocations(
+      origin.address,
+      destination,
+      origin.lng != null && origin.lat != null ? { lng: origin.lng, lat: origin.lat } : null,
+    )
+      .then(async ({ start, end }) => {
+        const routeWaypointCoords: [number, number][] = waypoints.length
+          ? (await resolveWaypointCoords(waypoints, origin.city || origin.province || null)).map(item => item.coord)
+          : [];
+        if (routeMode === 'bus') {
+          const namedWaypoints = waypoints.filter(point => point.trim());
+          if (namedWaypoints.length && routeWaypointCoords.length !== namedWaypoints.length) {
+            throw new Error('TRANSIT_WAYPOINT_RESOLVE_FAILED');
+          }
+          return planTransitCandidates(start, end, origin.city || origin.province || null, routeWaypointCoords)
+            .then(candidates => {
+              const route = buildTransitRouteOptions(candidates)[0]?.route || null;
+              if (!route) throw new Error('EMPTY_ROUTE');
+              return { route, waypointCoords: routeWaypointCoords };
+            });
+        }
+        return planRouteCandidates(routeMode, start, end, origin.city || origin.province || null, routeWaypointCoords)
+          .then(candidates => (candidates[0]?.route || null))
+          .then(route => {
+            if (!route) throw new Error('EMPTY_ROUTE');
+            return { route, waypointCoords: routeWaypointCoords };
+          });
+      })
+      .then(({ route, waypointCoords }) => {
+        if (requestId !== homeRouteRequestId.current || !mapInstance.current) return;
+        // 空路径不静默成功：请求成功但没解析出有效路径 → 明确报错
+        if (!route.path || route.path.length < 2) {
+          throw new Error(`${selectedMode} 路线规划成功，但未解析到有效路径`);
+        }
+        const AMap = (window as any).AMap;
+        if (!AMap?.Polyline) return;
+        const polyline = new AMap.Polyline({
+          path: route.path,
+          strokeColor: '#1677ff',
+          strokeWeight: 6,
+          strokeOpacity: 0.95,
+          strokeStyle: 'solid',
+          lineJoin: 'round',
+          lineCap: 'round',
+          zIndex: 80,
+        });
+        mapInstance.current.add(polyline);
+        homeRoutePolyline.current = polyline;
+        homeRouteWaypointCoords.current = waypointCoords;
+        const waypointMarkers = waypointCoords.map((coord: [number, number], index: number) => new AMap.Marker({
+          position: coord,
+          content: `<div style="width:28px;height:28px;border-radius:50%;background:#faad14;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:14px;">${index + 1}</div>`,
+          offset: new AMap.Pixel(-14, -14),
+          title: `途经点${index + 1}`,
+          zIndex: 90,
+        }));
+        if (waypointMarkers.length) {
+          mapInstance.current.add(waypointMarkers);
+          homeWaypointMarkers.current = waypointMarkers;
+        }
+        mapInstance.current.setFitView([polyline, ...waypointMarkers], false, [70, 70, 100, 440]);
+        setRoutePreviewStatus('success');
+        setRoutePreviewMessage('');
+      })
+      .catch(error => {
+        if (requestId !== homeRouteRequestId.current) return;
+        console.warn('Home route planning failed:', error);
+        const rawMsg = error instanceof Error ? error.message : '';
+        // 空路径/超长距离/不支持 → 用户友好中文（不显示英文错误码）
+        const friendly = rawMsg.includes('EMPTY_ROUTE')
+          ? '暂未找到可用该路线，请稍后重试'
+          : rawMsg.includes('LONG_DISTANCE')
+            ? '起终点距离过远，建议换乘公交或驾车'
+            : rawMsg.includes('TOO_MANY_WAYPOINTS')
+            ? '驾车路线最多支持 16 个途经点，请删除部分途经点后重试'
+          : rawMsg.includes('TRANSIT_WAYPOINT_RESOLVE_FAILED')
+            ? '有途经点无法识别，请检查途经点名称'
+          : rawMsg.includes('TRANSIT_WAYPOINTS_UNSUPPORTED')
+            ? '公交/地铁路线暂不支持途经点，请删除途经点后继续'
+          : rawMsg.includes('CROSS_CITY_TRANSIT_UNSUPPORTED')
+              ? '当前起终点不在同一城市，暂不支持跨城市公交/地铁规划'
+              : rawMsg.includes('transit-no-valid-segment')
+                ? '暂无可用公交/地铁方案'
+                : '路线服务暂时不可用，请稍后重试';
+        setRoutePreviewStatus('error');
+        setRoutePreviewMessage(friendly);
+      });
+
+    return () => {
+      homeRouteRequestId.current += 1;
+    };
+  }, [destination, mapLoaded, origin.address, origin.lat, origin.lng, origin.city, origin.province, selectedMode, waypoints]);
+
   // 加载数据
   useEffect(() => {
-    apiGet<Array<{
-      id:string; type?:string; category?:string; title:string; description?:string; summary?:string;
-      severity:string; time?:number; publishTime?:number;
-    }>>('/traffic/alerts')
-      .then(data => setAlerts(data.map(item => ({
-        id:item.id, category:item.category || item.type || 'other', title:item.title,
-        summary:item.summary || item.description || '',
-        severity:item.severity,
-        publishTime:item.publishTime ?? item.time ?? Date.now(),
-      }))))
-      .catch(() => setAlerts([]));
-    apiGet<News[]>('/news/list').then(data => setNews(data.slice(0, 4))).catch(() => setNews([]));
+    // 今日交通资讯：复用 /news/list，保存完整数据，前端按 publishTime 筛选
+    apiGet<News[]>('/news/list')
+      .then(data => { setNews(data); setNewsFailed(false); })
+      .catch(() => { setNews([]); setNewsFailed(true); });
+    // 北京 · 交通运行参考：仍为模拟数据，失败不生成随机指数
     apiGet<Partial<Snapshot> & { congestionIndex?:number; activeAlerts?:number }>('/traffic/snapshot')
-      .then(data => setSnapshot({
-        cityIndex:data.cityIndex ?? data.congestionIndex ?? 0,
-        avgSpeed:data.avgSpeed ?? 0,
-        congestedRoadCount:data.congestedRoadCount ?? data.activeAlerts ?? 0,
-        totalRoadCount:data.totalRoadCount ?? 0,
-        trend24h:data.trend24h ?? [],
-      }))
-      .catch(() => setSnapshot(null));
+      .then(data => {
+        setSnapshot({
+          cityIndex:data.cityIndex ?? data.congestionIndex ?? 0,
+          avgSpeed:data.avgSpeed ?? 0,
+          congestedRoadCount:data.congestedRoadCount ?? data.activeAlerts ?? 0,
+          totalRoadCount:data.totalRoadCount ?? 0,
+          trend24h:data.trend24h ?? [],
+        });
+        setSnapshotFailed(false);
+      })
+      .catch(() => { setSnapshot(null); setSnapshotFailed(true); });
+    // 实时路况（模拟数据）：取拥堵路段快照，右侧顶部突出展示前 2 条
+    apiGet<LiveRoad[]>('/traffic/congestion')
+      .then(data => {
+        const sorted = [...data].sort((a, b) => {
+          const rank = { blocked: 0, congested: 1, slow: 2, free: 3 } as Record<string, number>;
+          return (rank[a.congestionLevel] ?? 4) - (rank[b.congestionLevel] ?? 4);
+        });
+        setLiveRoads(sorted.filter(r => r.congestionLevel === 'blocked' || r.congestionLevel === 'congested').slice(0, 2));
+        setLiveRoadsFailed(false);
+      })
+      .catch(() => { setLiveRoads([]); setLiveRoadsFailed(true); });
   }, []);
 
-  const severityColor = (s:string) => (s==='critical'?'#f5222d':s==='warning'?'#faad14':'#1677ff');
-  const severityBg = (s:string) => (s==='critical'?'#fff1f0':s==='warning'?'#fff7e6':'#e6f4ff');
-  const alertIcon = (c:string) => ({accident:'🚨',construction:'🚧',weather:'🌧️',control:'🚫',congestion:'🚦'}[c] || '⚠️');
+  // ===== 拥堵关键指标：由 trend24h 真实（模拟）数据推导，不硬编码 =====
+  const trafficSummary = useMemo(() => {
+    const trend = snapshot?.trend24h ?? [];
+    if (trend.length === 0) return null;
+    // 峰值指数
+    const peak = trend.reduce((max, p) => (p.index > max.index ? p : max), trend[0]);
+    // 平均指数
+    const avg = trend.reduce((sum, p) => sum + p.index, 0) / trend.length;
+    // 高峰时段：连续滑动窗口（4 小时）取平均最高的一段
+    const WINDOW = 4;
+    let bestPeak: { start: number; avg: number } | null = null;
+    for (let i = 0; i + WINDOW <= trend.length; i += 1) {
+      const windowAvg = trend.slice(i, i + WINDOW).reduce((s, p) => s + p.index, 0) / WINDOW;
+      if (!bestPeak || windowAvg > bestPeak.avg) bestPeak = { start: trend[i].hour, avg: windowAvg };
+    }
+    // 推荐时段：连续滑动窗口取平均最低的一段
+    let bestFree: { start: number; avg: number } | null = null;
+    for (let i = 0; i + WINDOW <= trend.length; i += 1) {
+      const windowAvg = trend.slice(i, i + WINDOW).reduce((s, p) => s + p.index, 0) / WINDOW;
+      if (!bestFree || windowAvg < bestFree.avg) bestFree = { start: trend[i].hour, avg: windowAvg };
+    }
+    const fmt = (h: number) => `${String(h).padStart(2, '0')}:00`;
+    return {
+      peakHour: `${fmt(bestPeak?.start ?? 0)}-${fmt((bestPeak?.start ?? 0) + WINDOW)}`,
+      peakIndex: peak.index.toFixed(1),
+      freeHour: `${fmt(bestFree?.start ?? 0)}-${fmt((bestFree?.start ?? 0) + WINDOW)}`,
+      avgIndex: avg.toFixed(1),
+    };
+  }, [snapshot]);
+
+  // 今日交通资讯：publishTime 属于今天 → 优先首页相关分类（control/construction/metro/bus/holiday）→ 按时间倒序取最新 3 条
+  const todayNews = useMemo(() => {
+    const today = news
+      .filter(n => isToday(n.publishTime))
+      .sort((a, b) => {
+        const pa = categoryPriority(a.category);
+        const pb = categoryPriority(b.category);
+        if (pa !== pb) return pa - pb;
+        return b.publishTime - a.publishTime;
+      });
+    return today.slice(0, 3);
+  }, [news]);
+
   const formatRelative = (ts:number) => { const d=Date.now()-ts; if(d<3600000)return `${Math.max(1,Math.floor(d/60000))}分钟前`; if(d<86400000)return `${Math.floor(d/3600000)}小时前`; return `${Math.floor(d/86400000)}天前`; };
 
   return (
     <div>
+      {/* 关怀模式已开启：返回首页 ≠ 退出关怀模式，保持大字号（data-elderly 全局生效） */}
+      {elderlyMode && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', background: '#fff7e6', borderBottom: '1px solid #ffe7ba', fontSize: 15 }}>
+          <span style={{ fontWeight: 700 }}>👴 关怀模式已开启</span>
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+            <button onClick={() => navigate('/elderly')} style={{ padding: '8px 16px', borderRadius: 10, border: '1px solid #d9a94e', background: '#fff', color: '#8a5a00', fontSize: 14, cursor: 'pointer' }}>返回关怀首页</button>
+            <button onClick={disableElderlyMode} style={{ padding: '8px 16px', borderRadius: 10, border: 'none', background: '#faad14', color: '#fff', fontSize: 14, cursor: 'pointer' }}>退出关怀模式</button>
+          </span>
+        </div>
+      )}
+
       {/* ===== 大图地图 Hero ===== */}
       <section className={styles.hero}>
         <div ref={mapContainer} className={styles.heroMap} />
@@ -137,45 +380,171 @@ const HomePage: React.FC = () => {
           </div>
         )}
 
-        {/* 左侧：AI出行助手搜索 */}
+        {/* 左侧：AI 出行规划 */}
         <div className={styles.heroLeft}>
           <div className={styles.aiBox}>
-            <div className={styles.aiBoxTitle}>🤖 AI智能出行助手</div>
-            <div className={styles.searchRow}>
-              <div className={styles.searchWrapper}>
-                <input
-                  className={styles.searchInput}
-                  placeholder="输入目的地，如：天安门"
-                  value={query}
-                  onChange={e=>handleQueryChange(e.target.value)}
-                  onKeyDown={e=>{ if(e.key==='Enter' && query.trim()) navigate('/travel', { state: { dest: query.trim() } }); }}
-                  onBlur={()=>setTimeout(()=>setSuggestions([]),200)}
-                  onFocus={()=>{ if(query.trim()) handleQueryChange(query); }}
-                />
-                {/* 自动补全下拉 */}
-                {suggestions.length > 0 && (
-                  <div className={styles.suggestDropdown}>
-                    {suggestions.map(s => (
-                      <div key={s} className={styles.suggestItem} onMouseDown={e=>{ e.preventDefault(); setQuery(s); navigate('/travel', { state: { dest: s } }); }}>
-                        <span className={styles.suggestIcon}>📍</span>
-                        <span>{s}</span>
-                      </div>
-                    ))}
+            <div className={styles.aiBoxTitle}>AI智能出行助手</div>
+            <div className={styles.routeEditor}>
+              <div className={styles.locationInputs}>
+                <div className={styles.locationInputRow}>
+                  <span className={`${styles.poiDot} ${styles.originDot}`} />
+                  <input
+                    className={styles.locationInput}
+                    aria-label="出发地"
+                    placeholder={origin.source === 'geolocation' && origin.lng != null && !origin.address
+                      ? '地址解析失败，可通过地图重新选点'
+                      : '请输入出发地'}
+                    value={origin.address}
+                    onChange={event => setManualOrigin(event.target.value)}
+                  />
+                  {origin.address && (
+                    <button
+                      type="button"
+                      className={styles.locationClearButton}
+                      onClick={clearOrigin}
+                      title="清空出发地"
+                      aria-label="清空出发地"
+                    >
+                      <X size={16} aria-hidden="true" />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className={styles.locationButton}
+                    onClick={() => void locate()}
+                    title="获取当前位置"
+                    aria-label="获取当前位置"
+                    disabled={locationStatus === 'locating'}
+                  >
+                    <LocateFixed size={18} aria-hidden="true" />
+                  </button>
+                </div>
+                {waypoints.map((waypoint, index) => (
+                  <div className={styles.locationInputRow} key={index}>
+                    <span className={`${styles.poiDot} ${styles.waypointDot}`} />
+                    <input
+                      className={styles.locationInput}
+                      aria-label={`途经点${index + 1}`}
+                      placeholder={`请输入途经点${index + 1}`}
+                      value={waypoint}
+                      onChange={event => setWaypoints(points => points.map((point, pointIndex) => pointIndex === index ? event.target.value : point))}
+                    />
+                    <button
+                      type="button"
+                      className={styles.locationButton}
+                      onClick={() => setWaypoints(points => points.filter((_, pointIndex) => pointIndex !== index))}
+                      title="删除途经点"
+                      aria-label={`删除途经点${index + 1}`}
+                    >
+                      <X size={18} aria-hidden="true" />
+                    </button>
                   </div>
-                )}
+                ))}
+                <div className={styles.locationInputRow}>
+                  <span className={`${styles.poiDot} ${styles.destinationDot}`} />
+                  <input
+                    className={styles.locationInput}
+                    aria-label="目的地"
+                    placeholder="请输入目的地"
+                    name="home-destination"
+                    autoComplete="on"
+                    value={destination}
+                    onChange={event => setDestination(event.target.value)}
+                    onKeyDown={event => { if (event.key === 'Enter') startRoute(); }}
+                  />
+                  {destination && (
+                    <button
+                      type="button"
+                      className={styles.locationClearButton}
+                      onClick={() => {
+                        setDestination('');
+                        useTravelPlanStore.getState().setDestination({
+                          name: '',
+                          address: '',
+                          lng: null,
+                          lat: null,
+                          source: 'manual',
+                        });
+                      }}
+                      title="清空目的地"
+                      aria-label="清空目的地"
+                    >
+                      <X size={16} aria-hidden="true" />
+                    </button>
+                  )}
+                </div>
               </div>
-              <button className={styles.searchBtn} onClick={() => query.trim() ? navigate('/travel', { state: { dest: query.trim() } }) : navigate('/travel')}>出行规划</button>
+              <div className={styles.routeActions}>
+                <button type="button" className={styles.routeActionButton} onClick={swapRoute} title="切换出发地和目的地" aria-label="切换出发地和目的地">
+                  <ArrowUpDown size={19} aria-hidden="true" />
+                </button>
+                <button type="button" className={styles.routeActionButton} onClick={() => setWaypoints(points => [...points, ''])} title="添加途经点" aria-label="添加途经点">
+                  <Plus size={20} aria-hidden="true" />
+                </button>
+              </div>
             </div>
-            <div className={styles.aiHint}>AI结合实时路况+拥堵预测，为您推荐最优路线</div>
+            {locationError && locationStatus !== 'success' && <div className={styles.locationError}>{locationError}</div>}
+            <div className={styles.departRow}>
+              <span>出发时间</span>
+              <DepartureTimeSelect value={departure} onChange={setDeparture} />
+            </div>
+            <button type="button" className={styles.startButton} onClick={startRoute} disabled={!origin.address.trim() || !destination.trim()}>出发</button>
+            <div className={styles.popularSection}>
+              <div className={styles.popularTitle}>热门目的地</div>
+              <div className={styles.popularList}>
+                {quickDestinations.map(place => (
+                  <button type="button" key={place} className={styles.popularDestination} onClick={() => setDestination(place)}>{place}</button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <TravelModeSelector value={selectedMode} onChange={selectTravelMode} className={styles.heroModeSelector} />
+
+        {/* 路线规划状态提示：避免「高亮按钮但地图没反应」 */}
+        {routePreviewStatus === 'loading' && (
+          <div style={{ position: 'absolute', left: '50%', bottom: 76, transform: 'translateX(-50%)', background: 'rgba(0,0,0,0.7)', color: '#fff', padding: '8px 16px', borderRadius: 20, fontSize: 13, zIndex: 30 }}>
+            ⏳ {routePreviewMessage}
+          </div>
+        )}
+        {routePreviewStatus === 'error' && (
+          <div style={{ position: 'absolute', left: '50%', bottom: 76, transform: 'translateX(-50%)', background: 'rgba(245,34,45,0.9)', color: '#fff', padding: '8px 16px', borderRadius: 20, fontSize: 13, zIndex: 30 }}>
+            ⚠️ {routePreviewMessage}
+          </div>
+        )}
+
+        {/* 右侧浮动：今日交通资讯 + 北京 · 交通运行参考 */}
+        <div className={styles.alertFloat}>
+          {/* 今日交通资讯：当天发布、倒序、最新 3 条，优先首页相关分类 */}
+          <div className={styles.alertNewsCard}>
+            <div className={styles.indexHead}>
+              <span>📰 今日交通资讯</span>
+              <span className={styles.sectionMore} onClick={()=>navigate('/news')}>更多 →</span>
+            </div>
+            {newsFailed ? (
+              <div className={styles.alertEmpty}>交通资讯暂时无法加载</div>
+            ) : todayNews.length === 0 ? (
+              <div className={styles.alertEmpty}>今日暂无新的交通资讯</div>
+            ) : (
+              todayNews.map(n => (
+                <div key={n.id} className={styles.alertFloatItem} onClick={()=>navigate(`/news/${n.id}`)}>
+                  <span className={styles.alertFloatTitle}>{n.title}</span>
+                  <span className={styles.alertFloatTime}>{formatRelative(n.publishTime)}</span>
+                </div>
+              ))
+            )}
           </div>
 
-          {/* 拥堵指数卡片 */}
-          {snapshot && (
-            <div className={styles.indexCard}>
-              <div className={styles.indexHead}>
-                <span>北京 · 实时拥堵指数</span>
-                <span className={styles.indexTrend}>↑ 较昨日</span>
-              </div>
+          {/* 北京 · 交通运行参考：模拟数据，非官方实时 */}
+          <div className={styles.indexCard}>
+            <div className={styles.indexHead}>
+              <span>北京 · 交通运行参考</span>
+              <span style={{ fontSize: 11, color: 'var(--text-hint)' }}>模拟数据 · 非官方实时</span>
+            </div>
+            {snapshotFailed ? (
+              <div className={styles.alertEmpty}>交通运行数据暂不可用</div>
+            ) : snapshot ? (
               <div className={styles.indexBody}>
                 <span className={styles.indexNum} style={{ color: snapshot.cityIndex>7?'#f5222d':snapshot.cityIndex>5?'#ff7a00':'#52c41a' }}>
                   {snapshot.cityIndex}
@@ -185,104 +554,118 @@ const HomePage: React.FC = () => {
                   <div>拥堵路段 <b style={{color:'#f5222d'}}>{snapshot.congestedRoadCount}</b>/{snapshot.totalRoadCount}</div>
                 </div>
               </div>
-            </div>
-          )}
-        </div>
-
-        {/* 底部：快捷出行入口 */}
-        <div className={styles.heroQuick}>
-          {[
-            { icon:'🚗', label:'驾车出行', path:'/travel' },
-            { icon:'🚌', label:'公交地铁', path:'/travel' },
-            { icon:'🚲', label:'骑行导航', path:'/travel' },
-            { icon:'🚶', label:'步行导航', path:'/travel' },
-            { icon:'🅿️', label:'停车充电', path:'/parking' },
-          ].map(item => (
-            <div key={item.label} className={styles.heroQuickItem} onClick={()=>navigate(item.path)}>
-              <span className={styles.heroQuickIcon}>{item.icon}</span>
-              <span>{item.label}</span>
-            </div>
-          ))}
-        </div>
-
-        {/* 实时预警浮动标签 */}
-        <div className={styles.alertFloat}>
-          {alerts.slice(0,3).map(a => (
-            <div key={a.id} className={styles.alertFloatItem}>
-              <span style={{color:severityColor(a.severity)}}>{alertIcon(a.category)}</span>
-              <span className={styles.alertFloatTitle}>{a.title}</span>
-              <span className={styles.alertFloatTime}>{formatRelative(a.publishTime)}</span>
-            </div>
-          ))}
+            ) : null}
+          </div>
         </div>
       </section>
 
-      {/* ===== 功能模块（规整网格） ===== */}
-      <section className={styles.features}>
-        <div className={styles.sectionHead}>
-          <h2 className={styles.sectionTitle}>出行服务</h2>
-          <span className={styles.sectionMore} onClick={()=>navigate('/services')}>全部服务 →</span>
-        </div>
-        <div className={styles.featureGrid}>
-          {[
-            { icon:'🧭', title:'一体化出行规划', desc:'驾车/公交/骑行多模式 · AI拥堵预测', path:'/travel', color:'#1677ff' },
-            { icon:'🅿️', title:'智慧停车诱导', desc:'实时空位 · 收费标准 · 导航直达', path:'/parking', color:'#722ed1' },
-            { icon:'⚡', title:'充电桩查询', desc:'空闲状态 · 功率 · 扫码充电', path:'/parking', color:'#13c2c2' },
-            { icon:'📷', title:'事件上报', desc:'拍照上报 · 工单追踪 · 处理反馈', path:'/report', color:'#fa541c' },
-            { icon:'📰', title:'交通资讯', desc:'施工公告 · 管制通知 · 出行提示', path:'/news', color:'#eb2f96' },
-            { icon:'🌳', title:'绿色碳普惠', desc:'绿色出行积累碳积分 · 兑换权益', path:'/carbon', color:'#52c41a' },
-            { icon:'🧰', title:'便民服务', desc:'违章查询 · 车驾管 · 移车求助', path:'/services', color:'#fa8c16' },
-            { icon:'👴', title:'长辈简易模式', desc:'大字体 · 语音交互 · 极简操作', path:'/elderly', color:'#a0d911' },
-          ].map(f => (
-            <div key={f.title} className={styles.featureCard} onClick={()=>navigate(f.path)}>
-              <div className={styles.featureIcon} style={{ background: f.color + '18', color: f.color }}>{f.icon}</div>
-              <div className={styles.featureInfo}>
-                <div className={styles.featureTitle}>{f.title}</div>
-                <div className={styles.featureDesc}>{f.desc}</div>
-              </div>
-              <span className={styles.featureArrow}>→</span>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* ===== 24h 拥堵趋势 + 实时预警 ===== */}
-      <section className={styles.bottomSection}>
-        <div className={styles.siteCard}>
+      {/* ===== 城市交通运行：24h 拥堵趋势（42%）+ 交通资讯（58%） ===== */}
+      <section className={styles.trafficOverviewGrid}>
+        {/* 左：24小时拥堵趋势 */}
+        <div className={styles.congestionCard}>
           <div className={styles.sectionHead}>
             <h2 className={styles.sectionTitle}>📊 24小时拥堵趋势</h2>
-            <span className={styles.sectionMore}>实时数据</span>
+            <span className={styles.dataTag}>模拟数据</span>
           </div>
-          {snapshot && (
-            <div className={styles.sparkArea}>
-              <div className={styles.sparkline}>
-                {snapshot.trend24h.map((p,i)=>(
-                  <div key={i} className={styles.sparkBar}
-                    style={{ height:`${Math.max(10,p.index*9)}px`, background: p.index>7?'#f5222d':p.index>5?'#ff7a00':p.index>3?'#fadb14':'#52c41a' }}
-                    title={`${p.hour}:00 指数${p.index}`}/>
-                ))}
+          {snapshotFailed ? (
+            <div className={styles.alertEmpty}>交通运行数据暂不可用</div>
+          ) : snapshot ? (
+            <>
+              <div className={styles.congestionChart}>
+                <div className={styles.sparkline}>
+                  {snapshot.trend24h.map((p,i)=>(
+                    <div key={i} className={styles.sparkBar}
+                      style={{ height:`${Math.max(8,p.index*11)}px`, background: p.index>7?'#f5222d':p.index>5?'#ff7a00':p.index>3?'#fadb14':'#52c41a' }}
+                      title={`${p.hour}:00 指数${p.index}`}/>
+                  ))}
+                </div>
+                <div className={styles.sparkLabels}><span>0:00</span><span>6:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div>
               </div>
-              <div className={styles.sparkLabels}><span>0:00</span><span>6:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div>
-            </div>
-          )}
+
+              {/* 关键结论（由 trend24h 推导，不硬编码） */}
+              {trafficSummary && (
+                <div className={styles.trafficSummaryGrid}>
+                  <div className={styles.trafficSummaryItem}>
+                    <span>今日高峰</span>
+                    <strong>{trafficSummary.peakHour}</strong>
+                  </div>
+                  <div className={styles.trafficSummaryItem}>
+                    <span>峰值拥堵指数</span>
+                    <strong>{trafficSummary.peakIndex}</strong>
+                  </div>
+                  <div className={styles.trafficSummaryItem}>
+                    <span>推荐出行时段</span>
+                    <strong>{trafficSummary.freeHour}</strong>
+                  </div>
+                  <div className={styles.trafficSummaryItem}>
+                    <span>平均拥堵指数</span>
+                    <strong>{trafficSummary.avgIndex}</strong>
+                  </div>
+                </div>
+              )}
+
+              {/* 智能出行建议 */}
+              <div className={styles.trafficSuggestion}>
+                <span>💡</span>
+                <span>
+                  今日预计存在早晚拥堵高峰，建议优先在 <strong>{trafficSummary?.freeHour ?? '10:00-16:00'}</strong> 出行。
+                </span>
+              </div>
+            </>
+          ) : null}
         </div>
 
-        <div className={styles.siteCard}>
+        {/* 右：交通资讯（实时路况 + 最新资讯分层） */}
+        <div className={styles.trafficNewsCard}>
           <div className={styles.sectionHead}>
             <h2 className={styles.sectionTitle}>📰 交通资讯</h2>
             <span className={styles.sectionMore} onClick={()=>navigate('/news')}>更多 →</span>
           </div>
-          <div className={styles.newsList}>
-            {news.map(n => (
-              <div key={n.id} className={styles.newsItem} onClick={()=>navigate(`/news/${n.id}`)}>
-                <div className={styles.newsTitle}>{n.title}</div>
-                <div className={styles.newsMeta}>
-                  <span>{n.source}</span>
-                  <span>{formatRelative(n.publishTime)}</span>
+          {newsFailed ? (
+            <div className={styles.alertEmpty}>交通资讯暂时无法加载</div>
+          ) : (
+            <>
+              {/* 实时路况（模拟数据）：突出前 2 条拥堵路段 */}
+              {!liveRoadsFailed && liveRoads.length > 0 && (
+                <div className={styles.liveTrafficList}>
+                  {liveRoads.map(r => (
+                    <div key={r.id} className={styles.liveTrafficItem}>
+                      <span className={`${styles.trafficDot} ${r.congestionLevel === 'blocked' ? styles.severe : styles.congested}`} />
+                      <div className={styles.trafficInfo}>
+                        <strong>{r.name}{r.direction ? `（${r.direction}）` : ''}</strong>
+                        <span>
+                          {r.congestionLevel === 'blocked' ? '严重拥堵' : '拥堵'} · 平均时速 {r.speed}km/h
+                        </span>
+                      </div>
+                      <span className={styles.trafficTime}>模拟数据</span>
+                    </div>
+                  ))}
                 </div>
+              )}
+
+              {/* 最新交通资讯分隔 */}
+              <div className={styles.newsSectionTitle}>
+                <span>最新交通资讯</span>
+                <div />
               </div>
-            ))}
-          </div>
+
+              {/* 首页最多展示 5 条，点击进入完整资讯页 */}
+              <div className={styles.newsList}>
+                {news.slice(0, 5).map(n => (
+                  <div key={n.id} className={styles.newsItem} onClick={()=>navigate(`/news/${n.id}`)}>
+                    <div className={styles.newsTitle}>{n.title}</div>
+                    <div className={styles.newsMeta}>
+                      <span>{n.source}</span>
+                      <span>{formatRelative(n.publishTime)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ marginTop: 12, textAlign: 'right' }}>
+                <span className={styles.sectionMore} onClick={()=>navigate('/news')}>查看全部交通资讯 →</span>
+              </div>
+            </>
+          )}
         </div>
       </section>
 

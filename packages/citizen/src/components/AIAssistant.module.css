@@ -1,4 +1,4 @@
-/* AI出行助手浮动组件 */
+/* 小枢出行助手浮动组件 */
 
 .fab {
   position: fixed;
@@ -36,7 +36,7 @@
   right: 32px;
   width: 400px;
   max-width: calc(100vw - 48px);
-  height: 560px;
+  height: 600px;
   max-height: calc(100vh - 140px);
   background: #fff;
   border-radius: 16px;
@@ -58,6 +58,10 @@
   background: linear-gradient(135deg, #1677ff, #69b1ff);
   color: #fff;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .header span {
@@ -73,6 +77,42 @@
   margin-top: 2px;
 }
 
+.clearButton {
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 14px;
+  white-space: nowrap;
+}
+
+.sessionBar {
+  min-height: 34px;
+  padding: 7px 16px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border-bottom: 1px solid #edf1f5;
+  background: #f8fbff;
+  color: #41536a;
+  font-size: 11px;
+}
+
+.sessionDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #faad14;
+  box-shadow: 0 0 0 3px rgba(250, 173, 20, 0.14);
+}
+
+.sessionHint {
+  margin-left: auto;
+  color: #8795a7;
+}
+
 /* 消息区 */
 .body {
   flex: 1;
@@ -85,15 +125,24 @@
 
 .msg {
   display: flex;
-  max-width: 85%;
+  max-width: 88%;
 }
 
 .userMsg {
   align-self: flex-end;
+  max-width: 78%;
 }
 
 .aiMsg {
   align-self: flex-start;
+  max-width: 100%;
+}
+
+.msgContent {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
 }
 
 .bubble {
@@ -101,6 +150,7 @@
   border-radius: 14px;
   font-size: 13px;
   line-height: 1.6;
+  white-space: pre-wrap;
 }
 
 .userMsg .bubble {
@@ -126,6 +176,12 @@
 @keyframes typing {
   0%, 60%, 100% { opacity: 0.2; transform: translateY(0); }
   30% { opacity: 1; transform: translateY(-4px); }
+}
+
+.thinkingText {
+  font-size: 12px;
+  color: #1677ff;
+  margin-right: 6px;
 }
 
 /* 快捷问题 */
@@ -194,6 +250,192 @@
 .sendBtn:hover { opacity: 0.85; }
 .sendBtn:disabled { opacity: 0.4; cursor: not-allowed; }
 
+/* ===== 结果卡片 ===== */
+.card {
+  background: #fff;
+  border: 1px solid #eef0f3;
+  border-radius: 12px;
+  padding: 12px 14px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cardHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cardTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1a1a2e;
+}
+
+.sourceTag {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.cardSub {
+  font-size: 12px;
+  color: #8c8c8c;
+}
+
+.cardEditor { display: grid; gap: 8px; margin: 2px 0 4px; padding: 10px; border-radius: 10px; background: #f8fbff; }
+.cardEditor label { display: grid; grid-template-columns: 58px 1fr; align-items: center; gap: 8px; color: #667085; font-size: 12px; }
+.travelerLabel { line-height: 1.35; white-space: nowrap; }
+.cardEditor input, .cardEditor select { min-width: 0; box-sizing: border-box; width: min(100%, 300px); margin-left: auto; padding: 7px 9px; border: 1px solid #d9e2ec; border-radius: 7px; background: #fff; color: #1a1a2e; font-size: 12px; outline: none; }
+.cardEditor input:focus, .cardEditor select:focus { border-color: #1677ff; box-shadow: 0 0 0 2px rgba(22,119,255,.12); }
+.travelerHint { margin: -4px 0 0 66px; color: #8c8c8c; font-size: 11px; line-height: 1.4; }
+.editorInputWrap { display: flex; width: min(100%, 300px); min-width: 0; margin-left: auto; gap: 4px; }
+.editorInputWrap input { flex: 1; }
+.editorLocateButton { display: inline-flex; align-items: center; justify-content: center; width: 28px; flex: 0 0 28px; padding: 0; border: 1px solid #d9e2ec; border-radius: 7px; background: #fff; color: #1677ff; cursor: pointer; }
+.editorLocateButton:disabled { cursor: wait; opacity: .55; }
+
+.cardRows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cardRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+}
+
+.cardRowLabel {
+  color: #8c8c8c;
+}
+
+.cardRowValue {
+  color: #1a1a2e;
+  font-weight: 500;
+}
+
+.cardActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.cardAction,
+.cardActionPrimary {
+  font-size: 12px;
+  padding: 6px 14px;
+  border-radius: 16px;
+  cursor: pointer;
+  border: 1px solid #d9d9d9;
+  background: #fff;
+  color: #1a1a2e;
+  transition: all 0.2s;
+}
+
+.cardAction:hover {
+  border-color: #1677ff;
+  color: #1677ff;
+}
+
+.cardActionPrimary {
+  background: #1677ff;
+  border-color: #1677ff;
+  color: #fff;
+  font-weight: 600;
+}
+
+.cardActionPrimary:hover {
+  background: #4096ff;
+  border-color: #4096ff;
+}
+
+.retryButton {
+  align-self: flex-start;
+  border: 1px solid #91caff;
+  background: #fff;
+  color: #1677ff;
+  border-radius: 16px;
+  padding: 6px 14px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.confirmBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(15, 28, 45, 0.42);
+  backdrop-filter: blur(2px);
+}
+
+.confirmDialog {
+  width: min(360px, 100%);
+  padding: 24px;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 20px 60px rgba(15, 28, 45, 0.24);
+  text-align: center;
+}
+
+.confirmIcon {
+  width: 42px;
+  height: 42px;
+  margin: 0 auto 12px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #fff7e6;
+  color: #d46b08;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.confirmDialog h3 {
+  margin: 0;
+  color: #1a1a2e;
+  font-size: 17px;
+}
+
+.confirmDialog p {
+  margin: 10px 0 20px;
+  color: #667085;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.confirmActions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.confirmActions button {
+  border: 1px solid #d9d9d9;
+  background: #fff;
+  color: #344054;
+  border-radius: 10px;
+  padding: 10px 14px;
+  cursor: pointer;
+}
+
+.confirmActions .confirmPrimary {
+  border-color: #1677ff;
+  background: #1677ff;
+  color: #fff;
+}
+
 @media (max-width: 480px) {
   .panel {
     right: 8px;
@@ -208,5 +450,8 @@
     width: 48px;
     height: 48px;
     font-size: 24px;
+  }
+  .sessionHint {
+    display: none;
   }
 }

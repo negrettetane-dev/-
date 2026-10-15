@@ -7,48 +7,38 @@
 }
 
 /* 左侧浮层 */
-.heroLeft { position: absolute; top: 16px; left: 16px; width: 320px; display: flex; flex-direction: column; gap: 12px; }
+.heroLeft { position: absolute; top: 16px; left: 16px; width: 390px; display: flex; flex-direction: column; gap: 12px; }
 .aiBox { background: rgba(255,255,255,0.95); backdrop-filter: blur(8px); border-radius: 12px; padding: 16px; box-shadow: 0 4px 16px rgba(0,0,0,0.12); }
 .aiBoxTitle { font-size: 15px; font-weight: 700; margin-bottom: 12px; }
-.searchRow { display: flex; gap: 8px; }
-.searchInput {
-  flex: 1; padding: 10px 14px; border: 1px solid #e5e7eb; border-radius: 8px;
-  font-size: 14px; outline: none; transition: border-color 0.2s;
-}
-.searchInput:focus { border-color: var(--primary); }
-.searchBtn { padding: 10px 16px; background: var(--primary); color: #fff; border: none; border-radius: 8px; font-size: 14px; cursor: pointer; white-space: nowrap; }
-
-/* 搜索补全下拉 */
-.searchWrapper { flex: 1; position: relative; }
-.suggestDropdown {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  margin-top: 4px;
-  box-shadow: 0 6px 20px rgba(0,0,0,0.1);
-  z-index: 100;
-  overflow: hidden;
-}
-.suggestItem {
-  padding: 10px 14px;
-  font-size: 14px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  transition: background 0.15s;
-  border-bottom: 1px solid #f5f5f5;
-}
-.suggestItem:last-child { border-bottom: none; }
-.suggestItem:hover { background: #f0f5ff; color: var(--primary); }
-.suggestIcon { font-size: 14px; }
-
-.aiHint { font-size: 12px; color: var(--text-hint); margin-top: 10px; }
-
+.routeEditor { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; }
+.locationInputs { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.locationInputRow { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 12px; background: var(--bg-page); border: 1px solid transparent; border-radius: 8px; }
+.locationInputRow:focus-within { border-color: var(--primary); background: #fff; }
+.poiDot { width: 9px; height: 9px; flex: 0 0 9px; border-radius: 50%; }
+.originDot { background: #52c41a; }
+.waypointDot { background: #faad14; }
+.destinationDot { background: #f5222d; }
+.locationInput { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--text-primary); font-size: 14px; }
+.locationInput::placeholder { color: var(--text-hint); }
+.locationButton { display: inline-flex; width: 32px; height: 32px; flex: 0 0 32px; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--text-secondary); cursor: pointer; }
+.locationButton:hover, .locationButton:focus-visible { background: var(--primary-light); color: var(--primary); outline: none; }
+.locationButton:disabled { cursor: wait; opacity: 0.45; }
+.locationClearButton { display: inline-flex; width: 28px; height: 28px; flex: 0 0 28px; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 50%; background: transparent; color: #a3a3a3; cursor: pointer; }
+.locationClearButton:hover, .locationClearButton:focus-visible { background: #f0f0f0; color: var(--text-secondary); outline: none; }
+.routeActions { display: flex; flex-direction: column; gap: 8px; }
+.routeActionButton { display: inline-flex; width: 40px; height: 40px; align-items: center; justify-content: center; padding: 0; border: 1px solid var(--border-color); border-radius: 8px; background: #fff; color: var(--text-primary); cursor: pointer; }
+.routeActionButton:hover, .routeActionButton:focus-visible { border-color: var(--primary); background: var(--primary-light); color: var(--primary); outline: none; }
+.locationError { margin-top: 8px; color: #d4380d; font-size: 12px; }
+.departRow { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; color: var(--text-secondary); font-size: 13px; }
+.departRow select { min-height: 36px; padding: 0 10px; border: 1px solid var(--border-color); border-radius: 7px; background: #fff; color: var(--text-primary); }
+.startButton { width: 100%; min-height: 44px; margin-top: 10px; border: 0; border-radius: 8px; background: var(--primary); color: #fff; font-size: 15px; font-weight: 600; cursor: pointer; }
+.startButton:hover, .startButton:focus-visible { opacity: 0.9; outline: 2px solid #fff; outline-offset: -4px; }
+.startButton:disabled { cursor: not-allowed; opacity: 0.45; }
+.popularSection { margin-top: 12px; }
+.popularTitle { margin-bottom: 8px; color: var(--text-secondary); font-size: 13px; font-weight: 600; }
+.popularList { display: flex; flex-wrap: wrap; gap: 6px; }
+.popularDestination { min-height: 32px; padding: 0 10px; border: 1px solid var(--border-color); border-radius: 16px; background: #fff; color: var(--text-secondary); font-size: 12px; cursor: pointer; }
+.popularDestination:hover, .popularDestination:focus-visible { border-color: var(--primary); background: var(--primary-light); color: var(--primary); outline: none; }
 .indexCard { background: rgba(255,255,255,0.95); backdrop-filter: blur(8px); border-radius: 12px; padding: 14px 16px; box-shadow: 0 4px 16px rgba(0,0,0,0.12); }
 .indexHead { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: var(--text-secondary); margin-bottom: 8px; }
 .indexTrend { font-size: 12px; color: #f5222d; }
@@ -57,22 +47,13 @@
 .indexMeta { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--text-secondary); }
 .indexMeta b { color: var(--text-primary); }
 
-/* 底部快捷入口 */
-.heroQuick {
-  position: absolute; left: 50%; transform: translateX(-50%); bottom: 16px;
-  display: flex; gap: 8px; background: rgba(255,255,255,0.96); backdrop-filter: blur(8px);
-  padding: 8px; border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.12);
-}
-.heroQuickItem {
-  display: flex; flex-direction: column; align-items: center; gap: 4px;
-  padding: 10px 18px; border-radius: 8px; cursor: pointer; transition: all 0.2s;
-  font-size: 12px; color: var(--text-primary);
-}
-.heroQuickItem:hover { background: var(--primary-light); color: var(--primary); }
-.heroQuickIcon { font-size: 22px; }
+/* 地图出行方式 */
+.heroModeSelector { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); }
 
 /* 实时预警浮层 */
 .alertFloat { position: absolute; top: 16px; right: 16px; width: 320px; display: flex; flex-direction: column; gap: 8px; }
+.alertNewsCard { background: rgba(255,255,255,0.95); backdrop-filter: blur(8px); border-radius: 12px; padding: 14px 16px; box-shadow: 0 4px 16px rgba(0,0,0,0.12); }
+.alertEmpty { padding: 14px 6px; font-size: 13px; color: var(--text-hint); text-align: center; }
 .alertFloatItem {
   display: flex; align-items: center; gap: 8px;
   background: rgba(255,255,255,0.95); backdrop-filter: blur(8px);
@@ -84,31 +65,46 @@
 .alertFloatTime { font-size: 11px; color: var(--text-hint); }
 
 /* ===== 功能模块 ===== */
-.features { margin-top: 32px; }
 .sectionHead { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .sectionTitle { font-size: 20px; font-weight: 700; }
 .sectionMore { font-size: 13px; color: var(--primary); cursor: pointer; }
-.featureGrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
-.featureCard {
-  display: flex; align-items: center; gap: 14px; background: #fff;
-  border-radius: 12px; padding: 20px; cursor: pointer;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.06); transition: all 0.25s;
-  border: 1px solid transparent;
-}
-.featureCard:hover { box-shadow: 0 6px 20px rgba(0,0,0,0.1); transform: translateY(-2px); border-color: var(--primary-light); }
-.featureIcon { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 24px; flex-shrink: 0; }
-.featureInfo { flex: 1; min-width: 0; }
-.featureTitle { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
-.featureDesc { font-size: 12px; color: var(--text-hint); line-height: 1.4; }
-.featureArrow { color: #ddd; font-size: 16px; }
 
-/* ===== 底部区块 ===== */
-.bottomSection { margin-top: 32px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.siteCard { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
-.sparkArea { margin-top: 12px; }
-.sparkline { display: flex; align-items: flex-end; gap: 4px; height: 90px; padding: 0 8px; }
+/* ===== 城市交通运行（24h 拥堵趋势 + 交通资讯） ===== */
+.trafficOverviewGrid { margin-top: 32px; display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 20px; align-items: start; }
+.congestionCard, .trafficNewsCard { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); height: auto; }
+
+/* 「模拟数据」Tag（不是链接样式） */
+.dataTag { padding: 4px 10px; border-radius: 999px; font-size: 12px; background: #fff7e6; color: #d46b08; }
+
+/* 拥堵柱状图 */
+.congestionChart { height: 180px; margin-top: 12px; display: flex; flex-direction: column; }
+.sparkline { display: flex; align-items: flex-end; gap: 4px; height: 132px; padding: 0 8px; }
 .sparkBar { flex: 1; border-radius: 3px 3px 0 0; min-width: 6px; transition: height 0.4s; }
 .sparkLabels { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-hint); margin-top: 6px; padding: 0 8px; }
+
+/* 拥堵关键指标（2×2） */
+.trafficSummaryGrid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-top: 20px; }
+.trafficSummaryItem { padding: 14px 16px; background: #f7f9fc; border-radius: 10px; }
+.trafficSummaryItem span { display: block; margin-bottom: 6px; font-size: 13px; color: #8c8c8c; }
+.trafficSummaryItem strong { font-size: 17px; color: #1f2533; }
+
+/* 智能出行建议 */
+.trafficSuggestion { display: flex; gap: 8px; align-items: flex-start; margin-top: 16px; padding: 12px 14px; border-radius: 10px; background: #f0f6ff; color: #4b5563; font-size: 13px; line-height: 1.6; }
+
+/* 右侧：实时路况 */
+.liveTrafficList { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.liveTrafficItem { display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: #fafbfc; border-radius: 10px; }
+.trafficDot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 10px; }
+.trafficDot.severe { background: #f5222d; }
+.trafficDot.congested { background: #fa8c16; }
+.trafficInfo { flex: 1; min-width: 0; }
+.trafficInfo strong { display: block; font-size: 14px; color: #1f2533; }
+.trafficInfo span { display: block; font-size: 12px; color: #8c8c8c; margin-top: 2px; }
+.trafficTime { font-size: 11px; color: var(--text-hint); flex-shrink: 0; }
+
+/* 「最新交通资讯」分隔标题 */
+.newsSectionTitle { display: flex; align-items: center; gap: 10px; margin: 18px 0 4px; font-size: 13px; font-weight: 600; color: #1f2533; }
+.newsSectionTitle div { flex: 1; height: 1px; background: #e5e7eb; }
 
 .newsList { display: flex; flex-direction: column; }
 .newsItem { padding: 12px 0; border-bottom: 1px solid #f5f5f5; cursor: pointer; transition: all 0.2s; }
@@ -119,14 +115,15 @@
 
 /* ===== 响应式 ===== */
 @media (max-width: 1024px) {
-  .featureGrid { grid-template-columns: repeat(2, 1fr); }
-  .heroLeft { width: 280px; }
-  .alertFloat { width: 280px; }
+  .heroLeft { width: 350px; }
+  .alertFloat { width: 260px; }
+}
+@media (max-width: 900px) {
+  .trafficOverviewGrid { grid-template-columns: 1fr; }
 }
 @media (max-width: 768px) {
-  .hero { height: 380px; }
+  .hero { height: 520px; }
   .heroLeft { width: calc(100% - 32px); }
   .alertFloat { display: none; }
-  .bottomSection { grid-template-columns: 1fr; }
-  .heroQuick { display: none; }
+  .heroModeSelector { left: 16px; right: 16px; width: auto; transform: none; }
 }

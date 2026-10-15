@@ -1,26 +1,23 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { Layout, Menu, Badge, Dropdown, Avatar, Breadcrumb, Space, Typography } from 'antd';
+import { Layout, Menu, Dropdown, Avatar, Breadcrumb, Space, Typography } from 'antd';
 import type { MenuProps } from 'antd';
 import { isAdminLoggedIn, getAdminInfo, adminLogout } from '../stores/adminAuth';
 import {
   DashboardOutlined,
   AlertOutlined,
-  ControlOutlined,
-  ExperimentOutlined,
-  ApiOutlined,
-  FileTextOutlined,
-  BarChartOutlined,
   SettingOutlined,
-  BellOutlined,
   UserOutlined,
   TeamOutlined,
   GiftOutlined,
   EditOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
+  CarOutlined,
+  DeploymentUnitOutlined,
 } from '@ant-design/icons';
 import { useUIStore } from '../stores/uiStore';
+import AdminNotificationBell from '../components/AdminNotificationBell';
 
 const { Header, Sider, Content } = Layout;
 
@@ -30,7 +27,7 @@ const menuItems: MenuProps['items'] = [
   { key: '/admin/users', icon: <TeamOutlined />, label: '用户管理' },
   { key: '/admin/carbon', icon: <GiftOutlined />, label: '碳积分管理' },
   { key: '/admin/content', icon: <EditOutlined />, label: '内容管理' },
-  { key: '/admin/analytics', icon: <BarChartOutlined />, label: '数据分析' },
+  { key: '/admin/accessibility', icon: <DeploymentUnitOutlined />, label: '无障碍设施管理' },
   { key: '/admin/settings', icon: <SettingOutlined />, label: '系统设置' },
 ];
 
@@ -40,7 +37,7 @@ const breadcrumbNameMap: Record<string, string> = {
   '/admin/users': '用户管理',
   '/admin/carbon': '碳积分管理',
   '/admin/content': '内容管理',
-  '/admin/analytics': '数据分析',
+  '/admin/accessibility': '无障碍设施管理',
   '/admin/settings': '系统设置',
 };
 
@@ -201,9 +198,7 @@ export default function DashboardLayout() {
             <span style={{ color: isDashboard ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.45)', fontSize: 13 }}>
               {formatDate(currentTime)} {currentTime.toLocaleTimeString('zh-CN', { hour12: false })}
             </span>
-            <Badge count={5} size="small">
-              <BellOutlined style={{ fontSize: 16, color: isDashboard ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.45)', cursor: 'pointer' }} />
-            </Badge>
+            <AdminNotificationBell dark={isDashboard} />
             <Dropdown menu={{
               items: [
                 { key: 'name', label: getAdminInfo()?.realName || '管理员', disabled: true },

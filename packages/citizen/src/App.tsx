@@ -14,28 +14,45 @@ import ReportQueryPage from './pages/report/ReportQueryPage';
 import NewsListPage from './pages/news/NewsListPage';
 import NewsDetailPage from './pages/news/NewsDetailPage';
 import ServicesPage from './pages/services/ServicesPage';
+import LongDistanceBusPage from './pages/services/LongDistanceBusPage';
 import CarbonPage from './pages/carbon/CarbonPage';
+import CarbonPointsDetailPage from './pages/carbon/CarbonPointsDetailPage';
+import RedemptionRecordsPage from './pages/carbon/RedemptionRecordsPage';
+import TripSettlementPage from './pages/carbon/TripSettlementPage';
 import ProfilePage from './pages/profile/ProfilePage';
 import MyReportsPage from './pages/profile/MyReportsPage';
 import SettingsPage from './pages/profile/SettingsPage';
+import AccountManagementPage from './pages/profile/AccountManagementPage';
+import MyTripsPage from './pages/profile/MyTripsPage';
+import TripDetailPage from './pages/profile/TripDetailPage';
+import MyReservationsPage from './pages/profile/MyReservationsPage';
 import ElderlyHomePage from './pages/elderly/ElderlyHomePage';
+import ElderlyNavigationPage from './pages/elderly/ElderlyNavigationPage';
+import ElderlyBusDetailPage from './pages/elderly/ElderlyBusDetailPage';
+import { loadAccessibilityFacilities } from './data/accessibilityFacilities';
 import LoginPage from './pages/auth/LoginPage';
 import RegisterPage from './pages/auth/RegisterPage';
 import QRCodePage from './pages/qrcode/QRCodePage';
 import ChargingScanPage from './pages/charging/ChargingScanPage';
+import ChargingSessionPage from './pages/charging/ChargingSessionPage';
 import MoveCarPage from './pages/movecar/MoveCarPage';
 import BusDetailPage from './pages/bus/BusDetailPage';
 import CustomBusPage from './pages/custombus/CustomBusPage';
 import MetroDetailPage from './pages/metro/MetroDetailPage';
 
-// 长辈模式 Context
+// 关怀模式 Context
+// 原则：返回首页 ≠ 退出关怀模式。只有主动调用 disableElderlyMode 才关闭模式。
 interface ElderlyContextType {
   elderlyMode: boolean;
   toggleElderlyMode: () => void;
+  enableElderlyMode: () => void;
+  disableElderlyMode: () => void;
 }
 export const ElderlyContext = createContext<ElderlyContextType>({
   elderlyMode: false,
   toggleElderlyMode: () => {},
+  enableElderlyMode: () => {},
+  disableElderlyMode: () => {},
 });
 export const useElderly = () => useContext(ElderlyContext);
 
@@ -43,6 +60,9 @@ export const useElderly = () => useContext(ElderlyContext);
 if (import.meta.env.VITE_ENABLE_MOCK === 'true') {
   fetchInterceptor();
 }
+
+// 启动时拉取无障碍设施数据（幂等：后端可用则用真实数据，失败静默降级演示数据）
+void loadAccessibilityFacilities();
 
 /** 需要登录才能访问的页面 */
 const RequireAuth: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -74,11 +94,18 @@ const App: React.FC = () => {
 
   return (
     <ElderlyContext.Provider
-      value={{ elderlyMode, toggleElderlyMode: () => setElderlyMode(v => !v) }}
+      value={{
+        elderlyMode,
+        toggleElderlyMode: () => setElderlyMode(v => !v),
+        enableElderlyMode: () => setElderlyMode(true),
+        disableElderlyMode: () => setElderlyMode(false),
+      }}
     >
       {isFullScreen ? (
         <Routes>
           <Route path="/elderly" element={<ElderlyHomePage />} />
+          <Route path="/elderly/navigation" element={<ElderlyNavigationPage />} />
+          <Route path="/elderly/bus/:lineId" element={<ElderlyBusDetailPage />} />
         </Routes>
       ) : isAuthPage ? (
         <Routes>
@@ -101,9 +128,14 @@ const App: React.FC = () => {
             <Route path="/news" element={<NewsListPage />} />
             <Route path="/news/:id" element={<NewsDetailPage />} />
             <Route path="/services" element={<ServicesPage />} />
+            <Route path="/services/bus" element={<LongDistanceBusPage />} />
             <Route path="/carbon" element={<CarbonPage />} />
-            <Route path="/qrcode" element={<QRCodePage />} />
+            <Route path="/carbon/points-detail" element={<RequireAuth><CarbonPointsDetailPage /></RequireAuth>} />
+            <Route path="/carbon/redemptions" element={<RequireAuth><RedemptionRecordsPage /></RequireAuth>} />
+            <Route path="/travel/settlement/:tripId" element={<RequireAuth><TripSettlementPage /></RequireAuth>} />
+            <Route path="/qrcode" element={<RequireAuth><QRCodePage /></RequireAuth>} />
             <Route path="/charging/scan" element={<ChargingScanPage />} />
+            <Route path="/charging/session" element={<ChargingSessionPage />} />
             <Route path="/move-car" element={<MoveCarPage />} />
             <Route path="/travel/bus/:lineId" element={<BusDetailPage />} />
             <Route path="/travel/metro/:lineId" element={<MetroDetailPage />} />
@@ -111,11 +143,26 @@ const App: React.FC = () => {
             <Route path="/profile" element={
               <RequireAuth><ProfilePage /></RequireAuth>
             } />
+            <Route path="/profile/trips" element={
+              <RequireAuth><MyTripsPage /></RequireAuth>
+            } />
+            <Route path="/profile/trips/:tripId" element={
+              <RequireAuth><TripDetailPage /></RequireAuth>
+            } />
             <Route path="/profile/reports" element={
               <RequireAuth><MyReportsPage /></RequireAuth>
             } />
+            <Route path="/profile/reservations" element={
+              <RequireAuth><MyReservationsPage /></RequireAuth>
+            } />
             <Route path="/profile/settings" element={
               <RequireAuth><SettingsPage /></RequireAuth>
+            } />
+            <Route path="/profile/account" element={
+              <RequireAuth><AccountManagementPage /></RequireAuth>
+            } />
+            <Route path="/profile/account/password" element={
+              <RequireAuth><AccountManagementPage mode="password" /></RequireAuth>
             } />
           </Routes>
         </MainLayout>

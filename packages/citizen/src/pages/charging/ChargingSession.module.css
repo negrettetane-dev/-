@@ -1,0 +1,45 @@
+.page { max-width: 560px; margin: 0 auto; padding: 0 16px 32px; }
+.header { display: flex; align-items: center; gap: 12px; padding: 12px 0; margin-bottom: 12px; }
+.backBtn { border: 0; background: none; color: var(--primary); font-size: 14px; cursor: pointer; padding: 4px 0; }
+.title { flex: 1; font-size: 18px; font-weight: 700; }
+.demoBadge { color: #ad6800; background: #fff7e6; border-radius: 12px; padding: 3px 10px; font-size: 12px; font-weight: 600; }
+.demoBanner { padding: 10px 14px; margin-bottom: 14px; border-radius: 8px; color: #ad6800; background: #fffbe6; font-size: 13px; line-height: 1.5; }
+.deviceCard, .metricsCard, .actionCard, .emptyCard { background: #fff; border-radius: 12px; padding: 18px 20px; margin-bottom: 14px; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+.deviceHeading { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.stationName { color: var(--text-primary); font-size: 16px; font-weight: 700; }
+.deviceId { color: var(--text-secondary); font-size: 13px; margin-top: 5px; }
+.statusBadge { border-radius: 20px; padding: 4px 9px; white-space: nowrap; font-size: 12px; font-weight: 600; }
+.statusIdle { color: #1677ff; background: #e6f4ff; }
+.statusActive { color: #389e0d; background: #f6ffed; }
+.statusDone { color: #595959; background: #f5f5f5; }
+.connectionLine { display: flex; align-items: center; gap: 7px; border-top: 1px solid #f0f0f0; margin-top: 14px; padding-top: 12px; color: var(--text-secondary); font-size: 13px; }
+.dotActive { color: #52c41a; }
+.dotDone { color: #8c8c8c; }
+.metricHero { display: flex; justify-content: space-between; align-items: baseline; padding-bottom: 14px; border-bottom: 1px solid #f0f0f0; }
+.metricHero span, .metricGrid span { color: var(--text-hint); font-size: 13px; }
+.metricHero strong { color: var(--primary); font-size: 30px; }
+.metricHero small { font-size: 14px; font-weight: 500; }
+.metricGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 14px 0; }
+.metricGrid > div { display: flex; flex-direction: column; gap: 5px; }
+.metricGrid b { color: var(--text-primary); font-size: 14px; }
+.progressTrack { height: 8px; overflow: hidden; border-radius: 8px; background: #f0f0f0; }
+.progressBar { height: 100%; min-width: 3px; border-radius: inherit; background: linear-gradient(90deg, #1677ff, #52c41a); transition: width .8s ease; }
+.progressHint { color: var(--text-hint); font-size: 12px; margin-top: 8px; }
+.actionTitle, .doneTitle { font-size: 16px; font-weight: 700; margin-bottom: 7px; }
+.actionText, .settlement { color: var(--text-secondary); font-size: 13px; line-height: 1.6; margin-bottom: 14px; }
+.primaryBtn, .stopBtn { width: 100%; border: 0; border-radius: 8px; padding: 12px; color: #fff; font-size: 15px; font-weight: 600; cursor: pointer; }
+.primaryBtn { background: var(--primary, #1677ff); }
+.stopBtn { background: #f5222d; }
+.primaryBtn:hover, .stopBtn:hover { opacity: .9; }
+.loadingState { display: flex; align-items: center; justify-content: center; gap: 9px; color: var(--text-secondary); font-size: 14px; padding: 10px; }
+.spinner { width: 16px; height: 16px; border: 2px solid #d9d9d9; border-top-color: var(--primary); border-radius: 50%; animation: spin .8s linear infinite; }
+.emptyCard { text-align: center; margin-top: 30px; }
+.emptyTitle { font-weight: 700; font-size: 17px; margin-bottom: 8px; }
+.emptyText { color: var(--text-secondary); font-size: 13px; margin-bottom: 18px; }
+.footerNote { color: var(--text-hint); text-align: center; font-size: 11px; margin-top: 8px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (max-width: 420px) {
+  .page { padding-left: 12px; padding-right: 12px; }
+  .deviceCard, .metricsCard, .actionCard, .emptyCard { padding-left: 15px; padding-right: 15px; }
+  .metricHero { align-items: flex-start; flex-direction: column; gap: 5px; }
+}

@@ -12,7 +12,7 @@ export interface QrState {
 const VALIDITY_MS = 60 * 1000; // 60 秒有效期
 
 /** 生成指定模式的演示乘车码（公交/地铁内容互不相同） */
-export function generateTransitQr(mode: TransitQrMode, userId: string = 'u1', now: number = Date.now()): QrState {
+export function generateTransitQr(mode: TransitQrMode, userId: string, now: number = Date.now()): QrState {
   const prefix = mode === 'bus' ? 'ZHITU-DEMO-BUS' : 'ZHITU-DEMO-METRO';
   return {
     content: `${prefix}-${userId}-${now}`,

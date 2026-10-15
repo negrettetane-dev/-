@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import styles from './Report.module.css';
 import { apiGet } from '../../services/apiClient';
 
+const STATUS_LABELS: Record<string,string> = { pending:'待受理', received:'已受理', processing:'处置中', completed:'已办结', rejected:'已驳回' };
+
 const ReportQueryPage: React.FC = () => {
   const navigate = useNavigate();
   const [orderNo, setOrderNo] = useState('');
@@ -45,7 +47,7 @@ const ReportQueryPage: React.FC = () => {
             <div>
               <div style={{fontSize:14,fontWeight:600}}>查询结果</div>
               <div style={{fontSize:13,color:'var(--text-secondary)',marginTop:8}}>
-                {(result as {workOrderNo?:string}).workOrderNo} - 状态：{(result as {status?:string}).status}
+                {(result as {workOrderNo?:string}).workOrderNo} - 状态：{(() => { const s = (result as {status?:string}).status; return STATUS_LABELS[s ?? ''] ?? s ?? '未知'; })()}
               </div>
             </div>
           ) : (

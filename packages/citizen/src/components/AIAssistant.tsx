@@ -1,118 +1,257 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { LocateFixed } from 'lucide-react';
+import { respond, thinkingLabel } from '../services/aiAssistant/assistantService';
+import { useAuthStore } from '../stores/authStore';
+import { useTravelLocationStore } from '../stores/travelLocationStore';
+import type {
+  AssistantCard,
+  AssistantCardAction,
+  AssistantDataSource,
+  AssistantMessage,
+} from '../types/aiAssistant';
 import styles from './AIAssistant.module.css';
 
-interface Message { role: 'user' | 'ai'; text: string; }
-
-const QUICK_QUESTIONS = [
-  '现在去天安门堵不堵？',
-  '早高峰走二环还是三环？',
-  '明天8点去北京南站怎么走？',
-  '附近哪里有便宜停车场？',
-  '这段路为什么收费？',
-];
-
-const MOCK_ANSWERS: Record<string, { text: string; delay: number }> = {
-  '现在去天安门堵不堵？': {
-    text: '当前长安街东段（东单→天安门方向）轻微拥堵，预计通行时间约25分钟。建议绕行前门大街，虽然多1.2公里但可节省约8分钟。',
-    delay: 1200,
-  },
-  '早高峰走二环还是三环？': {
-    text: '根据近30天数据，工作日早高峰（7:30-8:30），二环内环平均车速仅18km/h，三环外环约28km/h。强烈建议走三环——多绕2公里但快15分钟以上。',
-    delay: 1500,
-  },
-  '明天8点去北京南站怎么走？': {
-    text: '明天周三早高峰8:00-8:30二环高架拥堵概率78%。建议7:30前出发（全程畅通约18分钟），或走三环辅路（约22分钟）。明早有小雨概率，请预留5分钟冗余。🚄',
-    delay: 1800,
-  },
-  '附近哪里有便宜停车场？': {
-    text: '您当前位置1km内有3个停车场：①西单大悦城地下（¥8/h，空闲82位）；②宣武门路侧（¥5/h，空闲12位）；③金融街地库（¥15/h，空闲156位）。推荐②，性价比最高。',
-    delay: 1000,
-  },
-  '这段路为什么收费？': {
-    text: '您查询的路段属于京通快速路（五环至四环段），为北京市经营性收费公路，小车¥5/次。ETC享95折。该路段收费标准经市发改委批准（京发改[2020]128号）。',
-    delay: 900,
-  },
+const SOURCE_META: Record<AssistantDataSource, { label: string; color: string; bg: string }> = {
+  real: { label: '实时数据', color: '#389e0d', bg: '#f6ffed' },
+  demo: { label: '演示数据', color: '#d46b08', bg: '#fff7e6' },
+  simulated: { label: '模拟预测', color: '#c41d7f', bg: '#fff0f6' },
+  fallback: { label: '备用数据', color: '#08979c', bg: '#e6fffb' },
+  unknown: { label: '来源待确认', color: '#8c8c8c', bg: '#fafafa' },
 };
 
+const MAX_HISTORY_MESSAGES = 50;
+const historyKey = (userId: string) => `zhitu_ai_history:v1:${encodeURIComponent(userId)}`;
+const conversationKey = (userId: string) => `zhitu_ai_conversation:v1:${encodeURIComponent(userId)}`;
+
+function getConversationId(userId: string | null): string {
+  const owner = userId || 'guest';
+  const key = conversationKey(owner);
+  try {
+    const existing = sessionStorage.getItem(key);
+    if (existing) return existing;
+    const next = typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `conversation_${Date.now()}`;
+    sessionStorage.setItem(key, next);
+    return next;
+  } catch {
+    return `conversation_${owner}_${Date.now()}`;
+  }
+}
+
+function resetConversationId(userId: string | null): string {
+  const owner = userId || 'guest';
+  const key = conversationKey(owner);
+  const next = typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `conversation_${owner}_${Date.now()}`;
+  try { sessionStorage.setItem(key, next); } catch { /* storage unavailable */ }
+  return next;
+}
+
+function greeting(): AssistantMessage {
+  return {
+    id: 'greeting',
+    role: 'ai',
+    text: '👋 你好，我是小枢。告诉我从哪里出发、想去哪里，以及你更在意时间、费用、少走路还是无障碍。之后可以直接说「换成地铁」「少走一点」，我会接着当前条件继续规划。',
+    createdAt: Date.now(),
+  };
+}
+
 const AIAssistant: React.FC = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { isLoggedIn, user } = useAuthStore();
+  const { origin } = useTravelLocationStore();
+  const userId = user?.id || null;
+  const identityRef = useRef(userId);
+  const identityVersionRef = useRef(0);
+  const conversationIdRef = useRef(getConversationId(userId));
   const [open, setOpen] = useState(false);
-  const [messages, setMessages] = useState<Message[]>([
-    { role: 'ai', text: '👋 你好！我是智途出行助手小枢。我可以帮你规划路线、推荐最佳出发时间、分析路况，试试问我吧～' },
-  ]);
+  const [messages, setMessages] = useState<AssistantMessage[]>([greeting()]);
   const [input, setInput] = useState('');
-  const [thinking, setThinking] = useState(false);
+  const [thinking, setThinking] = useState('');
+  const [pendingAction, setPendingAction] = useState<AssistantCardAction | null>(null);
+  const [lastRequest, setLastRequest] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    identityRef.current = userId;
+    identityVersionRef.current += 1;
+    conversationIdRef.current = getConversationId(userId);
+    setThinking('');
+    if (!userId) {
+      setMessages([greeting()]);
+      return;
+    }
+    let loaded: AssistantMessage[] = [];
+    try {
+      const raw = localStorage.getItem(historyKey(userId));
+      const parsed = raw ? JSON.parse(raw) : [];
+      if (Array.isArray(parsed)) {
+        loaded = parsed.filter((item): item is AssistantMessage =>
+          item && (item.role === 'user' || item.role === 'ai') && typeof item.text === 'string' && typeof item.createdAt === 'number'
+        ).slice(-MAX_HISTORY_MESSAGES);
+      }
+    } catch { loaded = []; }
+    setMessages(loaded.length ? loaded : [greeting()]);
+  }, [userId]);
+
+  const persistMessages = (next: AssistantMessage[], ownerId: string | null) => {
+    if (!ownerId) return;
+    try {
+      localStorage.setItem(historyKey(ownerId), JSON.stringify(next.slice(-MAX_HISTORY_MESSAGES)));
+    } catch { /* storage unavailable */ }
+  };
+
+  const clearHistory = () => {
+    identityVersionRef.current += 1;
+    conversationIdRef.current = resetConversationId(userId);
+    setThinking('');
+    setMessages([greeting()]);
+    if (userId) {
+      try { localStorage.removeItem(historyKey(userId)); } catch { /* storage unavailable */ }
+    }
+  };
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, thinking]);
 
-  const sendMessage = (text: string) => {
-    if (!text.trim() || thinking) return;
-    setMessages(prev => [...prev, { role: 'user', text }]);
+  const send = async (text: string) => {
+    const t = text.trim();
+    if (!t || thinking) return;
+    const ownerId = identityRef.current;
+    const requestVersion = identityVersionRef.current;
+    const userMessage: AssistantMessage = { id: `u_${Date.now()}`, role: 'user', text: t, createdAt: Date.now() };
+    setMessages(prev => {
+      const next = [...prev, userMessage];
+      persistMessages(next, ownerId);
+      return next;
+    });
     setInput('');
-    setThinking(true);
-
-    // Find matching answer or generate generic response
-    const match = MOCK_ANSWERS[text];
-    const delay = match?.delay || 1000 + Math.random() * 1500;
-    const answer = match?.text || generateGenericAnswer(text);
-
-    setTimeout(() => {
-      setMessages(prev => [...prev, { role: 'ai', text: answer }]);
-      setThinking(false);
-    }, delay);
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage(input);
+    setLastRequest(t);
+    setThinking(thinkingLabel(t));
+    try {
+      const ctx = {
+        isLoggedIn,
+        originName: origin.lng != null ? origin.address || origin.name : undefined,
+        currentPage: location.pathname,
+        conversationId: conversationIdRef.current,
+        conversation: messages.slice(-12).map(message => ({
+          role: message.role === 'ai' ? 'assistant' as const : 'user' as const,
+          content: message.text,
+        })),
+      };
+      const reply = await respond(t, ctx);
+      if (identityRef.current !== ownerId || identityVersionRef.current !== requestVersion) return;
+      setMessages(prev => {
+        const next = [...prev, reply];
+        persistMessages(next, ownerId);
+        return next;
+      });
+    } catch {
+      if (identityRef.current !== ownerId || identityVersionRef.current !== requestVersion) return;
+      const errorMessage: AssistantMessage = {
+        id: `e_${Date.now()}`,
+        role: 'ai',
+        text: '抱歉，处理你的请求时出了点问题，请稍后重试。',
+        retryText: t,
+        createdAt: Date.now(),
+      };
+      setMessages(prev => {
+        const next = [...prev, errorMessage];
+        persistMessages(next, ownerId);
+        return next;
+      });
+    } finally {
+      if (identityRef.current === ownerId && identityVersionRef.current === requestVersion) setThinking('');
     }
   };
 
+  const executeAction = (action: AssistantCardAction) => {
+    if (action.prompt) send(action.prompt);
+    else if (action.path) navigate(action.path, { state: action.state });
+  };
+
+  const runAction = (action: AssistantCardAction) => {
+    if (action.requiresConfirmation) {
+      setPendingAction(action);
+      return;
+    }
+    executeAction(action);
+  };
+
+  const quickQuestions = isLoggedIn
+    ? ['从国贸到北京南站，少换乘', '从西直门到北京南站，省力出行（长辈推荐）', '找附近停车场', '查我的积分']
+    : ['从国贸到北京南站，少换乘', '从西直门到北京南站，省力出行（长辈推荐）', '找附近停车场', '查看北京实时路况'];
+
   return (
     <>
-      {/* Floating button */}
+      {/* 悬浮按钮 */}
       <button
         className={`${styles.fab} ${open ? styles.fabOpen : ''}`}
         onClick={() => setOpen(!open)}
-        title="AI出行助手"
+        title="小枢出行助手"
+        aria-label="小枢出行助手"
       >
         {open ? '✕' : '🤖'}
       </button>
 
-      {/* Chat panel */}
+      {/* 聊天面板 */}
       {open && (
         <div className={styles.panel}>
           <div className={styles.header}>
-            <span>🤖 AI出行助手 · 小枢</span>
-            <span className={styles.subtitle}>可解释AI · 数据驱动决策</span>
+            <div>
+              <span>🤖 小枢出行助手</span>
+              <span className={styles.subtitle}>理解条件 · 比较方案 · 风险可解释</span>
+            </div>
+            <button type="button" className={styles.clearButton} onClick={clearHistory}>清空对话</button>
+          </div>
+
+          <div className={styles.sessionBar}>
+            <span className={styles.sessionDot} />
+            <span>在线会话</span>
+            <span className={styles.sessionHint}>已连接业务服务</span>
           </div>
 
           <div className={styles.body}>
-            {messages.map((m, i) => (
-              <div key={i} className={`${styles.msg} ${m.role === 'user' ? styles.userMsg : styles.aiMsg}`}>
-                <div className={styles.bubble}>{m.text}</div>
+            {messages.map((m) => (
+              <div key={m.id} className={`${styles.msg} ${m.role === 'user' ? styles.userMsg : styles.aiMsg}`}>
+                <div className={styles.msgContent}>
+                  {m.role === 'user' ? (
+                    <div className={styles.bubble}>{m.text}</div>
+                  ) : (
+                    <>
+                      <div className={styles.bubble}>{m.text}</div>
+                      {m.cards?.map(card => <AssistantCardView key={card.id} card={card} onAction={runAction} />)}
+                      {m.retryText && (
+                        <button type="button" className={styles.retryButton} onClick={() => send(m.retryText || lastRequest)}>
+                          重新尝试
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
               </div>
             ))}
             {thinking && (
               <div className={`${styles.msg} ${styles.aiMsg}`}>
-                <div className={styles.bubble}>
-                  <span className={styles.typing}>●</span>
-                  <span className={styles.typing} style={{ animationDelay: '0.2s' }}>●</span>
-                  <span className={styles.typing} style={{ animationDelay: '0.4s' }}>●</span>
+                <div className={styles.msgContent}>
+                  <div className={styles.bubble}>
+                    <span className={styles.thinkingText}>{thinking}</span>
+                    <span className={styles.typing}>●</span>
+                    <span className={styles.typing} style={{ animationDelay: '0.2s' }}>●</span>
+                    <span className={styles.typing} style={{ animationDelay: '0.4s' }}>●</span>
+                  </div>
                 </div>
               </div>
             )}
             <div ref={bottomRef} />
           </div>
 
-          {/* Quick questions */}
-          {messages.length <= 1 && (
+          {/* 动态快捷问题 */}
+          {messages.length <= 1 && !thinking && (
             <div className={styles.quickQuestions}>
-              {QUICK_QUESTIONS.map(q => (
-                <div key={q} className={styles.quickQ} onClick={() => sendMessage(q)}>
+              {quickQuestions.map(q => (
+                <div key={q} className={styles.quickQ} onClick={() => send(q)}>
                   {q}
                 </div>
               ))}
@@ -122,18 +261,31 @@ const AIAssistant: React.FC = () => {
           <div className={styles.inputRow}>
             <input
               className={styles.input}
-              placeholder="输入出行问题，如「去高铁站哪条路靠谱」"
+              placeholder="输入起点、目的地和偏好，如「从国贸到北京南站，少走路」"
               value={input}
               onChange={e => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
+              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(input); } }}
             />
             <button
               className={styles.sendBtn}
-              onClick={() => sendMessage(input)}
-              disabled={!input.trim() || thinking}
+              onClick={() => send(input)}
+              disabled={!input.trim() || !!thinking}
             >
               发送
             </button>
+          </div>
+        </div>
+      )}
+      {pendingAction && (
+        <div className={styles.confirmBackdrop} role="presentation" onClick={() => setPendingAction(null)}>
+          <div className={styles.confirmDialog} role="dialog" aria-modal="true" aria-labelledby="assistant-confirm-title" onClick={event => event.stopPropagation()}>
+            <div className={styles.confirmIcon}>!</div>
+            <h3 id="assistant-confirm-title">{pendingAction.confirmTitle || '确认执行此操作？'}</h3>
+            <p>{pendingAction.confirmDescription || '该操作会修改业务数据，请确认后继续。'}</p>
+            <div className={styles.confirmActions}>
+              <button type="button" onClick={() => setPendingAction(null)}>取消</button>
+              <button type="button" className={styles.confirmPrimary} onClick={() => { const action = pendingAction; setPendingAction(null); executeAction(action); }}>确认执行</button>
+            </div>
           </div>
         </div>
       )}
@@ -141,15 +293,63 @@ const AIAssistant: React.FC = () => {
   );
 };
 
-/** Generate a generic AI answer when no canned response matches */
-function generateGenericAnswer(question: string): string {
-  const responses = [
-    `根据实时数据分析，「${question.slice(0, 12)}...」这个问题建议您选择绿色出行方式。当前公交1路和52路均有空位，到站时间约3-5分钟。`,
-    `我分析了最近7天的交通数据，针对您的问题，建议避开早高峰7:30-8:30出行，该时段拥堵指数高达7.8（严重拥堵）。建议推迟至9:00后出发。`,
-    `综合路况、天气和历史数据，目前您查询的路线整体通畅。但从安全性考虑，今天有小雨预警，请减速慢行，保持安全车距。`,
-    `根据高德交通大数据，您关心的路段今天下午16:00-18:00将进入晚高峰。建议提前规划或改用公共交通。需要我帮您查公交路线吗？`,
-  ];
-  return responses[Math.floor(Math.random() * responses.length)];
-}
+const AssistantCardView: React.FC<{ card: AssistantCard; onAction: (a: AssistantCardAction) => void }> = ({ card, onAction }) => {
+  const meta = SOURCE_META[card.source] || SOURCE_META.unknown;
+  const [editor, setEditor] = useState(card.editor || {});
+  const locate = useTravelLocationStore(state => state.locate);
+  const locationStatus = useTravelLocationStore(state => state.status);
+  const priorities = editor.priorities || (card.subtitle?.includes('低碳') ? '低碳优先' : '综合均衡');
+  const actionWithEditor = (action: AssistantCardAction): AssistantCardAction => action.promptTemplate
+    ? { ...action, prompt: action.promptTemplate.replace('{origin}', editor.origin || '当前位置').replace('{destination}', editor.destination || '目的地待确认').replace('{traveler}', editor.traveler || '普通用户').replace('{priorities}', priorities) }
+    : action;
+  const locateOrigin = async () => {
+    await locate();
+    const current = useTravelLocationStore.getState().origin;
+    if (current.address) setEditor(value => ({ ...value, origin: current.address }));
+  };
+  return (
+    <div className={styles.card}>
+      <div className={styles.cardHead}>
+        <span className={styles.cardTitle}>{card.title}</span>
+        <span className={styles.sourceTag} style={{ color: meta.color, background: meta.bg }}>
+          {card.sourceLabel || meta.label}
+        </span>
+      </div>
+      {card.subtitle && <div className={styles.cardSub}>{card.subtitle}</div>}
+      {card.editor && (
+        <div className={styles.cardEditor}>
+          <label>起点<div className={styles.editorInputWrap}><input value={editor.origin || ''} onChange={event => setEditor(current => ({ ...current, origin: event.target.value }))} placeholder="当前位置" /><button type="button" className={styles.editorLocateButton} onClick={() => void locateOrigin()} disabled={locationStatus === 'locating'} title="定位当前位置" aria-label="定位当前位置"><LocateFixed size={14} aria-hidden="true" /></button></div></label>
+          <label>目的地<input value={editor.destination || ''} onChange={event => setEditor(current => ({ ...current, destination: event.target.value }))} placeholder="请输入目的地" /></label>
+          <label><span className={styles.travelerLabel}>出行<br />人群</span><select value={editor.traveler || ''} onChange={event => setEditor(current => ({ ...current, traveler: event.target.value }))}>{(card.editor.travelerOptions || []).map(option => <option key={option} value={option}>{option}</option>)}</select></label>
+          {editor.traveler === '无障碍出行（轮椅推车用户推荐）' && <div className={styles.travelerHint}>优先电梯、坡道和无障碍入口，减少搬运行李或推车的不便</div>}
+          {editor.traveler === '省力出行（长辈推荐）' && <div className={styles.travelerHint}>优先步行距离短、少换乘的路线</div>}
+        </div>
+      )}
+      {card.rows && card.rows.length > 0 && (
+        <div className={styles.cardRows}>
+          {card.rows.map((r, i) => (
+            <div key={i} className={styles.cardRow}>
+              <span className={styles.cardRowLabel}>{r.label}</span>
+              <span className={styles.cardRowValue} style={r.valueColor ? { color: r.valueColor } : undefined}>{r.value}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {card.actions && card.actions.length > 0 && (
+        <div className={styles.cardActions}>
+          {card.actions.map((a, i) => (
+            <button
+              key={`${a.label}-${i}`}
+              className={a.primary ? styles.cardActionPrimary : styles.cardAction}
+              onClick={() => onAction(actionWithEditor(a))}
+            >
+              {a.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 export default AIAssistant;

@@ -7,9 +7,19 @@ import {
 } from './data';
 import {
   getUserPoints, deductPoints, addPoints,
-  addRedemption, getRedemptions,
-  findAccount, registerAccount, hashPassword,
+  addRedemption, getRedemptions, markRedemptionUsed,
+  findAccount, findAccountById, registerAccount, hashPassword, updateAccount, updateAccountPassword,
+  addReport, getReports, getCarbonRewards, redeemCarbonReward,
+  addNotification, getNotifications, getNotificationSettings, setNotificationSettings, markNotificationsRead,
 } from '../stores/persistence';
+import { DEMO_ACCESSIBLE_FACILITIES } from '../data/accessibilityFacilities';
+import {
+  CUTOFF_MINUTES,
+  computeBusStatus,
+  instancesForDate,
+} from '../utils/customBusSchedule';
+import { createMockTrip, findMockTrip, finishMockTrip, listMockTrips } from './tripRepository';
+import type { CreateTripRequest } from '../types/trip';
 
 function delay(ms = 300 + Math.random() * 500) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -17,6 +27,27 @@ function delay(ms = 300 + Math.random() * 500) {
 
 function json(data: unknown, code = 0) {
   return { code, message: 'ok', data, timestamp: Date.now() };
+}
+
+function makeMockToken(userId: string) {
+  return `mock.${encodeURIComponent(userId)}.${Date.now()}`;
+}
+
+function mockUserId(input: RequestInfo | URL, init?: RequestInit): string | null {
+  const headers = new Headers(input instanceof Request ? input.headers : init?.headers);
+  const token = headers.get('Authorization')?.replace(/^Bearer\s+/i, '') || '';
+  const match = /^mock\.([^.]+)\.\d+$/.exec(token);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+async function requestBody(input: RequestInfo | URL, init?: RequestInit) {
+  if (typeof init?.body === 'string') return JSON.parse(init.body || '{}');
+  if (input instanceof Request) return input.clone().json().catch(() => ({}));
+  return {};
+}
+
+function response(data: unknown, status = 200) {
+  return new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
 }
 
 function randomCoord(): [number, number] {
@@ -50,11 +81,80 @@ function mockBusRealtime(lineId: string) {
 export function fetchInterceptor() {
   const originalFetch = window.fetch;
   window.fetch = async function(input: RequestInfo | URL, init?: RequestInit) {
-    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-    if (!url.startsWith('/api')) return originalFetch.call(window, input, init);
+    const rawUrl = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    const parsedUrl = new URL(rawUrl, window.location.origin);
+    if (parsedUrl.origin !== window.location.origin || !parsedUrl.pathname.startsWith('/api')) {
+      return originalFetch.call(window, input, init);
+    }
+    const url = parsedUrl.pathname + parsedUrl.search;
 
     await delay();
-    const method = init?.method || 'GET';
+    const method = (init?.method || (input instanceof Request ? input.method : 'GET')).toUpperCase();
+    const pathname = parsedUrl.pathname;
+
+    if (pathname === '/api/notification-settings') {
+      const userId = mockUserId(input, init);
+      if (!userId) return response({ code: 401, message: '请先登录', data: null }, 401);
+      if (method === 'GET') return response(json(getNotificationSettings(userId)));
+      if (method === 'PUT') {
+        const body = await requestBody(input, init);
+        const settings = { carbon: Boolean(body.carbon), weather: Boolean(body.weather), event: Boolean(body.event), system: Boolean(body.system) };
+        setNotificationSettings(settings, userId);
+        return response(json(settings));
+      }
+    }
+
+    if (pathname === '/api/notifications' && method === 'GET') {
+      const userId = mockUserId(input, init);
+      if (!userId) return response({ code: 401, message: '请先登录', data: null }, 401);
+      const notifications = getNotifications(userId);
+      return response(json({ list: notifications, unreadCount: notifications.filter(item => !item.read).length }));
+    }
+
+    if (pathname === '/api/notifications/read' && method === 'POST') {
+      const userId = mockUserId(input, init);
+      if (!userId) return response({ code: 401, message: '请先登录', data: null }, 401);
+      const body = await requestBody(input, init);
+      markNotificationsRead(Array.isArray(body.ids) ? body.ids.map(String) : [], userId);
+      return response(json({ success: true }));
+    }
+
+    // 用户作用域接口：身份只从 Bearer Token 中解析，不接受 userId 参数。
+    if (pathname === '/api/trips' || pathname.startsWith('/api/trips/')) {
+      const userId = mockUserId(input, init);
+      if (!userId) return response({ code: 401, message: '请先登录', data: null }, 401);
+
+      if (pathname === '/api/trips' && method === 'GET') {
+        return response(json(listMockTrips(userId)));
+      }
+      if (pathname === '/api/trips' && method === 'POST') {
+        const body = await requestBody(input, init) as CreateTripRequest;
+        if (!body.clientSessionId || !body.origin || !body.destination || !body.routeSnapshot) {
+          return response({ code: 400, message: '出行参数不完整', data: null }, 400);
+        }
+        return response(json(createMockTrip(userId, body)));
+      }
+
+      const actionMatch = pathname.match(/^\/api\/trips\/([^/]+)\/(complete|cancel)$/);
+      if (actionMatch && method === 'POST') {
+        const tripId = decodeURIComponent(actionMatch[1]);
+        const before = findMockTrip(userId, tripId);
+        const trip = finishMockTrip(userId, tripId, actionMatch[2] === 'complete' ? 'completed' : 'cancelled');
+        if (!trip) return response({ code: 404, message: '出行记录不存在', data: null }, 404);
+        if (before?.status === 'in_progress' && actionMatch[2] === 'complete' && trip.earnedPoints > 0) {
+          addPoints(trip.earnedPoints, userId);
+          addNotification({ id: `carbon_trip_${trip.id}`, userId, type: 'carbon', title: '绿色出行碳积分已到账', content: `本次绿色出行获得 ${trip.earnedPoints} 碳积分。`, createdAt: Date.now(), read: false, relatedId: trip.id, actionPath: '/carbon/points-detail' });
+        }
+        return response(json(trip));
+      }
+
+      const detailMatch = pathname.match(/^\/api\/trips\/([^/]+)$/);
+      if (detailMatch && method === 'GET') {
+        const trip = findMockTrip(userId, decodeURIComponent(detailMatch[1]));
+        return trip ? response(json(trip)) : response({ code: 404, message: '出行记录不存在', data: null }, 404);
+      }
+      return response({ code: 405, message: '不支持的操作', data: null }, 405);
+    }
 
     // 交通数据
     if (url === '/api/traffic/congestion') return new Response(JSON.stringify(json(MOCK_ROADS)), { headers:{'Content-Type':'application/json'} });
@@ -139,9 +239,10 @@ export function fetchInterceptor() {
       return new Response(JSON.stringify(json(results.slice(0, 12))), { headers:{'Content-Type':'application/json'} });
     }
 
-    // 附近公交/地铁站
+    // 附近公交/地铁站（返回 type 字段，与真实后端一致；前端 getNearbyStations 读 station.type）
     if (url.startsWith('/api/transit/nearby')) {
-      const sorted = [...MOCK_NEARBY_STATIONS].sort((a, b) => a.distance - b.distance);
+      const sorted = [...MOCK_NEARBY_STATIONS].sort((a, b) => a.distance - b.distance)
+        .map(s => ({ ...s, type: s.mode }));
       return new Response(JSON.stringify(json(sorted)), { headers:{'Content-Type':'application/json'} });
     }
 
@@ -163,15 +264,165 @@ export function fetchInterceptor() {
       })), { headers:{'Content-Type':'application/json'} });
     }
 
+    // 无障碍设施（平民端查询）：mock 环境下返回演示数据，对齐后端契约
+    if (url === '/api/accessibility/stations') {
+      return new Response(JSON.stringify(json(DEMO_ACCESSIBLE_FACILITIES.map(f => ({ ...f, source: 'demo' })))), { headers: { 'Content-Type': 'application/json' } });
+    }
+
+    // 定制公交（mock 模拟后端：班次实例 / 预约）。真实后端实现后前端零改动。
+    if (url === '/api/custom-bus/schedules' && method === 'GET') {
+      const params = new URL(url, 'http://x').searchParams;
+      const dateStr = params.get('date') || new Date().toISOString().slice(0, 10);
+      const now = new Date();
+      const nowMs = Date.now();
+      // 用模板生成完整班次实例，再映射到 shared CustomBusSchedule 契约
+      const instances = instancesForDate(now, new Date(`${dateStr}T00:00:00`));
+      const schedules = instances.map(instance => {
+        const depart = new Date(`${dateStr}T${instance.departTime}:00`);
+        const cutoff = new Date(depart.getTime() - CUTOFF_MINUTES * 60 * 1000);
+        const status = computeBusStatus(instance, now);
+        return {
+          id: instance.id,
+          templateId: instance.templateId,
+          scheduleId: instance.scheduleId,
+          from: instance.from,
+          to: instance.to,
+          boardingPointId: instance.boardingPointId,
+          date: instance.date,
+          departTime: instance.departTime,
+          arriveTime: instance.arriveTime,
+          price: instance.price,
+          totalSeats: instance.seats,
+          bookedSeats: 0,
+          remainingSeats: instance.seats,
+          type: instance.type,
+          status,
+          cutoffAt: cutoff.getTime(),
+        };
+      });
+      // 对齐后端真实形状：{ date, schedules }（CustomBusSchedulesResponse）
+      return new Response(JSON.stringify(json({ date: dateStr, schedules })), { headers: { 'Content-Type': 'application/json' } });
+    }
+    if (url === '/api/custom-bus/reservations' && method === 'GET') {
+      const userId = mockUserId(input, init);
+      if (!userId) return response({ code: 401, message: '请先登录', data: null }, 401);
+      return response(json([]));
+    }
+    if (url === '/api/custom-bus/reservations' && method === 'POST') {
+      const userId = mockUserId(input, init);
+      if (!userId) return response({ code: 401, message: '请先登录', data: null }, 401);
+      const body = await requestBody(input, init);
+      const scheduleInstanceId = String(body.scheduleInstanceId || '');
+      if (!scheduleInstanceId) return response({ code: 400, message: '班次实例缺失', data: null }, 400);
+      return response(json({
+        id: `cbres_${Date.now().toString(36)}`,
+        reservationNo: 'CB' + Date.now().toString(36).toUpperCase(),
+        scheduleInstanceId,
+        templateId: scheduleInstanceId.split('-').slice(0, 2).join('-'),
+        routeName: '定制公交',
+        scheduleId: scheduleInstanceId,
+        date: new Date().toISOString().slice(0, 10),
+        departureTime: '',
+        boardingPoint: '',
+        destination: '',
+        price: Number(body.passengerCount || 1) * 8,
+        passengerCount: Number(body.passengerCount || 1),
+        status: 'pending',
+        createdAt: Date.now(),
+      }));
+    }
+    if (url.match(/\/api\/custom-bus\/reservations\/[^/]+\/cancel$/) && method === 'POST') {
+      const userId = mockUserId(input, init);
+      if (!userId) return response({ code: 401, message: '请先登录', data: null }, 401);
+      const reservationId = decodeURIComponent(url.split('/').slice(-2, -1)[0]);
+      return response(json({
+        id: reservationId,
+        reservationNo: 'CB' + reservationId,
+        scheduleInstanceId: '',
+        templateId: '',
+        routeName: '定制公交',
+        scheduleId: '',
+        date: new Date().toISOString().slice(0, 10),
+        departureTime: '',
+        boardingPoint: '',
+        destination: '',
+        price: 0,
+        passengerCount: 1,
+        status: 'cancelled',
+        createdAt: Date.now(),
+      }));
+    }
+
+    // 长途客运购票记录（mock 模拟后端：创建 / 列表）。真实后端实现后前端零改动。
+    if (url === '/api/long-distance/purchases' && method === 'GET') {
+      const userId = mockUserId(input, init);
+      if (!userId) return response({ code: 401, message: '请先登录', data: null }, 401);
+      return response(json([]));
+    }
+    if (url === '/api/long-distance/purchases' && method === 'POST') {
+      const userId = mockUserId(input, init);
+      if (!userId) return response({ code: 401, message: '请先登录', data: null }, 401);
+      const body = await requestBody(input, init);
+      const now = Date.now();
+      return response(json({
+        id: `ldp_${now.toString(36)}`,
+        purchaseNo: 'LD' + now.toString(36).toUpperCase(),
+        kind: 'purchase',
+        scheduleId: body.scheduleId || '',
+        routeName: '长途客运',
+        provider: 'e2Go',
+        date: body.date || new Date().toISOString().slice(0, 10),
+        departureTime: '',
+        originStation: '',
+        destinationStation: '',
+        price: Number(body.passengerCount || 1) * 100,
+        passengerCount: Number(body.passengerCount || 1),
+        status: 'pending',
+        createdAt: now,
+      }));
+    }
+
     // 停车充电
     if (url === '/api/parking/lots') return new Response(JSON.stringify(json(MOCK_PARKING_LOTS)), { headers:{'Content-Type':'application/json'} });
     if (url === '/api/parking/charging') return new Response(JSON.stringify(json(MOCK_CHARGING_STATIONS)), { headers:{'Content-Type':'application/json'} });
 
-    // 事件上报
-    if (url === '/api/report/list') return new Response(JSON.stringify(json(MOCK_WORK_ORDERS)), { headers:{'Content-Type':'application/json'} });
-    if (url.match(/\/api\/report\/detail\//)) return new Response(JSON.stringify(json(MOCK_WORK_ORDERS[0])), { headers:{'Content-Type':'application/json'} });
+    // 用户上报：列表和详情均由 Token 限定用户作用域。
+    if (url === '/api/events/mine' || url === '/api/report/list') {
+      const userId = mockUserId(input, init);
+      if (!userId) return response({ code: 401, message: '请先登录', data: null }, 401);
+      return response(json(getReports(userId).map(item => ({ ...item, createTime: item.createdAt }))));
+    }
+    if (url.match(/\/api\/report\/detail\//)) {
+      const userId = mockUserId(input, init);
+      if (!userId) return response({ code: 401, message: '请先登录', data: null }, 401);
+      const reportId = decodeURIComponent(url.split('/').pop() || '');
+      const report = getReports(userId).find(item => item.id === reportId);
+      return report ? response(json({ ...report, createTime: report.createdAt })) : response({ code: 404, message: '上报记录不存在', data: null }, 404);
+    }
     if (url === '/api/report/query') return new Response(JSON.stringify(json(MOCK_WORK_ORDERS[2])), { headers:{'Content-Type':'application/json'} });
-    if (url === '/api/report/submit' && method === 'POST') return new Response(JSON.stringify(json({ ...MOCK_WORK_ORDERS[2], workOrderNo:'ZT'+Date.now().toString(36).toUpperCase() })), { headers:{'Content-Type':'application/json'} });
+    if (url === '/api/report/submit' && method === 'POST') {
+      const userId = mockUserId(input, init);
+      if (!userId) return response({ code: 401, message: '请先登录', data: null }, 401);
+      const body = await requestBody(input, init);
+      const now = Date.now();
+      // 事件位置（eventLocation）与设备定位（deviceLocation）分离保存
+      const report = {
+        id: `report_${now.toString(36)}`,
+        workOrderNo: `ZT${now.toString(36).toUpperCase()}`,
+        category: body.category || '其他问题',
+        description: body.description || '',
+        location: body.address || '',
+        // 新契约：事件发生位置 + 定位方式 + 定位状态
+        eventLocation: body.eventLocation || null,
+        deviceLocation: body.deviceLocation || null,
+        locationType: body.locationType || (body.eventLocation?.locationType) || 'auto',
+        locationStatus: body.locationStatus || (body.eventLocation?.locationStatus) || 'failed',
+        status: 'pending' as const,
+        createdAt: now,
+      };
+      addReport(report, userId);
+      return response(json({ ...report, createTime: now }));
+    }
 
     // 新闻
     if (url === '/api/news/list') return new Response(JSON.stringify(json(MOCK_NEWS)), { headers:{'Content-Type':'application/json'} });
@@ -181,23 +432,27 @@ export function fetchInterceptor() {
 
     // GET /api/points — 查询当前用户积分（从持久化层读取，非前端写死）
     if (url === '/api/points') {
-      const points = getUserPoints();
+      const userId = mockUserId(input, init);
+      if (!userId) return response({ code: 401, message: '请先登录', data: null }, 401);
+      const points = getUserPoints(userId);
       return new Response(JSON.stringify(json({ points })), { headers:{'Content-Type':'application/json'} });
     }
 
     // GET /api/rewards — 兑换商品列表（可扩展，从"后端"定义积分配额）
     if (url === '/api/rewards') {
-      return new Response(JSON.stringify(json(MOCK_CARBON_REWARDS)), { headers:{'Content-Type':'application/json'} });
+      return new Response(JSON.stringify(json(getCarbonRewards())), { headers:{'Content-Type':'application/json'} });
     }
 
     // POST /api/rewards/redeem — 执行兑换（积分不足由"后端"判断，前端无法篡改）
     if (url === '/api/rewards/redeem' && method === 'POST') {
-      const body = JSON.parse(await (init?.body as string) || '{}');
+      const userId = mockUserId(input, init);
+      if (!userId) return response({ code: 401, message: '请先登录', data: null }, 401);
+      const body = await requestBody(input, init);
       const rewardId = body.rewardId;
-      const reward = MOCK_CARBON_REWARDS.find(r => r.id === rewardId);
+      const reward = getCarbonRewards().find(r => r.id === rewardId);
       if (!reward) return new Response(JSON.stringify({ code: 404, message: '商品不存在', data: null }), { headers:{'Content-Type':'application/json'} });
 
-      const userPoints = getUserPoints();
+      const userPoints = getUserPoints(userId);
       if (userPoints < reward.cost) {
         return new Response(JSON.stringify({
           code: 400, message: `积分不足，当前积分${userPoints}，需要${reward.cost}积分`,
@@ -205,24 +460,30 @@ export function fetchInterceptor() {
         }), { headers:{'Content-Type':'application/json'} });
       }
 
+      const redeemedReward = redeemCarbonReward(rewardId);
+      if (!redeemedReward) return new Response(JSON.stringify({ code: 400, message: '商品已下架或库存不足', data: null }), { headers:{'Content-Type':'application/json'} });
+
       // 事务模拟：扣积分 + 建兑换记录（两步都成功才返回成功）
-      const deducted = deductPoints(reward.cost);
+      const deducted = deductPoints(reward.cost, userId);
       if (!deducted.success) {
         return new Response(JSON.stringify({ code: 500, message: '积分扣减失败，请重试', data: null }), { headers:{'Content-Type':'application/json'} });
       }
 
       const now = new Date();
-      const expires = new Date(now.getTime() + 30 * 86400000); // 30天有效期
+      const expires = new Date(now);
+      expires.setMonth(expires.getMonth() + 2);
       addRedemption({
         id: 'rd_' + Date.now().toString(36),
-        user_id: 'u1',
+        user_id: userId,
         reward_id: reward.id,
         reward_name: reward.name,
         points_cost: reward.cost,
         status: 'unused',
         redeemed_at: now.toISOString(),
         expires_at: expires.toISOString(),
-      });
+      }, userId);
+
+      addNotification({ id: `carbon_redeem_${Date.now().toString(36)}`, userId, type: 'carbon', title: '碳积分兑换成功', content: `已使用 ${reward.cost} 碳积分兑换“${reward.name}”，剩余 ${deducted.remaining} 碳积分。`, createdAt: Date.now(), read: false, actionPath: '/carbon/redemptions' });
 
       return new Response(JSON.stringify(json({
         success: true,
@@ -232,32 +493,89 @@ export function fetchInterceptor() {
       })), { headers:{'Content-Type':'application/json'} });
     }
 
+    if (url.match(/^\/api\/redemptions\/[^/]+\/use$/) && method === 'POST') {
+      const userId = mockUserId(input, init);
+      if (!userId) return response({ code: 401, message: '请先登录', data: null }, 401);
+      const id = decodeURIComponent(pathname.split('/')[3]);
+      const updated = markRedemptionUsed(id, userId);
+      if (!updated) return response({ code: 404, message: '兑换记录不存在', data: null }, 404);
+      return new Response(JSON.stringify(json(updated)), { headers:{'Content-Type':'application/json'} });
+    }
+
     // GET /api/redemptions — 当前用户兑换记录
     if (url === '/api/redemptions') {
-      return new Response(JSON.stringify(json(getRedemptions())), { headers:{'Content-Type':'application/json'} });
+      const userId = mockUserId(input, init);
+      if (!userId) return response({ code: 401, message: '请先登录', data: null }, 401);
+      return new Response(JSON.stringify(json(getRedemptions(userId))), { headers:{'Content-Type':'application/json'} });
     }
 
     // 碳积分统计（首页展示用，合并持久化积分）
     if (url === '/api/carbon/stats') {
-      const currentPoints = getUserPoints();
+      const userId = mockUserId(input, init);
+      if (!userId) return response({ code: 401, message: '请先登录', data: null }, 401);
+      const currentPoints = getUserPoints(userId);
+      const completedTrips = listMockTrips(userId).filter(trip => trip.status === 'completed' && (trip.carbonSaved > 0 || trip.earnedPoints > 0));
       return new Response(JSON.stringify(json({
         totalPoints: currentPoints,
-        totalCarbonSaved: 5267,
+        totalCarbonSaved: completedTrips.reduce((sum, trip) => sum + trip.carbonSaved, 0),
         treeEquivalent: Number((currentPoints / 1000).toFixed(2)),
         carDistanceSaved: Math.round(currentPoints / 50),
         rankPercent: 15,
-        records: MOCK_CARBON_RECORDS
+        records: completedTrips.map(trip => ({ id: trip.id, type: trip.mode, date: trip.startedAt, distance: trip.actualDistance ?? trip.estimatedDistance, duration: trip.actualDuration ?? trip.estimatedDuration, carbonSaved: trip.carbonSaved, points: trip.earnedPoints, route: `${trip.origin.name} → ${trip.destination.name}` }))
       })), { headers:{'Content-Type':'application/json'} });
     }
 
     // ====== 多账号认证（验证码 / 密码） ======
-    if (url === '/api/user/send-code' && method === 'POST') return new Response(JSON.stringify(json({ success:true })), { headers:{'Content-Type':'application/json'} });
+    // 发送验证码（演示环境：明文回传验证码，与真实后端契约对齐 { expiresIn, code, demo:true }）
+    if (url === '/api/user/send-code' && method === 'POST') {
+      const body = await requestBody(input, init);
+      const phone = String(body.phone || '').trim();
+      if (!/^1[3-9]\d{9}$/.test(phone)) {
+        return new Response(JSON.stringify({ code: 'INVALID_PHONE', message: '手机号格式不正确', data: null }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+      }
+      // 演示环境固定验证码 123456（与 verify-code 校验一致），真实后端会回传随机验证码
+      return new Response(JSON.stringify(json({ expiresIn: 300, code: '123456', demo: true })), { headers: { 'Content-Type': 'application/json' } });
+    }
+
+    // 验证码登录：手机号 + 6 位验证码；未注册手机号自动注册（与真实后端契约对齐）
+    if (url === '/api/auth/verify-code' && method === 'POST') {
+      const body = await requestBody(input, init);
+      const phone = String(body.phone || '').trim();
+      const code = String(body.code || '').trim();
+      if (!/^1[3-9]\d{9}$/.test(phone)) {
+        return new Response(JSON.stringify({ code: 'INVALID_PHONE', message: '手机号格式不正确', data: null }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+      }
+      if (!/^\d{6}$/.test(code)) {
+        return new Response(JSON.stringify({ code: 'INVALID_CODE', message: '验证码格式不正确', data: null }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+      }
+      // 演示环境固定校验码 123456（无短信网关，真实环境由后端校验）
+      if (code !== '123456') {
+        return new Response(JSON.stringify({ code: 'CODE_MISMATCH', message: '验证码错误', data: null }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+      }
+      let account = findAccount(phone);
+      if (!account) {
+        // 未注册手机号自动注册：用户名 u + 后四位
+        const username = `u${phone.slice(-4)}`;
+        const reg = registerAccount({ username, phone, email: '', password: phone.slice(-6), nickname: username });
+        account = reg.account || null;
+      }
+      if (!account) {
+        return new Response(JSON.stringify({ code: 'REGISTER_FAILED', message: '自动注册失败', data: null }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+      }
+      const user = {
+        id: account.id, username: account.username, nickname: account.nickname,
+        phone: account.phone, email: account.email || '', avatar: account.avatar || '', role: account.role,
+        isVerified: true, carbonCredits: account.carbonCredits,
+        token: makeMockToken(account.id),
+      };
+      return new Response(JSON.stringify(json(user)), { headers: { 'Content-Type': 'application/json' } });
+    }
 
     // 登录：支持两种 body
     //   验证码: { phone, code }
     //   密码:   { account, password }   account = 用户名/手机号/邮箱
     if ((url === '/api/user/login' || url === '/api/auth/login') && method === 'POST') {
-      const body = JSON.parse(await (init?.body as string) || '{}');
+      const body = await requestBody(input, init);
 
       // 密码登录
       if (body.account && body.password) {
@@ -269,21 +587,20 @@ export function fetchInterceptor() {
           id: account.id, username: account.username, nickname: account.nickname,
           phone: account.phone, email: account.email, role: account.role,
           isVerified: true, carbonCredits: account.carbonCredits,
-          token: 'mock_token_' + Date.now(),
+          token: makeMockToken(account.id),
         };
         return new Response(JSON.stringify(json(user)), { headers:{'Content-Type':'application/json'} });
       }
 
       // 验证码登录（仅手机号）
       if (body.phone) {
-        const account = findAccount(body.phone) || {
-          id: 'u1', username: 'demo', phone: body.phone, email: '', nickname: `用户${body.phone.slice(-4)}`, role: 'user', carbonCredits: getUserPoints(),
-        };
+        const account = findAccount(body.phone);
+        if (!account) return response({ code: 'INVALID_CREDENTIALS', message: '该手机号尚未注册', data: null }, 401);
         const user = {
           id: account.id, username: account.username, nickname: account.nickname,
           phone: account.phone, email: account.email || '', role: account.role,
           isVerified: true, carbonCredits: account.carbonCredits,
-          token: 'mock_token_' + Date.now(),
+          token: makeMockToken(account.id),
         };
         return new Response(JSON.stringify(json(user)), { headers:{'Content-Type':'application/json'} });
       }
@@ -292,7 +609,7 @@ export function fetchInterceptor() {
 
     // 注册：用户名 + 手机号 + 邮箱(可选) + 密码，检查重复
     if (url === '/api/user/register' && method === 'POST') {
-      const body = JSON.parse(await (init?.body as string) || '{}');
+      const body = await requestBody(input, init);
       const result = registerAccount({
         username: body.username || body.nickname || '',
         phone: body.phone || '',
@@ -311,16 +628,41 @@ export function fetchInterceptor() {
         id: acc.id, username: acc.username, nickname: acc.nickname,
         phone: acc.phone, email: acc.email, role: acc.role,
         isVerified: false, carbonCredits: 0,
-        token: 'mock_token_' + Date.now(),
+        token: makeMockToken(acc.id),
       };
       return new Response(JSON.stringify(json(user)), { headers:{'Content-Type':'application/json'} });
     }
 
     if (url === '/api/user/profile') {
-      const acc = findAccount('13812345678') || findAccount('zhangsan');
-      return new Response(JSON.stringify(json({
-        id: acc?.id || 'u1', phone: acc?.phone || '', nickname: acc?.nickname || acc?.username || '用户', realName: acc?.nickname || acc?.username || '', isVerified: true, carbonCredits: getUserPoints()
-      })), { headers:{'Content-Type':'application/json'} });
+      const userId = mockUserId(input, init);
+      if (!userId) return response({ code: 401, message: '请先登录', data: null }, 401);
+      const acc = findAccountById(userId);
+      if (!acc) return response({ code: 404, message: '用户不存在', data: null }, 404);
+      if (method === 'PATCH') {
+        const body = await requestBody(input, init);
+        const previousEmail = acc.email;
+        const updated = updateAccount(userId, {
+          ...(typeof body.nickname === 'string' ? { nickname: body.nickname.trim() } : {}),
+          ...(typeof body.phone === 'string' ? { phone: body.phone.trim() } : {}),
+          ...(typeof body.email === 'string' ? { email: body.email.trim().toLowerCase() } : {}),
+          ...(typeof body.avatar === 'string' ? { avatar: body.avatar } : {}),
+        });
+        if (!updated) return response({ code: 404, message: '用户不存在', data: null }, 404);
+        if (typeof body.email === 'string' && updated.email !== previousEmail) addNotification({ id: `system_email_${Date.now().toString(36)}`, userId, type: 'system', title: previousEmail ? '邮箱修改成功' : '邮箱绑定成功', content: `账号邮箱已${previousEmail ? '修改为' : '绑定为'} ${updated.email}。如非本人操作，请立即修改密码。`, createdAt: Date.now(), read: false, actionPath: '/profile/account' });
+        return response(json({ id: updated.id, username: updated.username, phone: updated.phone, email: updated.email, nickname: updated.nickname, avatar: updated.avatar, role: updated.role, isVerified: true, carbonCredits: getUserPoints(userId) }));
+      }
+      return new Response(JSON.stringify(json({ id: acc.id, username: acc.username, phone: acc.phone, email: acc.email, nickname: acc.nickname || acc.username, realName: acc.nickname || acc.username, avatar: acc.avatar, role: acc.role, isVerified: true, carbonCredits: getUserPoints(userId) })), { headers:{'Content-Type':'application/json'} });
+    }
+
+    if (url === '/api/user/password' && method === 'PUT') {
+      const userId = mockUserId(input, init);
+      if (!userId) return response({ code: 401, message: '请先登录', data: null }, 401);
+      const body = await requestBody(input, init);
+      const result = updateAccountPassword(userId, String(body.currentPassword || ''), String(body.newPassword || ''));
+      if (result === 'invalid_password') return response({ code: 'INVALID_CURRENT_PASSWORD', message: '当前密码不正确', data: null }, 400);
+      if (result === 'not_found') return response({ code: 404, message: '用户不存在', data: null }, 404);
+      addNotification({ id: `system_password_${Date.now().toString(36)}`, userId, type: 'system', title: '登录密码修改成功', content: '你的登录密码已修改。如非本人操作，请立即联系平台客服。', createdAt: Date.now(), read: false, actionPath: '/profile/account' });
+      return response(json({ success: true }));
     }
 
     return new Response(JSON.stringify(json(null)), { headers:{'Content-Type':'application/json'} });

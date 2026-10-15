@@ -1,5 +1,10 @@
 import { create } from 'zustand';
 import { apiGet, apiPost } from '../services/apiClient';
+import { clearPersonalData } from './persistence';
+import { clearTravelOriginCache } from './travelLocationStore';
+import { useTripStore } from './tripStore';
+import { useReservationStore } from './reservationStore';
+import { useTravelPlanStore } from './travelPlanStore';
 
 export interface User {
   id: string;
@@ -20,14 +25,19 @@ export interface LoginResult {
   fieldError?: string;
 }
 
+export type AuthStatus = 'loading' | 'authenticated' | 'guest' | 'expired';
+
 interface AuthState {
   isLoggedIn: boolean;
+  isAuthenticated: boolean;
+  authStatus: AuthStatus;
   user: User | null;
   token: string | null;
   loginWithPassword: (account: string, password: string) => Promise<LoginResult>;
   loginWithSms: (phone: string, code: string) => Promise<LoginResult>;
   register: (data: { username: string; phone: string; email: string; password: string; nickname: string }) => Promise<LoginResult>;
   logout: () => void;
+  markSessionExpired: () => void;
   updateUser: (user: Partial<User>) => void;
   refreshProfile: () => Promise<void>;
 }
@@ -69,6 +79,8 @@ function normalizeUser(raw: Partial<User> & Record<string, unknown>): User {
 
 export const useAuthStore = create<AuthState>((set, get) => ({
   isLoggedIn: Boolean(stored.token),
+  isAuthenticated: Boolean(stored.token),
+  authStatus: stored.token ? 'authenticated' : 'guest',
   user: stored.user,
   token: stored.token,
 
@@ -81,17 +93,28 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       );
       const user = normalizeUser(data);
       persistLogin(user, data.token);
-      set({ isLoggedIn: true, user, token: data.token });
+      set({ isLoggedIn: true, isAuthenticated: true, authStatus: 'authenticated', user, token: data.token });
       return { ok: true };
     } catch (error) {
       return { ok: false, error: errorMessage(error, '登录失败，请重试') };
     }
   },
 
-  loginWithSms: async () => ({
-    ok: false,
-    error: '后端当前只提供发送验证码接口，尚未提供验证码登录校验接口',
-  }),
+  loginWithSms: async (phone, code) => {
+    try {
+      // 真实后端：POST /api/auth/verify-code { phone, code }（校验验证码；未注册手机号自动注册）
+      const data = await apiPost<Partial<User> & Record<string, unknown> & { token: string }>(
+        '/auth/verify-code',
+        { phone, code },
+      );
+      const user = normalizeUser(data);
+      persistLogin(user, data.token);
+      set({ isLoggedIn: true, isAuthenticated: true, authStatus: 'authenticated', user, token: data.token });
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error: errorMessage(error, '验证码登录失败，请重试') };
+    }
+  },
 
   register: async ({ username, phone, email, password, nickname }) => {
     try {
@@ -102,7 +125,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       );
       const user = { ...normalizeUser(data), nickname: data.nickname || nickname || username };
       persistLogin(user, data.token);
-      set({ isLoggedIn: true, user, token: data.token });
+      set({ isLoggedIn: true, isAuthenticated: true, authStatus: 'authenticated', user, token: data.token });
       return { ok: true };
     } catch (error) {
       return { ok: false, error: errorMessage(error, '注册失败，请重试') };
@@ -110,22 +133,48 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   logout: () => {
+    // 清 Token 与用户状态，同时清理个人作用域缓存（防止 A/B 用户串号）
     localStorage.removeItem('zhitu_token');
     localStorage.removeItem('zhitu_user');
-    set({ isLoggedIn: false, user: null, token: null });
+    clearPersonalData();
+    clearTravelOriginCache();
+    useTripStore.getState().reset();
+    useReservationStore.getState().clearUserReservationData();
+    useTravelPlanStore.getState().clear();
+    set({ isLoggedIn: false, isAuthenticated: false, authStatus: 'guest', user: null, token: null });
+  },
+
+  markSessionExpired: () => {
+    localStorage.removeItem('zhitu_token');
+    localStorage.removeItem('zhitu_user');
+    useTripStore.getState().reset();
+    // Token 失效时保留 pendingReservation，供重新登录后继续确认。
+    useReservationStore.getState().setReservationsCache([]);
+    set({ isLoggedIn: false, isAuthenticated: false, authStatus: 'expired', user: null, token: null });
   },
 
   updateUser: (patch) => {
     const current = get().user;
     if (!current) return;
-    const user = { ...current, ...patch };
+    const definedPatch = Object.fromEntries(
+      Object.entries(patch).filter(([, value]) => value !== undefined),
+    ) as Partial<User>;
+    const user = { ...current, ...definedPatch };
     localStorage.setItem('zhitu_user', JSON.stringify(user));
     set({ user });
   },
 
   refreshProfile: async () => {
     if (!get().token) return;
-    const profile = await apiGet<Partial<User>>('/user/profile');
-    get().updateUser(profile);
+    try {
+      const profile = await apiGet<Partial<User>>('/user/profile');
+      get().updateUser(profile);
+    } catch {
+      // Token 失效 → 标记 expired，页面据此清除并跳转登录
+      localStorage.removeItem('zhitu_token');
+      localStorage.removeItem('zhitu_user');
+      useTripStore.getState().reset();
+      set({ isLoggedIn: false, isAuthenticated: false, authStatus: 'expired', user: null, token: null });
+    }
   },
 }));

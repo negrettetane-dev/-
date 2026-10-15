@@ -26,6 +26,10 @@ export interface TransitLine {
   status?: 'normal' | 'delayed' | 'maintenance';
   stations: TransitStation[];
   source: DataSource;
+  city?: string;
+  path?: [number, number][];
+  outboundPath?: [number, number][];
+  inboundPath?: [number, number][];
 }
 
 export interface ArrivalInfo {
@@ -47,6 +51,10 @@ export interface TransitSearchResult {
   name: string;
   subtitle?: string;
   transferLines?: string[];
+  /** 后端已内置站点坐标表；未收录的站点为 null，不伪造 */
+  lng?: number | null;
+  lat?: number | null;
+  address?: string;
 }
 
 export interface NearbyStation {

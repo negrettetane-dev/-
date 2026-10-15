@@ -1,26 +1,54 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useElderly } from '../../App';
+import { useAuthStore } from '../../stores/authStore';
+import { getCarePreferences, getNotificationSettings, setCarePreferences, setNotificationSettings, type CarePreference, type NotificationSettings } from '../../stores/persistence';
+import { apiGet, apiPut } from '../../services/apiClient';
+import { ACCESSIBILITY_PREFERENCES } from '../../types/accessibilityPreference';
 import styles from './Profile.module.css';
 
 const SettingsPage: React.FC = () => {
   const navigate = useNavigate();
   const { elderlyMode, toggleElderlyMode } = useElderly();
-  const [settings, setSettings] = useState({
-    congestionAlert: true,
-    weatherAlert: true,
-    controlAlert: false,
-    workorderProgress: true,
-    systemNotice: true,
-  });
+  const userId = useAuthStore(state => state.user?.id || 'legacy');
+  const [settings, setSettings] = useState<NotificationSettings>(() => getNotificationSettings(userId));
+  const [saveMessage, setSaveMessage] = useState('');
+  const [carePreferences, setCarePreferenceState] = useState<CarePreference[]>(() => getCarePreferences(userId));
 
-  const items = [
-    { key:'congestionAlert', label:'拥堵预警推送' },
-    { key:'weatherAlert', label:'天气预警提醒' },
-    { key:'controlAlert', label:'交通管制通知' },
-    { key:'workorderProgress', label:'工单进度通知' },
-    { key:'systemNotice', label:'系统消息' },
+  useEffect(() => {
+    apiGet<NotificationSettings>('/notification-settings')
+      .then(data => { setSettings(data); setNotificationSettings(data, userId); })
+      .catch(() => setSettings(getNotificationSettings(userId)));
+  }, [userId]);
+
+  useEffect(() => { setCarePreferenceState(getCarePreferences(userId)); }, [userId]);
+
+  const toggleCarePreference = (preference: CarePreference) => {
+    setCarePreferenceState(() => {
+      const next = [preference];
+      setCarePreferences(next, userId);
+      try { sessionStorage.setItem('zhitu_accessibility_preferences', JSON.stringify(next)); } catch { /* storage unavailable */ }
+      setSaveMessage('关怀偏好已保存到当前设备');
+      return next;
+    });
+  };
+
+  const items: Array<{ key: keyof NotificationSettings; label: string; description: string }> = [
+    { key:'carbon', label:'碳积分推送', description:'积分获取、扣减、兑换及奖励到账提醒' },
+    { key:'weather', label:'天气预警提醒', description:'影响出行的恶劣天气和气象预警' },
+    { key:'event', label:'事件进度通知', description:'你提交的事件状态变化和处理结果' },
+    { key:'system', label:'系统消息', description:'密码修改、邮箱绑定或修改等账号安全通知' },
   ];
+
+  const toggleSetting = (key: keyof NotificationSettings) => {
+    const next = { ...settings, [key]: !settings[key] };
+    setSettings(next);
+    setNotificationSettings(next, userId);
+    setSaveMessage('已保存');
+    apiPut<NotificationSettings>('/notification-settings', next)
+      .then(data => { setSettings(data); setNotificationSettings(data, userId); })
+      .catch(() => setSaveMessage('已保存到当前设备，联网后将同步'));
+  };
 
   return (
     <div className={styles.settingsPage}>
@@ -33,33 +61,32 @@ const SettingsPage: React.FC = () => {
         <div style={{fontSize:14,fontWeight:600,marginBottom:4}}>🔔 消息通知</div>
         {items.map(item => (
           <div key={item.key} className={styles.settingsItem}>
-            <span className={styles.settingsLabel}>{item.label}</span>
-            <div className={`${styles.toggle} ${settings[item.key as keyof typeof settings]?styles.toggleOn:''}`}
-              onClick={()=>setSettings(s=>({...s,[item.key]:!s[item.key as keyof typeof s]}))}>
-              <div className={styles.toggleBall}/>
-            </div>
+            <span><span className={styles.settingsLabel}>{item.label}</span><small className={styles.settingsDescription}>{item.description}</small></span>
+            <button type="button" role="switch" aria-checked={settings[item.key]} aria-label={item.label} className={`${styles.toggle} ${settings[item.key]?styles.toggleOn:''}`} onClick={() => toggleSetting(item.key)}>
+              <span className={styles.toggleBall}/>
+            </button>
           </div>
         ))}
+        {saveMessage && <div className={styles.settingsSaved}>{saveMessage}</div>}
       </div>
 
       <div className={styles.settingsSection}>
         <div className={styles.settingsItem}>
-          <span className={styles.settingsLabel}>👴 长辈简易模式</span>
-          <div className={`${styles.toggle} ${elderlyMode?styles.toggleOn:''}`} onClick={toggleElderlyMode}>
-            <div className={styles.toggleBall}/>
+          <span className={styles.settingsLabel}>👴 关怀模式</span>
+          <button type="button" role="switch" aria-checked={elderlyMode} aria-label="关怀模式" className={`${styles.toggle} ${elderlyMode?styles.toggleOn:''}`} onClick={toggleElderlyMode}>
+            <span className={styles.toggleBall}/>
+          </button>
+        </div>
+        <div className={styles.careHint}>这些偏好会用于无障碍路线和小枢推荐。</div>
+        <div role="radiogroup" aria-label="出行偏好">
+        {ACCESSIBILITY_PREFERENCES.map(option => (
+          <div key={option.value} className={styles.settingsItem}>
+            <span><span className={styles.settingsLabel}>{option.label}</span><small className={styles.settingsDescription}>{option.description}</small></span>
+            <button type="button" role="radio" aria-checked={carePreferences.includes(option.value)} aria-label={option.label} className={`${styles.toggle} ${carePreferences.includes(option.value) ? styles.toggleOn : ''}`} onClick={() => toggleCarePreference(option.value)}>
+              <span className={styles.toggleBall}/>
+            </button>
           </div>
-        </div>
-        <div className={styles.settingsItem}>
-          <span className={styles.settingsLabel}>关于智途云枢</span>
-          <span style={{color:'var(--text-hint)',fontSize:13}}>v1.0.0 →</span>
-        </div>
-        <div className={styles.settingsItem}>
-          <span className={styles.settingsLabel}>隐私政策</span>
-          <span style={{color:'var(--text-hint)',fontSize:13}}>→</span>
-        </div>
-        <div className={styles.settingsItem}>
-          <span className={styles.settingsLabel}>用户协议</span>
-          <span style={{color:'var(--text-hint)',fontSize:13}}>→</span>
+        ))}
         </div>
       </div>
 

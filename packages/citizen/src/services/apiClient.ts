@@ -1,25 +1,61 @@
 import axios from 'axios';
 import type { ApiResponse } from '@zhitu/shared';
 
+/** 业务错误：保留后端返回的 code（字符串业务码或数字）与 HTTP status，供上层做友好映射 */
+export class ApiError extends Error {
+  constructor(message: string, public readonly code?: string | number, public readonly status?: number) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
 const apiClient = axios.create({
   baseURL: '/api',
   timeout: 15000,
   headers: { 'Content-Type': 'application/json' },
+  adapter: import.meta.env.VITE_ENABLE_MOCK === 'true' ? 'fetch' : undefined,
 });
+
+const DEVICE_ID_KEY = 'zhitu_device_id';
+
+export function getOrCreateDeviceId(): string {
+  const existing = localStorage.getItem(DEVICE_ID_KEY);
+  if (existing) return existing;
+  const generated = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `device_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  localStorage.setItem(DEVICE_ID_KEY, generated);
+  return generated;
+}
 
 apiClient.interceptors.request.use((config) => {
   const token = localStorage.getItem('zhitu_token');
   if (token) config.headers.Authorization = `Bearer ${token}`;
+  config.headers['X-Device-Id'] = getOrCreateDeviceId();
   return config;
 });
 
 apiClient.interceptors.response.use(
   (response) => {
     const body = response.data as ApiResponse;
-    if (body.code !== 0) return Promise.reject(new Error(body.message || '请求失败'));
+    // 后端成功响应用 code=0；非 0（含字符串业务码）为业务错误，保留 code 供上层映射
+    if (body.code !== 0) {
+      return Promise.reject(new ApiError(body.message || '请求失败', body.code, response.status));
+    }
     return response;
   },
-  (error) => Promise.reject(error),
+  (error) => {
+    const config = error?.config;
+    console.error('API request failed', {
+      url: config ? `${config.baseURL || ''}${config.url || ''}` : undefined,
+      method: config?.method?.toUpperCase(),
+      payload: config?.data,
+      status: error?.response?.status,
+      response: error?.response?.data,
+      error,
+    });
+    return Promise.reject(error);
+  },
 );
 
 export async function apiGet<T>(url: string, params?: Record<string, unknown>): Promise<T> {
@@ -29,6 +65,16 @@ export async function apiGet<T>(url: string, params?: Record<string, unknown>): 
 
 export async function apiPost<T>(url: string, data?: unknown): Promise<T> {
   const response = await apiClient.post<ApiResponse<T>>(url, data);
+  return response.data.data;
+}
+
+export async function apiPut<T>(url: string, data?: unknown): Promise<T> {
+  const response = await apiClient.put<ApiResponse<T>>(url, data);
+  return response.data.data;
+}
+
+export async function apiPatch<T>(url: string, data?: unknown): Promise<T> {
+  const response = await apiClient.patch<ApiResponse<T>>(url, data);
   return response.data.data;
 }
 

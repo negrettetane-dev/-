@@ -99,6 +99,9 @@ export default function DashboardPage() {
         <div className="clock">{formatTime(currentTime)}</div>
         <div className="date-info"><div>{formatDate(currentTime)}</div><div>北京 · 多云 28°C | 空气质量 良</div></div>
       </div>
+      <div style={{ padding: '6px 14px', color: 'rgba(255,255,255,0.65)', fontSize: 12 }}>
+        数据来源：模式生成数据 · 非官方实时；地图交通图层为高德第三方图层
+      </div>
 
       <div className="dashboard-row" style={{flex:'0 0 45%'}}>
         <div className="dashboard-panel" style={{width:'28%'}}>
@@ -125,7 +128,7 @@ export default function DashboardPage() {
 
         <div className="dashboard-panel" style={{width:'32%',gap:10}}>
           <div style={{flex:'0 0 auto'}}>
-            <div className="panel-title">🤖 AI实时检测预警</div>
+            <div className="panel-title">🤖 AI检测预警 <span style={{ fontSize: 11, fontWeight: 400, color: 'rgba(255,255,255,0.4)', marginLeft: 6 }}>模拟数据 · 非官方实时</span></div>
             <div className="ai-alert-list">
               {aiAlerts.slice(0,6).map(a=>(
                 <div key={a.id} className="ai-alert-item">

@@ -380,6 +380,52 @@ body {
   box-shadow: var(--shadow-sm);
 }
 
+.accessibility-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.accessibility-summary-card {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-height: 104px;
+  padding: 16px 18px;
+  border: 1px solid #e8edf3;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #fff 0%, #f8fbff 100%);
+  box-shadow: var(--shadow-sm);
+}
+
+.accessibility-summary-card span { color: #64748b; font-size: 13px; }
+.accessibility-summary-card strong { color: #0f172a; font-size: 28px; line-height: 1.1; letter-spacing: -0.5px; }
+.accessibility-summary-card small { color: #94a3b8; font-size: 12px; }
+.accessibility-summary-card .is-warning { color: #d97706; }
+.accessibility-filter-field { display: flex; align-items: center; gap: 10px; }
+.accessibility-filter-label { color: #475569; font-size: 13px; font-weight: 600; white-space: nowrap; }
+.accessibility-table .ant-table-thead > tr > th { background: #f8fafc; color: #334155; font-weight: 600; border-bottom: 1px solid #e2e8f0; }
+.accessibility-table .ant-table-tbody > tr > td { padding: 16px 14px; vertical-align: top; border-bottom: 1px solid #eef2f7; }
+.accessibility-table .ant-table-tbody > tr:hover > td { background: #f8fbff !important; }
+.accessibility-station-id { display: inline-block; max-width: 130px; color: #64748b; font: 600 12px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; overflow-wrap: anywhere; }
+.accessibility-station-name { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; color: #0f172a; line-height: 1.45; }
+.accessibility-station-name strong { font-size: 15px; }
+.accessibility-coordinates { display: inline-flex; flex-direction: column; gap: 3px; color: #64748b; font: 12px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; }
+.accessibility-entrance-list { display: flex; flex-direction: column; gap: 6px; min-width: 360px; }
+.accessibility-entrance { display: flex; align-items: center; gap: 6px; min-height: 38px; padding: 4px 6px; border: 1px solid #e8edf3; border-radius: 8px; background: #fbfdff; }
+.accessibility-entrance-name { flex: 0 0 auto; margin: 0 !important; }
+.accessibility-entrance-actions { display: inline-flex; flex: 0 0 auto; gap: 2px; margin-left: auto; }
+.accessibility-entrance-tags { display: flex; flex: 1 1 auto; flex-wrap: wrap; gap: 4px; min-width: 0; }
+.accessibility-row-actions { align-items: stretch; width: 100%; }
+
+@media (max-width: 900px) {
+  .accessibility-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .accessibility-filter-field { width: 100%; }
+  .accessibility-filter-field .ant-input-affix-wrapper { flex: 1; }
+  .accessibility-filter-field + button { margin-left: 0 !important; }
+}
+
 /* ===== Intersection card ===== */
 .intersection-grid {
   display: grid;

@@ -4,6 +4,9 @@ import { useAuthStore } from '../stores/authStore';
 import { useElderly } from '../App';
 import { maskPhone } from '@zhitu/shared';
 import styles from './MainLayout.module.css';
+import ClickSpark from '../components/ClickSpark/ClickSpark';
+import { AvatarIcon } from '../components/ui/avatar-picker';
+import NotificationBell from '../components/NotificationBell/NotificationBell';
 
 const ABOUT_CONTENT: Record<string, string> = {
   '平台介绍': '智途云枢是面向城市交通治理的智慧出行平台，融合多源交通数据与智能决策能力，为市民提供实时路况、出行规划、公交地铁、停车充电、事件上报、碳积分等一站式出行服务。',
@@ -13,7 +16,6 @@ const ABOUT_CONTENT: Record<string, string> = {
 
 const NAV_ITEMS = [
   { key: '/', label: '首页', icon: '🏠' },
-  { key: '/travel', label: '出行规划', icon: '🧭' },
   { key: '/parking', label: '停车充电', icon: '🅿️' },
   { key: '/report', label: '事件上报', icon: '📷' },
   { key: '/news', label: '交通资讯', icon: '📰' },
@@ -29,11 +31,11 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const currentPath = location.pathname;
   const [aboutModal, setAboutModal] = useState('');
 
-  // 长辈模式或详情页时不显示标准导航
+  // 关怀模式或详情页时不显示标准导航
   const isFullScreen = currentPath.startsWith('/elderly');
 
   // 判断当前激活菜单
-  const activeKey = NAV_ITEMS.find(item => {
+  const activeKey = currentPath === '/travel/result' ? '/' : NAV_ITEMS.find(item => {
     if (item.key === '/') return currentPath === '/';
     return currentPath.startsWith(item.key);
   })?.key || '';
@@ -43,6 +45,14 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   }
 
   return (
+    <ClickSpark
+      sparkColors={['#ff9fb3', '#ffe29a', '#9de5c3', '#a8d8ff', '#d9b8ff']}
+      sparkSize={10}
+      sparkRadius={24}
+      sparkCount={10}
+      duration={500}
+      extraScale={1.1}
+    >
     <div className={styles.site}>
       {/* ===== 顶部导航栏 ===== */}
       <header className={styles.header}>
@@ -68,11 +78,12 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
           <div className={styles.headerRight}>
             {elderlyMode && (
-              <button className={styles.elderlyBadge} onClick={() => navigate('/elderly')}>👴 长辈模式</button>
+              <button className={styles.elderlyBadge} onClick={() => navigate('/elderly')}>👴 关怀模式</button>
             )}
             {isLoggedIn ? (
               <div className={styles.userArea}>
-                <div className={styles.avatar} onClick={() => navigate('/profile')}>👤</div>
+                <NotificationBell />
+                <div className={styles.avatar} onClick={() => navigate('/profile')}><AvatarIcon avatar={user?.avatar} size={32} /></div>
                 <div className={styles.userInfo} onClick={() => navigate('/profile')}>
                   <div className={styles.userName}>{user?.nickname || user?.username || '市民用户'}</div>
                   <div className={styles.userPhone}>{user?.phone ? maskPhone(user.phone) : (user?.email || '')}</div>
@@ -145,6 +156,7 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         </div>
       )}
     </div>
+    </ClickSpark>
   );
 };
 

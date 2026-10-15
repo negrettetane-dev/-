@@ -2,6 +2,8 @@
 // 所有核心用户数据都在 localStorage 中持久化，
 // 页面刷新不丢失。
 
+import { normalizeAccessibilityPreferences, type AccessibilityPreference } from '../types/accessibilityPreference';
+
 const STORAGE_PREFIX = 'zhitu_';
 
 function get<T>(key: string, fallback: T): T {
@@ -48,32 +50,55 @@ export interface PersistedUser {
 }
 
 export interface NotificationSettings {
-  congestion: boolean;
+  carbon: boolean;
   weather: boolean;
-  control: boolean;
-  workorder: boolean;
+  event: boolean;
   system: boolean;
+}
+
+export type CarePreference = AccessibilityPreference;
+
+export function getCarePreferences(userId = 'legacy'): CarePreference[] {
+  return normalizeAccessibilityPreferences(get<unknown>(userScopedKey('care_preferences', userId), []));
+}
+
+export function setCarePreferences(preferences: CarePreference[], userId = 'legacy'): void {
+  set(userScopedKey('care_preferences', userId), normalizeAccessibilityPreferences(preferences));
+}
+
+export type NotificationType = 'carbon' | 'weather' | 'event' | 'system';
+
+export interface UserNotification {
+  id: string;
+  userId: string;
+  type: NotificationType;
+  title: string;
+  content: string;
+  createdAt: number | string;
+  read: boolean;
+  relatedId?: string;
+  actionPath?: string;
 }
 
 // ====== 上报工单 ======
 
 const REPORTS_KEY = 'reports';
 
-export function getReports(): PersistedReport[] {
-  return get<PersistedReport[]>(REPORTS_KEY, []);
+export function getReports(userId = 'legacy'): PersistedReport[] {
+  return get<PersistedReport[]>(userScopedKey(REPORTS_KEY, userId), []);
 }
 
-export function addReport(report: PersistedReport): void {
-  const reports = getReports();
+export function addReport(report: PersistedReport, userId = 'legacy'): void {
+  const reports = getReports(userId);
   reports.unshift(report);
-  set(REPORTS_KEY, reports);
+  set(userScopedKey(REPORTS_KEY, userId), reports);
 }
 
-export function updateReportStatus(id: string, status: PersistedReport['status']): void {
-  const reports = getReports();
+export function updateReportStatus(id: string, status: PersistedReport['status'], userId = 'legacy'): void {
+  const reports = getReports(userId);
   const r = reports.find(r => r.id === id);
   if (r) r.status = status;
-  set(REPORTS_KEY, reports);
+  set(userScopedKey(REPORTS_KEY, userId), reports);
 }
 
 // ====== 碳积分 ======
@@ -94,6 +119,55 @@ export function addCarbonActivity(activity: CarbonActivity): void {
   stats.totalPoints += activity.points;
   stats.totalCarbonSaved += activity.carbonSaved;
   set(CARBON_KEY, stats);
+}
+
+export interface CarbonReward {
+  id: string; name: string; description: string; cost: number; stock: number; enabled?: boolean;
+}
+
+const DEFAULT_CARBON_REWARDS: CarbonReward[] = [
+  { id: 'rw1', name: '公交9折优惠券', description: '乘坐公交享9折优惠，有效期30天', cost: 200, stock: 999, enabled: true },
+  { id: 'rw2', name: '地铁5次免费卡', description: '地铁免费乘坐5次', cost: 500, stock: 500, enabled: true },
+  { id: 'rw3', name: '共享单车月卡', description: '美团单车月卡，30天无限次', cost: 800, stock: 200, enabled: true },
+  { id: 'rw4', name: '停车费抵扣券', description: '合作停车场5元抵扣券', cost: 150, stock: 1000, enabled: true },
+];
+
+export function getCarbonRewards(): CarbonReward[] {
+  return get<CarbonReward[]>('carbon_rewards', DEFAULT_CARBON_REWARDS).filter(reward => reward.enabled !== false && reward.stock > 0);
+}
+
+export function redeemCarbonReward(rewardId: string): CarbonReward | null {
+  const rewards = get<CarbonReward[]>('carbon_rewards', DEFAULT_CARBON_REWARDS);
+  const reward = rewards.find(item => item.id === rewardId && item.enabled !== false && item.stock > 0);
+  if (!reward) return null;
+  reward.stock -= 1;
+  set('carbon_rewards', rewards);
+  return reward;
+}
+
+export interface CitizenCarbonConfig {
+  carbonFactors: Record<string, number>;
+  maxTripDistanceKm: number;
+}
+
+const DEFAULT_CARBON_CONFIG: CitizenCarbonConfig = {
+  carbonFactors: { walk: 1, bike: 0.8, metro: 0.6, bus: 0.5, new_energy_vehicle: 0.2 },
+  maxTripDistanceKm: 100,
+};
+
+export function getCarbonConfig(): CitizenCarbonConfig {
+  const saved = get<Partial<CitizenCarbonConfig>>('carbon_config', {});
+  return { ...DEFAULT_CARBON_CONFIG, ...saved, carbonFactors: { ...DEFAULT_CARBON_CONFIG.carbonFactors, ...(saved.carbonFactors || {}) } };
+}
+
+export interface CitizenPointRule { id: string; name: string; action: string; points: number; }
+export function getPointRules(): CitizenPointRule[] {
+  return get<CitizenPointRule[]>('point_rules', [
+    { id: 'pr1', name: '公交出行', action: 'bus_ride', points: 5 }, { id: 'pr2', name: '地铁出行', action: 'metro_ride', points: 5 },
+    { id: 'pr3', name: '骑行', action: 'bike_ride', points: 10 }, { id: 'pr4', name: '步行', action: 'walk', points: 10 },
+    { id: 'pr5', name: '有效事件上报', action: 'valid_report', points: 20 }, { id: 'pr6', name: '每日签到', action: 'daily_checkin', points: 3 },
+    { id: 'pr7', name: '新能源汽车出行', action: 'new_energy_vehicle_ride', points: 1 },
+  ]);
 }
 
 // ====== 用户信息 ======
@@ -137,27 +211,8 @@ export function hashPassword(password: string): string {
   return `zhitu$${h1.toString(16)}${h2.toString(16)}`;
 }
 
-/** 演示内置账号：用户名 / 手机号 / 邮箱 均可登录同一账号 */
-function builtInAccount(): StoredAccount {
-  return {
-    id: 'u1',
-    username: 'zhangsan',
-    phone: '13812345678',
-    email: 'zhangsan@example.com',
-    passwordHash: hashPassword('123456'),
-    nickname: '演示用户zhangsan',
-    role: 'user',
-    carbonCredits: 1250,
-    createdAt: 1723000000000,
-  };
-}
-
 export function getAccounts(): StoredAccount[] {
-  const list = get<StoredAccount[]>(ACCOUNTS_KEY, []);
-  // 合并内置演示账号（始终存在，方便演示三种方式登录）
-  const builtin = builtInAccount();
-  if (!list.some(a => a.id === builtin.id)) return [builtin, ...list];
-  return list;
+  return get<StoredAccount[]>(ACCOUNTS_KEY, []);
 }
 
 function saveAccounts(list: StoredAccount[]): void {
@@ -173,6 +228,29 @@ export function findAccount(account: string): StoredAccount | null {
     a.phone === account.trim() ||
     a.email.toLowerCase() === acc
   ) || null;
+}
+
+export function findAccountById(userId: string): StoredAccount | null {
+  return getAccounts().find(account => account.id === userId) || null;
+}
+
+export function updateAccount(userId: string, patch: Partial<Pick<StoredAccount, 'nickname' | 'phone' | 'email' | 'avatar'>>): StoredAccount | null {
+  const accounts = getAccounts();
+  const index = accounts.findIndex(account => account.id === userId);
+  if (index < 0) return null;
+  accounts[index] = { ...accounts[index], ...patch };
+  saveAccounts(accounts);
+  return accounts[index];
+}
+
+export function updateAccountPassword(userId: string, currentPassword: string, newPassword: string): 'success' | 'invalid_password' | 'not_found' {
+  const accounts = getAccounts();
+  const index = accounts.findIndex(account => account.id === userId);
+  if (index < 0) return 'not_found';
+  if (accounts[index].passwordHash !== hashPassword(currentPassword)) return 'invalid_password';
+  accounts[index] = { ...accounts[index], passwordHash: hashPassword(newPassword) };
+  saveAccounts(accounts);
+  return 'success';
 }
 
 /** 注册新账号；返回错误码：username_exists / phone_exists / email_exists / null(成功) */
@@ -208,14 +286,43 @@ export function registerAccount(data: {
 
 const NOTIF_KEY = 'notification_settings';
 
-export function getNotificationSettings(): NotificationSettings {
-  return get<NotificationSettings>(NOTIF_KEY, {
-    congestion: true, weather: true, control: true, workorder: true, system: false,
-  });
+export function getNotificationSettings(userId = 'legacy'): NotificationSettings {
+  const saved = get<Partial<NotificationSettings> & { congestion?: boolean; workorder?: boolean }>(userScopedKey(NOTIF_KEY, userId), {});
+  const legacy = get<Partial<NotificationSettings> & { congestion?: boolean; workorder?: boolean }>(NOTIF_KEY, {});
+  const source = Object.keys(saved).length ? saved : legacy;
+  return {
+    carbon: source.carbon ?? source.congestion ?? true,
+    weather: source.weather ?? true,
+    event: source.event ?? source.workorder ?? true,
+    system: source.system ?? true,
+  };
 }
 
-export function setNotificationSettings(s: NotificationSettings): void {
-  set(NOTIF_KEY, s);
+export function setNotificationSettings(settings: NotificationSettings, userId = 'legacy'): void {
+  set(userScopedKey(NOTIF_KEY, userId), settings);
+}
+
+const NOTIFICATIONS_KEY = 'notifications';
+
+export function getNotifications(userId = 'legacy'): UserNotification[] {
+  return get<UserNotification[]>(NOTIFICATIONS_KEY, [])
+    .filter(item => item.userId === userId)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+}
+
+export function addNotification(notification: UserNotification): void {
+  const notifications = get<UserNotification[]>(NOTIFICATIONS_KEY, []);
+  if (notifications.some(item => item.id === notification.id)) return;
+  notifications.unshift(notification);
+  set(NOTIFICATIONS_KEY, notifications.slice(0, 200));
+}
+
+export function markNotificationsRead(ids: string[], userId = 'legacy'): void {
+  const idSet = new Set(ids);
+  const notifications = get<UserNotification[]>(NOTIFICATIONS_KEY, []).map(item =>
+    item.userId === userId && idSet.has(item.id) ? { ...item, read: true } : item,
+  );
+  set(NOTIFICATIONS_KEY, notifications);
 }
 
 // ====== 收藏公交 ======
@@ -236,26 +343,30 @@ export function toggleStarredBus(lineId: string): boolean {
 // ====== 积分余额 ======
 
 const POINTS_KEY = 'user_points';
-const INITIAL_POINTS = 1250;
 
-export function getUserPoints(): number {
-  return get<number>(POINTS_KEY, INITIAL_POINTS);
+function userScopedKey(key: string, userId: string): string {
+  return `${key}:${userId}`;
+}
+
+export function getUserPoints(userId = 'legacy'): number {
+  const accountPoints = getAccounts().find(account => account.id === userId)?.carbonCredits ?? 0;
+  return get<number>(userScopedKey(POINTS_KEY, userId), accountPoints);
 }
 
 /** 仅在"后端"调用 — 扣除积分（保证不出现负数） */
-export function deductPoints(amount: number): { success: boolean; remaining: number } {
-  const current = getUserPoints();
+export function deductPoints(amount: number, userId = 'legacy'): { success: boolean; remaining: number } {
+  const current = getUserPoints(userId);
   if (current < amount) return { success: false, remaining: current };
   const remaining = current - amount;
-  set(POINTS_KEY, remaining);
+  set(userScopedKey(POINTS_KEY, userId), remaining);
   return { success: true, remaining };
 }
 
 /** 增加积分（事件上报奖励、绿色出行等） */
-export function addPoints(amount: number): number {
-  const current = getUserPoints();
+export function addPoints(amount: number, userId = 'legacy'): number {
+  const current = getUserPoints(userId);
   const updated = current + amount;
-  set(POINTS_KEY, updated);
+  set(userScopedKey(POINTS_KEY, userId), updated);
   return updated;
 }
 
@@ -275,14 +386,23 @@ export interface RedemptionRecord {
 
 const REDEMPTIONS_KEY = 'redemptions';
 
-export function getRedemptions(): RedemptionRecord[] {
-  return get<RedemptionRecord[]>(REDEMPTIONS_KEY, []);
+export function getRedemptions(userId = 'legacy'): RedemptionRecord[] {
+  return get<RedemptionRecord[]>(userScopedKey(REDEMPTIONS_KEY, userId), []);
 }
 
-export function addRedemption(r: RedemptionRecord): void {
-  const records = getRedemptions();
+export function addRedemption(r: RedemptionRecord, userId = 'legacy'): void {
+  const records = getRedemptions(userId);
   records.unshift(r);
-  set(REDEMPTIONS_KEY, records);
+  set(userScopedKey(REDEMPTIONS_KEY, userId), records);
+}
+
+export function markRedemptionUsed(id: string, userId = 'legacy'): RedemptionRecord | undefined {
+  const records = getRedemptions(userId);
+  const index = records.findIndex(record => record.id === id);
+  if (index < 0) return undefined;
+  records[index] = { ...records[index], status: 'used' };
+  set(userScopedKey(REDEMPTIONS_KEY, userId), records);
+  return records[index];
 }
 
 // ====== 最近目的地 ======
@@ -306,4 +426,30 @@ export function clearAllData(): void {
   Object.keys(localStorage)
     .filter(k => k.startsWith(STORAGE_PREFIX))
     .forEach(k => localStorage.removeItem(k));
+}
+
+// ====== 退出登录：清理个人作用域缓存（防止 A/B 用户串号） ======
+// 保留公共缓存（公交线路、新闻、停车场、地图等不走 localStorage 的公共数据）。
+// 不删除 user_accounts 注册库。
+const PERSONAL_KEYS = [
+  'carbon',
+  'notification_settings',
+  'starred_buses',
+  'recent_destinations',
+  'process_records',
+  'point_transactions',
+];
+
+/** 退出时清除所有个人作用域数据，公共数据不受影响 */
+export function clearPersonalData(): void {
+  PERSONAL_KEYS.forEach(key => {
+    try { localStorage.removeItem(STORAGE_PREFIX + key); } catch { /* ignore */ }
+  });
+  // 用户作用域 key（如 notification_settings:{userId}）不在 PERSONAL_KEYS 精确匹配范围内，需按前缀+分隔符清理，否则退出登录后残留造成跨账号串号
+  try {
+    Object.keys(localStorage)
+      .filter(k => PERSONAL_KEYS.some(key => k.startsWith(`${STORAGE_PREFIX}${key}:`)))
+      .forEach(k => localStorage.removeItem(k));
+  } catch { /* ignore */ }
+  try { localStorage.removeItem(STORAGE_PREFIX + USER_KEY); } catch { /* ignore */ }
 }

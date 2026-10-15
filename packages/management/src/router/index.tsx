@@ -1,7 +1,8 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, type ReactNode } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import DashboardLayout from '../layouts/DashboardLayout';
 import { Spin } from 'antd';
+import { isAdminLoggedIn } from '../stores/adminAuth';
 
 // Lazy-loaded pages
 const DashboardPage = lazy(() => import('../pages/dashboard/DashboardPage'));
@@ -10,9 +11,9 @@ const IncidentDetailPage = lazy(() => import('../pages/incidents/IncidentDetailP
 const UserManagementPage = lazy(() => import('../pages/users/UserManagementPage'));
 const CarbonManagementPage = lazy(() => import('../pages/carbon/CarbonManagementPage'));
 const ContentManagementPage = lazy(() => import('../pages/content/ContentManagementPage'));
-const AnalyticsPage = lazy(() => import('../pages/analytics/AnalyticsPage'));
 const SettingsPage = lazy(() => import('../pages/settings/SettingsPage'));
 const AdminLoginPage = lazy(() => import('../pages/login/AdminLoginPage'));
+const AccessibilityManagePage = lazy(() => import('../pages/accessibility/AccessibilityManagePage'));
 
 const PageLoader = () => (
   <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', minHeight: 300 }}>
@@ -20,19 +21,23 @@ const PageLoader = () => (
   </div>
 );
 
+const RequireAdmin = ({ children }: { children: ReactNode }) => {
+  return isAdminLoggedIn() ? <>{children}</> : <Navigate to="/admin/login" replace />;
+};
+
 export default function AppRouter() {
   return (
     <Suspense fallback={<PageLoader />}>
       <Routes>
         <Route path="/admin/login" element={<AdminLoginPage />} />
-        <Route path="/admin" element={<DashboardLayout />}>
+        <Route path="/admin" element={<RequireAdmin><DashboardLayout /></RequireAdmin>}>
           <Route index element={<DashboardPage />} />
           <Route path="incidents" element={<IncidentListPage />} />
           <Route path="incidents/:id" element={<IncidentDetailPage />} />
           <Route path="users" element={<UserManagementPage />} />
           <Route path="carbon" element={<CarbonManagementPage />} />
           <Route path="content" element={<ContentManagementPage />} />
-          <Route path="analytics" element={<AnalyticsPage />} />
+          <Route path="accessibility" element={<AccessibilityManagePage />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/admin" replace />} />

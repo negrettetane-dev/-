@@ -96,7 +96,6 @@ const MoveCarPage: React.FC = () => {
   const canSubmit = isPlateValid
     && !!vehicleLocation
     && isValidCoord(vehicleLocation.lng, vehicleLocation.lat)
-    && vehicleLocation.address.trim().length > 0
     && !submitting;
 
   const handleSubmit = async () => {

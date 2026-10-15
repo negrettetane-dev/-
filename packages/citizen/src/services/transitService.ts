@@ -10,6 +10,7 @@ import type {
   TransitSearchResult,
   NearbyStation,
 } from '../types/transit';
+import { normalizeSearchResult, type UnifiedTransitResult } from '../types/transitSearch';
 import { apiGet } from './apiClient';
 
 interface ApiStation {
@@ -34,6 +35,19 @@ interface ApiTransitLine {
   color?: string;
   fare?: number;
   stations: ApiStation[];
+  city?: string;
+  path?: unknown;
+  outboundPath?: unknown;
+  inboundPath?: unknown;
+}
+
+function normalizeApiPath(input: unknown): [number, number][] {
+  if (!Array.isArray(input)) return [];
+  return input.map((point: any): [number, number] | null => {
+    const lng = Number(Array.isArray(point) ? point[0] : point?.lng ?? point?.longitude);
+    const lat = Number(Array.isArray(point) ? point[1] : point?.lat ?? point?.latitude);
+    return Number.isFinite(lng) && Number.isFinite(lat) ? [lng, lat] : null;
+  }).filter((point): point is [number, number] => point !== null);
 }
 
 function normalizeLine(line: ApiTransitLine, mode: TransitMode): TransitLine {
@@ -54,6 +68,10 @@ function normalizeLine(line: ApiTransitLine, mode: TransitMode): TransitLine {
     fare: line.fare,
     status: 'normal',
     source: line.source || 'api',
+    city: line.city || '北京',
+    path: normalizeApiPath(line.path),
+    outboundPath: normalizeApiPath(line.outboundPath),
+    inboundPath: normalizeApiPath(line.inboundPath),
     stations: (line.stations || []).map((station, sequence) => ({
       id: station.id || `${line.id}_${sequence}`,
       name: station.name,
@@ -93,6 +111,27 @@ export async function searchTransit(query: string): Promise<TransitSearchResult[
   return apiGet<TransitSearchResult[]>('/transit/search', { q: query });
 }
 
+/** 最近查询的内存缓存：同一 query 短时间内不重复请求 */
+const searchCache = new Map<string, UnifiedTransitResult[]>();
+
+/**
+ * 统一搜索：转成 UnifiedTransitResult[]。
+ * - 空字符串/纯空格不请求
+ * - 命中缓存直接返回，避免重复请求
+ * - 接口异常向上抛（由调用方区分 error 与 empty，不把异常转成空结果）
+ * 注：当前后端不返回坐标/地址，统一模型内 lng/lat/address 为 null/空，不伪造。
+ */
+export async function searchTransitUnified(query: string): Promise<UnifiedTransitResult[]> {
+  const q = query.trim();
+  if (!q) return [];
+  const cached = searchCache.get(q);
+  if (cached) return cached;
+  const raw = await searchTransit(q);
+  const unified = raw.map(item => normalizeSearchResult(item));
+  searchCache.set(q, unified);
+  return unified;
+}
+
 /** 附近公交/地铁站（定位失败时返回演示数据） */
 export async function getNearbyStations(lat?: number, lng?: number): Promise<NearbyStation[]> {
   const data = await apiGet<Array<{ type: TransitMode; name: string; lines: string[]; lng: number; lat: number; distance: number }>>(
@@ -102,7 +141,27 @@ export async function getNearbyStations(lat?: number, lng?: number): Promise<Nea
   return data.map((station, index) => ({ ...station, id: `${station.type}_${station.name}_${index}`, mode: station.type }));
 }
 
-/** 获取实时到站信息 */
+export interface TransitRealtimeStatus {
+  lineId: string;
+  status: 'normal' | 'delayed' | 'suspended' | 'rerouted' | 'unknown';
+  delaySeconds?: number;
+  message?: string;
+  updatedAt: number;
+  source: DataSource;
+}
+
+export async function getTransitLineStatus(lineId: string): Promise<TransitRealtimeStatus> {
+  const data = await apiGet<any>(`/transit/lines/${encodeURIComponent(lineId)}/status`);
+  return {
+    lineId: String(data.lineId || data.line_id || lineId),
+    status: data.status || data.statusCode || 'unknown',
+    delaySeconds: data.delaySeconds ?? data.delay_seconds,
+    message: data.message,
+    updatedAt: data.updatedAt ?? data.updated_at ?? Date.now(),
+    source: data.source || 'api',
+  };
+}
+
 export async function getArrivalInfo(lineId: string, stationId: string): Promise<ArrivalInfo> {
   const data = await apiGet<{
     lineId: string;

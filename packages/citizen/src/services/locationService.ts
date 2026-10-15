@@ -3,6 +3,7 @@
 // 逆地理编码使用高德 Geocoder。
 
 import { loadAMap } from '../lib/amap';
+import type { UnifiedLocation } from '../stores/travelLocationStore';
 
 export interface LocatedPosition {
   lng: number;
@@ -13,6 +14,32 @@ export interface LocatedPosition {
 export interface ResolvedLocation extends LocatedPosition {
   address: string;
   source: 'geolocation' | 'map';
+  province?: string;
+  city?: string;
+  /** 高德 citycode（市级，同城判断优先使用） */
+  cityCode?: string;
+  adcode?: string;
+  district?: string;
+}
+
+export interface GeocodedLocation extends LocatedPosition {
+  name: string;
+  address: string;
+  province?: string;
+  city?: string;
+  cityCode?: string;
+  adcode?: string;
+  district?: string;
+}
+
+export interface ReverseGeocodeResult {
+  address: string;
+  province?: string;
+  city?: string;
+  /** 高德 citycode（市级，同城判断优先使用） */
+  cityCode?: string;
+  adcode?: string;
+  district?: string;
 }
 
 /** 高德定位：优先（GCJ-02，与高德地图一致） */
@@ -69,10 +96,130 @@ export function getCurrentLocation(timeout = 10000): Promise<LocatedPosition> {
 export function reverseGeocode(lng: number, lat: number): Promise<string> {
   return loadAMap().then((AMap: any) => new Promise<string>((resolve, reject) => {
     const geocoder = new AMap.Geocoder();
+    let settled = false;
+    const finish = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeoutId);
+      callback();
+    };
+    const timeoutId = window.setTimeout(() => finish(() => reject(new Error('geocode-timeout'))), 8000);
     geocoder.getAddress([lng, lat], (status: string, result: any) => {
       const address = result?.regeocode?.formattedAddress;
       if (status === 'complete' && address) {
-        resolve(address);
+        finish(() => resolve(address));
+      } else {
+        finish(() => reject(new Error('geocode-failed')));
+      }
+    });
+  }));
+}
+
+/**
+ * 地点候选搜索：用高德 PlaceSearch 做真实 POI 搜索，返回多个候选（用于关怀模式选点）。
+ * 不用固定坐标表冒充真实搜索结果。
+ */
+export function searchLocationCandidates(
+  query: string,
+  opts: { city?: string; pageSize?: number } = {},
+): Promise<UnifiedLocation[]> {
+  const keyword = query.trim();
+  if (!keyword) return Promise.reject(new Error('empty-location'));
+  const city = opts.city || '北京';
+  const pageSize = opts.pageSize || 5;
+
+  return loadAMap().then((AMap: any) => new Promise<UnifiedLocation[]>((resolve, reject) => {
+    AMap.plugin(['AMap.PlaceSearch'], () => {
+      const placeSearch = new AMap.PlaceSearch({ city, pageSize, pageIndex: 1 });
+      placeSearch.search(keyword, (status: string, result: any) => {
+        const pois = result?.poiList?.pois;
+        if (status !== 'complete' || !Array.isArray(pois) || pois.length === 0) {
+          reject(new Error('location-not-found'));
+          return;
+        }
+        const list = pois
+          .map((p: any): UnifiedLocation | null => {
+            const lng = Number(p?.location?.lng);
+            const lat = Number(p?.location?.lat);
+            if (!isValidCoord(lng, lat)) return null;
+            return {
+              name: String(p.name || keyword),
+              address: String(p.address || p.pname + p.cityname + p.adname || ''),
+              lng,
+              lat,
+              province: p.pname ? String(p.pname) : undefined,
+              city: p.cityname ? String(p.cityname) : undefined,
+              cityCode: p.citycode ? String(p.citycode) : undefined,
+              adcode: p.adcode ? String(p.adcode) : undefined,
+              district: p.adname ? String(p.adname) : undefined,
+              source: 'poi-search',
+            };
+          })
+          .filter((item: UnifiedLocation | null): item is UnifiedLocation => item !== null);
+        resolve(list);
+      });
+    });
+  }));
+}
+
+/** 地理编码：地点名称/地址 → 高德 GCJ-02 坐标。 */
+export function geocodeLocation(keyword: string, city = '北京'): Promise<GeocodedLocation> {
+  const query = keyword.trim();
+  if (!query) return Promise.reject(new Error('empty-location'));
+
+  return loadAMap().then((AMap: any) => new Promise<GeocodedLocation>((resolve, reject) => {
+    const geocoder = new AMap.Geocoder(city && city !== '全国' ? { city } : undefined);
+    let settled = false;
+    const finish = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeoutId);
+      callback();
+    };
+    const timeoutId = window.setTimeout(() => finish(() => reject(new Error('geocode-timeout'))), 8000);
+    geocoder.getLocation(query, (status: string, result: any) => {
+      const item = result?.geocodes?.[0];
+      const location = item?.location;
+      const lng = Number(location?.lng);
+      const lat = Number(location?.lat);
+      if (status === 'complete' && isValidCoord(lng, lat)) {
+        finish(() => resolve({
+          name: query,
+          address: String(item.formattedAddress || query),
+          lng,
+          lat,
+          province: item.province ? String(item.province) : undefined,
+          city: item.city ? String(item.city) : undefined,
+          cityCode: item.citycode ? String(item.citycode) : undefined,
+          adcode: item.adcode ? String(item.adcode) : undefined,
+          district: item.district ? String(item.district) : undefined,
+        }));
+      } else {
+        finish(() => reject(new Error('location-not-found')));
+      }
+    });
+  }));
+}
+
+/** 逆地理编码详情：坐标 → 地址 + 省/市/区县 + citycode + adcode（用于同城判断） */
+export function reverseGeocodeDetail(lng: number, lat: number): Promise<ReverseGeocodeResult> {
+  return loadAMap().then((AMap: any) => new Promise<ReverseGeocodeResult>((resolve, reject) => {
+    const geocoder = new AMap.Geocoder();
+    geocoder.getAddress([lng, lat], (status: string, result: any) => {
+      const re = result?.regeocode;
+      const comp = re?.addressComponent;
+      if (status === 'complete' && re?.formattedAddress) {
+        const cityArr = comp?.city && Array.isArray(comp.city) && comp.city[0] ? comp.city[0] : null;
+        // 直辖市 city 为空数组时用 province（如「北京市」）
+        const city = cityArr ? String(cityArr) : comp?.province ? String(comp.province) : undefined;
+        resolve({
+          address: String(re.formattedAddress),
+          province: comp?.province ? String(comp.province) : undefined,
+          city,
+          cityCode: comp?.citycode ? String(comp.citycode) : undefined,
+          adcode: comp?.adcode ? String(comp.adcode) : undefined,
+          district: comp?.district ? String(comp.district) : undefined,
+        });
       } else {
         reject(new Error('geocode-failed'));
       }
@@ -84,12 +231,24 @@ export function reverseGeocode(lng: number, lat: number): Promise<string> {
 export async function getCurrentResolvedLocation(timeout?: number): Promise<ResolvedLocation> {
   const pos = await getCurrentLocation(timeout);
   let address = '';
+  let province: string | undefined;
+  let city: string | undefined;
+  let cityCode: string | undefined;
+  let adcode: string | undefined;
+  let district: string | undefined;
   try {
-    address = await reverseGeocode(pos.lng, pos.lat);
+    const detail = await reverseGeocodeDetail(pos.lng, pos.lat);
+    address = detail.address;
+    province = detail.province;
+    city = detail.city;
+    cityCode = detail.cityCode;
+    adcode = detail.adcode;
+    district = detail.district;
   } catch {
-    address = '地址解析失败，可通过地图重新选点';
+    // 地址解析失败时保留定位坐标，但不要把错误文案写入可编辑的地址值。
+    address = '';
   }
-  return { lng: pos.lng, lat: pos.lat, accuracy: pos.accuracy, address, source: 'geolocation' as const };
+  return { lng: pos.lng, lat: pos.lat, accuracy: pos.accuracy, address, province, city, cityCode, adcode, district, source: 'geolocation' as const };
 }
 
 /** 定位错误 → 中文提示 */
