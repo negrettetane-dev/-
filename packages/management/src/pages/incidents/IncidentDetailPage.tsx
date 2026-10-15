@@ -30,10 +30,40 @@ interface IncidentDetail {
   roadName?: string;
   severity?: string;
   status?: string;
+  statusCode?: string;
   reportedAt?: string;
   reportedBy?: string;
   processLogs?: IncidentProcessLog[];
   [key: string]: unknown;
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  pending: '待审核',
+  accepted: '已受理',
+  received: '已受理',
+  processing: '处理中',
+  completed: '已完成',
+  resolved: '已完成',
+  rejected: '已驳回',
+  closed: '已驳回',
+  merged: '已合并',
+};
+
+const STATUS_ALIASES: Record<string, string> = {
+  received: 'accepted',
+  resolved: 'completed',
+  closed: 'rejected',
+};
+
+const NEXT_STATUS_OPTIONS: Record<string, Array<{ value: string; label: string }>> = {
+  pending: [{ value: 'received', label: '已受理' }, { value: 'closed', label: '已驳回' }],
+  accepted: [{ value: 'processing', label: '处理中' }, { value: 'closed', label: '已驳回' }],
+  processing: [{ value: 'resolved', label: '已完成' }, { value: 'closed', label: '已驳回' }],
+};
+
+function normalizeStatus(value: string | undefined): string {
+  const normalized = String(value || '').trim().toLowerCase();
+  return STATUS_ALIASES[normalized] || normalized;
 }
 
 export default function IncidentDetailPage() {
