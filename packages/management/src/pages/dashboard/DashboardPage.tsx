@@ -99,7 +99,7 @@ export default function DashboardPage() {
         <div className="clock">{formatTime(currentTime)}</div>
         <div className="date-info"><div>{formatDate(currentTime)}</div><div>北京 · 多云 28°C | 空气质量 良</div></div>
       </div>
-      <div style={{ padding: '6px 14px', color: 'rgba(255,255,255,0.65)', fontSize: 12 }}>
+      <div className="dashboard-source" style={{ padding: '6px 14px', color: 'rgba(255,255,255,0.65)', fontSize: 12 }}>
         数据来源：模式生成数据 · 非官方实时；地图交通图层为高德第三方图层
       </div>
 

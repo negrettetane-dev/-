@@ -29,9 +29,9 @@ export default function AdminLoginPage() {
   return (
     <div style={{
       minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: 'linear-gradient(135deg, #0a1628 0%, #10243e 60%, #163a5f 100%)',
+      background: '#0a0a0f',
     }}>
-      <Card style={{ width: 400, boxShadow: '0 12px 48px rgba(0,0,0,0.3)', borderRadius: 12 }}>
+      <Card className="admin-login-card" style={{ width: 400, maxWidth: 'calc(100vw - 32px)' }}>
         <div style={{ textAlign: 'center', marginBottom: 24 }}>
           <div style={{ fontSize: 40, marginBottom: 8 }}>🚦</div>
           <Typography.Title level={3} style={{ margin: 0 }}>智途云枢 · 管理后台</Typography.Title>

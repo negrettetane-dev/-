@@ -273,7 +273,7 @@ const AccessibilityManagePage: React.FC = () => {
         }}
         scroll={{ x: 1100 }}
         className="accessibility-table"
-        style={{ background: '#fff', borderRadius: 12 }}
+        style={{ background: '#101622', borderRadius: 24 }}
       />
 
       {/* 站点新增/编辑弹窗 */}

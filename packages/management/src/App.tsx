@@ -14,11 +14,17 @@ export default function App() {
     <ConfigProvider
       locale={zhCN}
       theme={{
-        algorithm: theme.defaultAlgorithm,
+        algorithm: theme.darkAlgorithm,
         token: {
-          colorPrimary: '#1677ff',
-          borderRadius: 6,
-          fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif",
+          colorPrimary: '#00e5ef',
+          colorInfo: '#00e5ef',
+          colorSuccess: '#39f7c4',
+          colorWarning: '#ffe45c',
+          colorError: '#ff4ca8',
+          colorBgBase: '#0a0a0f',
+          colorTextBase: '#f5fbff',
+          borderRadius: 4,
+          fontFamily: "'Cascadia Code', 'JetBrains Mono', 'Microsoft YaHei', monospace",
         },
       }}
     >

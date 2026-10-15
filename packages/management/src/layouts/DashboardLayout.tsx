@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Layout, Menu, Dropdown, Avatar, Breadcrumb, Space, Typography } from 'antd';
 import type { MenuProps } from 'antd';
@@ -46,6 +46,44 @@ export default function DashboardLayout() {
   const location = useLocation();
   const { sidebarCollapsed, toggleSidebar } = useUIStore();
   const [currentTime, setCurrentTime] = useState(new Date());
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const menu = menuRef.current;
+    if (!menu || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+    const motion = new Map<HTMLElement, { scale: number; velocity: number }>();
+    let pointerY = Number.POSITIVE_INFINITY;
+    let frame = 0;
+
+    const animate = () => {
+      let moving = false;
+      menu.querySelectorAll<HTMLElement>('.ant-menu-item').forEach(item => {
+        const state = motion.get(item) || { scale: 1, velocity: 0 };
+        const bounds = item.getBoundingClientRect();
+        const distance = Math.abs(pointerY - bounds.top - bounds.height / 2);
+        const target = (item.classList.contains('ant-menu-item-selected') ? 1.08 : 1) + 0.17 * Math.max(0, 1 - distance / 110);
+        state.velocity = (state.velocity + (target - state.scale) * 0.18) * 0.72;
+        state.scale += state.velocity;
+        item.style.setProperty('--dock-scale', state.scale.toFixed(4));
+        motion.set(item, state);
+        if (Math.abs(target - state.scale) > 0.001 || Math.abs(state.velocity) > 0.001) moving = true;
+      });
+      frame = moving ? requestAnimationFrame(animate) : 0;
+    };
+
+    const start = () => { if (!frame) frame = requestAnimationFrame(animate); };
+    const onMove = (event: PointerEvent) => { pointerY = event.clientY; start(); };
+    const onLeave = () => { pointerY = Number.POSITIVE_INFINITY; start(); };
+    menu.addEventListener('pointermove', onMove);
+    menu.addEventListener('pointerleave', onLeave);
+    return () => {
+      menu.removeEventListener('pointermove', onMove);
+      menu.removeEventListener('pointerleave', onLeave);
+      cancelAnimationFrame(frame);
+      motion.forEach((_, item) => item.style.removeProperty('--dock-scale'));
+    };
+  }, []);
 
   // ===== 登录守卫：无管理员 token 跳转登录页 =====
   useEffect(() => {
@@ -94,12 +132,12 @@ export default function DashboardLayout() {
     return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日 星期${days[date.getDay()]}`;
   };
 
-  // Is dashboard (dark mode) or content page (light mode)
   const isDashboard = location.pathname === '/admin' || location.pathname === '/admin/';
 
   return (
-    <Layout style={{ height: '100vh' }}>
+    <Layout className="admin-shell" style={{ height: '100vh' }}>
       <Sider
+        className="admin-sidebar"
         width={240}
         collapsible
         collapsed={sidebarCollapsed}
@@ -121,14 +159,14 @@ export default function DashboardLayout() {
             height: 56,
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
-            borderBottom: '1px solid rgba(255,255,255,0.08)',
+            justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
+            paddingLeft: sidebarCollapsed ? 0 : 52,
           }}
         >
           <Typography.Title
             level={4}
             style={{
-              color: '#fff',
+              color: '#00e5ef',
               margin: 0,
               fontSize: sidebarCollapsed ? 14 : 18,
               fontWeight: 700,
@@ -140,14 +178,17 @@ export default function DashboardLayout() {
         </div>
 
         {/* Sidebar menu */}
-        <Menu
-          theme="dark"
-          mode="inline"
-          selectedKeys={selectedKeys}
-          items={menuItems}
-          onClick={({ key }) => navigate(key)}
-          style={{ borderRight: 0, marginTop: 8 }}
-        />
+        <div ref={menuRef} className="admin-sidebar-menu-container slide-in-left">
+          <Menu
+            className="admin-sidebar-menu"
+            theme="dark"
+            mode="inline"
+            selectedKeys={selectedKeys}
+            items={menuItems}
+            onClick={({ key }) => navigate(key)}
+            style={{ borderRight: 0 }}
+          />
+        </div>
       </Sider>
 
       {/* Main layout */}
@@ -155,13 +196,13 @@ export default function DashboardLayout() {
         {/* Header bar */}
         <Header
           style={{
-            background: isDashboard ? 'var(--dashboard-bg, #0a1628)' : '#fff',
+            background: '#0d111b',
             padding: '0 24px',
             height: 56,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            borderBottom: isDashboard ? '1px solid rgba(255,255,255,0.08)' : '1px solid #f0f0f0',
+            borderBottom: '1px solid rgba(0,229,239,0.3)',
             position: 'sticky',
             top: 0,
             zIndex: 99,
@@ -174,7 +215,7 @@ export default function DashboardLayout() {
               style={{
                 fontSize: 18,
                 cursor: 'pointer',
-                color: isDashboard ? 'rgba(255,255,255,0.75)' : 'rgba(0,0,0,0.65)',
+                color: '#a9dce8',
                 transition: 'color 0.3s',
               }}
             >
@@ -195,10 +236,10 @@ export default function DashboardLayout() {
 
           {/* Right: time, notifications, user */}
           <Space size={24} align="center">
-            <span style={{ color: isDashboard ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.45)', fontSize: 13 }}>
+            <span style={{ color: '#a9dce8', fontSize: 13 }}>
               {formatDate(currentTime)} {currentTime.toLocaleTimeString('zh-CN', { hour12: false })}
             </span>
-            <AdminNotificationBell dark={isDashboard} />
+            <AdminNotificationBell dark />
             <Dropdown menu={{
               items: [
                 { key: 'name', label: getAdminInfo()?.realName || '管理员', disabled: true },
@@ -207,8 +248,8 @@ export default function DashboardLayout() {
               ],
             }} trigger={['click']}>
               <Space style={{ cursor: 'pointer' }}>
-                <Avatar size={32} icon={<UserOutlined />} style={{ background: '#1677ff' }} />
-                <span style={{ color: isDashboard ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.65)', fontSize: 14 }}>
+                <Avatar size={32} icon={<UserOutlined />} style={{ background: '#112d39', color: '#00e5ef', border: '1px solid #00e5ef' }} />
+                <span style={{ color: '#e7faff', fontSize: 14 }}>
                   {getAdminInfo()?.realName || '管理员'}
                 </span>
               </Space>
@@ -219,7 +260,7 @@ export default function DashboardLayout() {
         {/* Content area */}
         <Content
           style={{
-            background: isDashboard ? 'var(--dashboard-bg, #0a1628)' : '#f0f2f5',
+            background: '#0a0a0f',
             minHeight: 'calc(100vh - 56px)',
             overflow: isDashboard ? 'hidden' : 'auto',
           }}

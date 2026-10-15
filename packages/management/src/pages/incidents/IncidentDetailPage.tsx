@@ -161,12 +161,12 @@ export default function IncidentDetailPage() {
               children: (
                 <div>
                   <div style={{ fontWeight: 600 }}>{log.action}</div>
-                  <div style={{ color: 'rgba(0,0,0,0.45)', fontSize: 13 }}>
+                  <div style={{ color: '#afc8d0', fontSize: 13 }}>
                     {log.operator}
                     {log.fromStatus && log.toStatus ? ` · ${incidentStatusLabel(log.fromStatus)} → ${incidentStatusLabel(log.toStatus)}` : ''}
                     {log.detail ? ` · ${log.detail}` : ''}
                   </div>
-                  <div style={{ color: 'rgba(0,0,0,0.35)', fontSize: 12 }}>
+                  <div style={{ color: '#a9cbd3', fontSize: 12 }}>
                     {new Date(log.time).toLocaleString('zh-CN')}
                   </div>
                 </div>

@@ -91,7 +91,7 @@ export default function AdminNotificationBell({ dark = false }: Props) {
 
   const panel = (
     <div style={{ width: 360 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0 8px', borderBottom: '1px solid #f0f0f0' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0 8px', borderBottom: '1px solid rgba(0,229,239,0.3)' }}>
         <b>通知中心</b>
         <Button type="link" size="small" disabled={unread === 0} onClick={() => void markAllRead()}>全部已读</Button>
       </div>
@@ -106,7 +106,7 @@ export default function AdminNotificationBell({ dark = false }: Props) {
             const meta = TYPE_META[n.type] || TYPE_META.event;
             return (
               <List.Item
-                style={{ cursor: 'pointer', background: n.read ? 'transparent' : 'rgba(22,119,255,0.05)', padding: '12px 8px' }}
+                style={{ cursor: 'pointer', background: n.read ? 'transparent' : 'rgba(0,229,239,0.08)', padding: '12px 8px' }}
                 onClick={() => void openNotification(n)}
               >
                 <List.Item.Meta
@@ -114,8 +114,8 @@ export default function AdminNotificationBell({ dark = false }: Props) {
                   title={<span>{!n.read && <Badge status="processing" style={{ marginRight: 6 }} />}{n.title}</span>}
                   description={
                     <div>
-                      <div style={{ color: 'rgba(0,0,0,0.65)' }}>{n.content}</div>
-                      <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.45)', marginTop: 4 }}>
+                      <div style={{ color: '#d6faff' }}>{n.content}</div>
+                      <div style={{ fontSize: 12, color: '#a9cbd3', marginTop: 4 }}>
                         <Tag color={meta.color} style={{ marginRight: 8 }}>{meta.label}</Tag>
                         {formatTime(n.createdAt)}
                       </div>

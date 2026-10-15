@@ -65,7 +65,6 @@ export default function UserManagementPage() {
     { title: '手机号', dataIndex: 'phone', key: 'ph', width: 130, render: (v: string) => v || '-' },
     { title: '邮箱', dataIndex: 'email', key: 'em', width: 160, ellipsis: true, render: (v: string|undefined) => v || '-' },
     { title: '碳积分', dataIndex: 'carbonCredits', key: 'pts', width: 80, sorter: (a, b) => (a.carbonCredits||0) - (b.carbonCredits||0) },
-    { title: '实名状态', dataIndex: 'isVerified', key: 'ver', width: 90, render: (v: boolean) => v ? <Tag color="green">已认证</Tag> : <Tag>未认证</Tag> },
     { title: '注册时间', dataIndex: 'createdAt', key: 'ct', width: 140, render: (v: number | string) => new Date(v).toLocaleDateString('zh-CN') },
     { title: '操作', key: 'act', width: 220, render: (_, r) => (
       <Space>
