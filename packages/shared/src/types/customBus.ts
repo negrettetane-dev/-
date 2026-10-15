@@ -121,6 +121,13 @@ export interface CreateLongDistancePurchaseRequest {
   scheduleId: string;
   date: string;
   passengerCount: number;
+  /** Optional schedule snapshot used by demo adapters; real backends may ignore it. */
+  provider?: string;
+  originStation?: string;
+  destinationStation?: string;
+  departureTime?: string;
+  price?: number;
+  baseTickets?: number;
 }
 
 /** 按日期查班次实例的响应 */

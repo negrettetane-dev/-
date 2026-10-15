@@ -1,0 +1,18 @@
+.details { background: #fff; border: 1px solid #eee7ff; border-radius: 14px; padding: 14px; margin-bottom: 12px; }
+.summaryBtn { width: 100%; border: 0; background: transparent; display: flex; justify-content: space-between; align-items: center; padding: 0; cursor: pointer; color: #26144a; font-weight: 800; font-size: 15px; }
+.count { color: #7c6d9f; font-size: 12px; font-weight: 600; }
+.list { margin-top: 12px; display: flex; flex-direction: column; gap: 10px; }
+.station { border: 1px solid #f0eef7; border-radius: 12px; padding: 12px; background: #fdfcff; }
+.stationHead { display: flex; justify-content: space-between; gap: 10px; align-items: center; margin-bottom: 8px; }
+.stationName { font-weight: 800; color: #211238; }
+.badge { padding: 3px 8px; border-radius: 999px; font-size: 11px; white-space: nowrap; }
+.verified { color: #237804; background: #f6ffed; }
+.unknown { color: #ad6800; background: #fffbe6; }
+.obstacle { color: #a8071a; background: #fff1f0; }
+.entrance { font-size: 13px; color: #3b2c55; line-height: 1.6; }
+.entrance strong { color: #722ed1; }
+.entranceList { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font-size: 12px; padding: 4px 8px; border-radius: 8px; background: #f7f3ff; color: #5f4b8b; }
+.warn { margin-top: 8px; color: #8c5a00; background: #fffbe6; border-radius: 8px; padding: 8px; font-size: 12px; line-height: 1.5; }
+.action { margin-top: 8px; border: 1px solid #d3adf7; background: #faf5ff; color: #722ed1; border-radius: 8px; padding: 7px 10px; cursor: pointer; font-weight: 700; }
+.action:focus-visible, .summaryBtn:focus-visible { outline: 2px solid #722ed1; outline-offset: 2px; }

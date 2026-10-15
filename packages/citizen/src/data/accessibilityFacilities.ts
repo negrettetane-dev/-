@@ -6,74 +6,12 @@
 //   - 系统不会在数据不足时伪造「全程无障碍」——未收录站点在评分中计为「设施信息待确认」。
 
 import { apiGet } from '../services/apiClient';
+import { createDemoAccessibilityFacilities } from '@zhitu/shared';
 import type { FacilityStatus, FacilityEntrance, StationFacility } from '@zhitu/shared';
 
 export type { FacilityStatus, FacilityEntrance, StationFacility };
 
-const station = (
-  stationId: string,
-  stationName: string,
-  lng: number,
-  lat: number,
-  entrances: FacilityEntrance[],
-  accessibleRestroom = false,
-): StationFacility => ({ stationId, stationName, lng, lat, entrances, accessibleRestroom, source: 'demo' });
-
-/** 前端演示数据（兜底）：后端不可用时使用，明确 source: 'demo' */
-export const DEMO_ACCESSIBLE_FACILITIES: StationFacility[] = [
-  station('bj_tiananmen_east', '天安门东', 116.404, 39.909, [
-    { name: 'A口', elevator: true, ramp: true, stairsOnly: false, wheelchairAccessible: true, status: 'verified' },
-    { name: 'B口', elevator: false, ramp: true, stairsOnly: false, wheelchairAccessible: true, status: 'verified' },
-    { name: 'C口', elevator: false, ramp: false, stairsOnly: true, wheelchairAccessible: false, status: 'obstacle' },
-  ], true),
-
-  station('bj_wangfujing', '王府井', 116.410, 39.914, [
-    { name: 'A口', elevator: true, ramp: true, stairsOnly: false, wheelchairAccessible: true, status: 'verified' },
-    { name: 'B口', elevator: true, ramp: false, stairsOnly: false, wheelchairAccessible: true, status: 'verified' },
-    { name: 'C口', elevator: false, ramp: false, stairsOnly: true, wheelchairAccessible: false, status: 'verified' },
-  ], true),
-
-  station('bj_xidan', '西单', 116.380, 39.913, [
-    { name: 'A口', elevator: true, ramp: true, stairsOnly: false, wheelchairAccessible: true, status: 'verified' },
-    { name: 'B口', elevator: false, ramp: false, stairsOnly: false, wheelchairAccessible: true, status: 'unknown' },
-    { name: 'C口', elevator: false, ramp: false, stairsOnly: true, wheelchairAccessible: false, status: 'obstacle' },
-  ], false),
-
-  station('bj_dongdan', '东单', 116.418, 39.909, [
-    { name: 'A口', elevator: true, ramp: true, stairsOnly: false, wheelchairAccessible: true, status: 'verified' },
-    { name: 'B口', elevator: true, ramp: true, stairsOnly: false, wheelchairAccessible: true, status: 'verified' },
-  ], true),
-
-  station('bj_beijing_station', '北京站', 116.433, 39.903, [
-    { name: '北广场入口', elevator: true, ramp: true, stairsOnly: false, wheelchairAccessible: true, status: 'verified' },
-    { name: '南侧通道', elevator: false, ramp: true, stairsOnly: false, wheelchairAccessible: true, status: 'verified' },
-  ], true),
-
-  station('bj_guomao', '国贸', 116.461, 39.909, [
-    { name: 'A口', elevator: true, ramp: true, stairsOnly: false, wheelchairAccessible: true, status: 'verified' },
-    { name: 'C口', elevator: true, ramp: false, stairsOnly: false, wheelchairAccessible: true, status: 'verified' },
-    { name: 'D口', elevator: false, ramp: false, stairsOnly: true, wheelchairAccessible: false, status: 'obstacle' },
-  ], true),
-
-  station('bj_xizhimen', '西直门', 116.350, 39.940, [
-    { name: 'A口', elevator: true, ramp: true, stairsOnly: false, wheelchairAccessible: true, status: 'verified' },
-    { name: 'B口', elevator: false, ramp: false, stairsOnly: true, wheelchairAccessible: false, status: 'obstacle' },
-  ], false),
-
-  station('bj_fuxingmen', '复兴门', 116.360, 39.908, [
-    { name: 'A口', elevator: true, ramp: true, stairsOnly: false, wheelchairAccessible: true, status: 'verified' },
-    { name: 'B口', elevator: false, ramp: true, stairsOnly: false, wheelchairAccessible: true, status: 'unknown' },
-  ], false),
-
-  station('bj_qianmen', '前门', 116.395, 39.899, [
-    { name: 'A口', elevator: true, ramp: true, stairsOnly: false, wheelchairAccessible: true, status: 'verified' },
-    { name: 'C口', elevator: false, ramp: false, stairsOnly: true, wheelchairAccessible: false, status: 'verified' },
-  ], false),
-
-  station('bj_muxiyuan', '木樨园', 116.395, 39.862, [
-    { name: 'A口', elevator: false, ramp: true, stairsOnly: false, wheelchairAccessible: true, status: 'unknown' },
-  ], false),
-];
+const demoAccessibilityFacilities = createDemoAccessibilityFacilities();
 
 /** 站名归一化（去除 站/枢纽 后缀、括号、空格），用于与高德返回站点名模糊匹配 */
 export function normalizeFacilityName(name: string): string {
@@ -138,8 +76,8 @@ function normalizeFacility(raw: Record<string, unknown>): StationFacility | null
 }
 
 /**
- * 从后端拉取无障碍设施数据并替换本地 Map（幂等，只拉一次）。
- * - 成功：source 标记为 backend，真实数据生效。
+ * 从统一接口拉取无障碍设施数据并替换本地 Map（幂等，只拉一次）。
+ * - 成功：保留接口返回的数据来源；缺失来源时按真实接口处理为 backend。
  * - 失败：保持演示数据兜底（source: demo），不伪造真实状态。
  * 返回是否成功。
  */

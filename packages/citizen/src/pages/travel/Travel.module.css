@@ -68,6 +68,12 @@
 .routeCardActive { border-color: var(--primary); background: #fafcff; }
 .routeCardHeader { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
 .routeDuration { font-size: 22px; font-weight: 700; color: var(--primary); }
+.routeMergeTip { margin: 0 0 10px; padding: 8px 10px; border-radius: 8px; background: #f6ffed; color: #237804; font-size: 12px; line-height: 1.5; }
+.routeMetricGrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 4px 0 12px; }
+.routeMetricItem { min-width: 0; padding: 9px 10px; border: 1px solid #eef1f5; border-radius: 10px; background: #fbfcff; }
+.routeMetricItem span, .routeMetricItem b { display: block; }
+.routeMetricItem span { margin-bottom: 4px; color: var(--text-hint); font-size: 11px; }
+.routeMetricItem b { color: var(--text-primary); font-size: 14px; font-weight: 700; white-space: nowrap; }
 .predictionRow { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
 .predictionDot { text-align: center; }
 .congestionBar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; gap: 2px; margin-bottom: 10px; }
@@ -117,6 +123,7 @@
 @media (max-width: 768px) {
   .busList, .metroList { grid-template-columns: 1fr; }
   .customBusBanner { flex-direction: column; align-items: flex-start; }
+  .routeMetricGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 /* ===== 全屏实时导航模式（复用唯一地图，UI 覆盖其上） ===== */

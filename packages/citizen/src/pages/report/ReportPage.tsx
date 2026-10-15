@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { apiGet } from '../../services/apiClient';
+import { ApiError, apiGet } from '../../services/apiClient';
 import { useAuthStore } from '../../stores/authStore';
 import styles from './Report.module.css';
 
@@ -27,23 +27,33 @@ const formatTime = (ts:number) => new Date(ts).toLocaleString('zh-CN',{month:'nu
 
 const ReportPage: React.FC = () => {
   const navigate = useNavigate();
-  const { user, isLoggedIn } = useAuthStore();
+  const { isLoggedIn, markSessionExpired } = useAuthStore();
   const [reports, setReports] = useState<WorkOrder[]>([]);
   const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
     // 未登录不调用个人接口（避免 /events/mine 或旧 /report/list 泄漏记录）
-    if (!isLoggedIn) { setReports([]); return; }
+    if (!isLoggedIn) { setReports([]); setLoadError(''); return; }
     let alive = true;
+    setLoadError('');
     apiGet<WorkOrder[] | { list: WorkOrder[] }>('/events/mine')
       .then(data => {
         if (!alive) return;
         const list = Array.isArray(data) ? data : (data?.list ?? []);
         setReports(list);
       })
-      .catch(() => { if (alive) setLoadError('上报记录加载失败，请稍后重试'); });
+      .catch(error => {
+        if (!alive) return;
+        if (error instanceof ApiError && error.status === 401) {
+          markSessionExpired();
+          setReports([]);
+          setLoadError(error.message || '登录状态已过期，请重新登录');
+          return;
+        }
+        setLoadError(error instanceof Error && error.message ? error.message : '上报记录加载失败，请稍后重试');
+      });
     return () => { alive = false; };
-  }, [isLoggedIn]);
+  }, [isLoggedIn, markSessionExpired]);
 
   // 来源标签（events/mine 返回的均属当前用户）
   const renderSource = () => (

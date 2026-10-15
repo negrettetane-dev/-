@@ -60,6 +60,9 @@ function normalizeStation(item: Record<string, unknown>): StationFacility {
     stairsOnly: Boolean(e.stairsOnly ?? e.stairs_only),
     wheelchairAccessible: Boolean(e.wheelchairAccessible ?? e.wheelchair_accessible),
     status: String(e.status || 'unknown') as StationFacility['entrances'][number]['status'],
+    lastVerifiedAt: e.lastVerifiedAt ? String(e.lastVerifiedAt) : e.last_verified_at ? String(e.last_verified_at) : undefined,
+    updatedAt: e.updatedAt ? String(e.updatedAt) : e.updated_at ? String(e.updated_at) : undefined,
+    note: e.note ? String(e.note) : e.remark ? String(e.remark) : undefined,
   }));
   return {
     stationId: String(item.stationId ?? item.id ?? ''),
@@ -69,5 +72,7 @@ function normalizeStation(item: Record<string, unknown>): StationFacility {
     entrances,
     accessibleRestroom: Boolean(item.accessibleRestroom ?? item.accessible_restroom),
     source: String(item.source || 'backend') as StationFacility['source'],
+    lastVerifiedAt: item.lastVerifiedAt ? String(item.lastVerifiedAt) : item.last_verified_at ? String(item.last_verified_at) : undefined,
+    updatedAt: item.updatedAt ? String(item.updatedAt) : item.updated_at ? String(item.updated_at) : undefined,
   };
 }

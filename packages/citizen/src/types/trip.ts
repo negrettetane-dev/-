@@ -3,6 +3,8 @@ export type TripProfile = 'standard' | 'ev' | 'accessible';
 export type TripStatus = 'in_progress' | 'completed' | 'cancelled';
 export type TripRouteStrategy = 'fastest' | 'shortest' | 'low-carbon' | 'accessible';
 export type TripDataSource = 'real' | 'estimated' | 'demo';
+export type TripSettlementStatus = 'calculating' | 'settled' | 'failed';
+export type TripFeedbackTag = 'accurate_recommendation' | 'time_inaccurate' | 'walking_too_long' | 'accessibility_wrong' | 'good_experience';
 
 export interface TripLocation {
   name: string;
@@ -32,6 +34,7 @@ export interface Trip {
   path?: [number, number][];
   carbonSaved: number;
   earnedPoints: number;
+  settlementStatus?: TripSettlementStatus;
   dataSource: TripDataSource;
   createdAt: string;
 }
@@ -51,6 +54,20 @@ export interface CreateTripRequest {
     path?: [number, number][];
   };
   dataSource: TripDataSource;
+}
+
+export interface TripFeedback {
+  id: string;
+  tripId: string;
+  tags: TripFeedbackTag[];
+  comment?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SubmitTripFeedbackRequest {
+  tags: TripFeedbackTag[];
+  comment?: string;
 }
 
 export const TRIP_MODE_META: Record<TripMode, { label: string; icon: string }> = {

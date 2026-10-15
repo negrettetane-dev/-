@@ -1,4 +1,6 @@
 // ===== 智途云枢 · Mock Data (北京) =====
+import { createDemoAccessibilityFacilities } from '@zhitu/shared';
+import type { StationFacility } from '@zhitu/shared';
 
 // ---- Districts ----
 export const DISTRICTS = [
@@ -143,20 +145,39 @@ export interface IncidentProcessLog {
   detail: string;
 }
 
+export interface MockIncidentMedia {
+  mediaId: string;
+  url: string;
+  thumbnailUrl?: string;
+  filename?: string;
+  mimeType?: string;
+  sizeBytes?: number;
+}
+
 export interface MockIncident {
   id: string;
+  version?: number;
   title: string;
   description: string;
   roadName: string;
+  position?: [number, number];
   severity: 'high' | 'medium' | 'low';
   status: 'pending' | 'processing' | 'resolved' | 'closed';
   reportedAt: string;
   reportedBy: string;
+  category?: string;
+  department?: string;
+  assignee?: string;
+  estimatedProcessTime?: string;
+  images?: string[];
+  afterImageMedia?: MockIncidentMedia[];
+  afterImages?: string[];
+  accessibilityImpact?: boolean;
   platformFeedback?: string;
   processLogs: IncidentProcessLog[];
 }
 
-const INCIDENT_TEMPLATES: Array<{ type: string; severity: 'high' | 'medium' | 'low'; roadName: string; position: [number, number] }> = [
+const INCIDENT_TEMPLATES: Array<{ type: string; severity: 'high' | 'medium' | 'low'; roadName: string; position: [number, number]; category?: string }> = [
   { type: '交通事故', severity: 'high', roadName: '长安街东段', position: [116.41, 39.91] },
   { type: '交通事故', severity: 'medium', roadName: '二环路东段', position: [116.44, 39.92] },
   { type: '交通事故', severity: 'low', roadName: '平安大街', position: [116.40, 39.93] },
@@ -165,13 +186,13 @@ const INCIDENT_TEMPLATES: Array<{ type: string; severity: 'high' | 'medium' | 'l
   { type: '临时管制', severity: 'medium', roadName: '长安街西段', position: [116.34, 39.91] },
   { type: '交通拥堵', severity: 'medium', roadName: '建国路', position: [116.46, 39.91] },
   { type: '交通拥堵', severity: 'low', roadName: '学院路', position: [116.35, 39.98] },
-  { type: '信号灯故障', severity: 'high', roadName: '东三环中路', position: [116.45, 39.91] },
-  { type: '信号灯故障', severity: 'medium', roadName: '复兴路', position: [116.32, 39.90] },
-  { type: '路面塌陷', severity: 'high', roadName: '广渠路', position: [116.46, 39.90] },
+  { type: '信号灯故障', severity: 'high', roadName: '东三环中路', position: [116.45, 39.91], category: 'signal_fault' },
+  { type: '信号灯故障', severity: 'medium', roadName: '复兴路', position: [116.32, 39.90], category: 'signal_fault' },
+  { type: '路面塌陷', severity: 'high', roadName: '广渠路', position: [116.46, 39.90], category: 'pothole' },
   { type: '车辆故障', severity: 'low', roadName: '两广路', position: [116.40, 39.89] },
-  { type: '落石/障碍', severity: 'medium', roadName: '京通快速路', position: [116.50, 39.91] },
-  { type: '行人闯入', severity: 'low', roadName: '崇文门外大街', position: [116.42, 39.89] },
-  { type: '逆行车辆', severity: 'high', roadName: '朝阳路', position: [116.48, 39.92] },
+  { type: '落石/障碍', severity: 'medium', roadName: '京通快速路', position: [116.50, 39.91], category: 'barrier' },
+  { type: '无障碍电梯故障', severity: 'high', roadName: '地铁西单站A口', position: [116.37, 39.91], category: 'accessibility_elevator' },
+  { type: '盲道障碍', severity: 'medium', roadName: '朝阳路', position: [116.48, 39.92], category: 'accessibility_path' },
 ];
 
 const INCIDENT_REPORTERS = ['张先生', '李女士', '王师傅', '赵师傅', '陈先生', '刘女士', '周先生', '吴女士'];
@@ -222,15 +243,27 @@ export function generateIncidents(): MockIncident[] {
       });
     }
 
+    const accessibilityImpact = tpl.category?.startsWith('accessibility') || false;
+    const department = accessibilityImpact ? '无障碍设施维护部门' : tpl.category === 'signal_fault' ? '交通信号管理部门' : tpl.category === 'barrier' ? '道路养护应急队' : '城市交通事件处置中心';
+
     return {
       id: `INC-${(i + 1).toString().padStart(4, '0')}`,
+      version: 1,
       title: `${tpl.roadName}${tpl.type}`,
       description: `在${tpl.roadName}检测到${tpl.type}事件，建议立即处置。${i % 3 === 0 ? '可能影响周边2公里范围交通。' : ''}`,
       roadName: tpl.roadName,
+      position: tpl.position,
       severity: tpl.severity,
       status,
       reportedAt,
       reportedBy: reporter,
+      category: tpl.category || 'traffic_event',
+      department,
+      assignee: status === 'pending' ? undefined : `${department}一队`,
+      estimatedProcessTime: tpl.severity === 'high' ? '预计 4 小时内完成处置' : '预计 1 个工作日内完成处置',
+      images: [],
+      afterImages: status === 'resolved' ? [] : [],
+      accessibilityImpact,
       platformFeedback: status === 'resolved' ? '已处置完成，感谢您的上报。' : undefined,
       processLogs: logs,
     };
@@ -495,66 +528,9 @@ export function generateSystemLogs(): MockSystemLog[] {
 }
 
 // ---- 无障碍设施（管理端 mock）----
-export interface MockFacilityEntrance {
-  id: string;
-  name: string;
-  elevator: boolean;
-  ramp: boolean;
-  stairsOnly: boolean;
-  wheelchairAccessible: boolean;
-  status: 'verified' | 'unknown' | 'obstacle';
-}
+export type MockStationFacility = StationFacility;
 
-export interface MockStationFacility {
-  stationId: string;
-  stationName: string;
-  lng: number;
-  lat: number;
-  entrances: MockFacilityEntrance[];
-  accessibleRestroom: boolean;
-  source: 'backend' | 'demo';
-}
-
-export const MOCK_ACCESSIBILITY_STATIONS: MockStationFacility[] = [
-  {
-    stationId: 'bj_tiananmen_east', stationName: '天安门东', lng: 116.404, lat: 39.909, accessibleRestroom: true, source: 'backend',
-    entrances: [
-      { id: 'ent-1', name: 'A口', elevator: true, ramp: true, stairsOnly: false, wheelchairAccessible: true, status: 'verified' },
-      { id: 'ent-2', name: 'B口', elevator: false, ramp: true, stairsOnly: false, wheelchairAccessible: true, status: 'verified' },
-      { id: 'ent-3', name: 'C口', elevator: false, ramp: false, stairsOnly: true, wheelchairAccessible: false, status: 'obstacle' },
-    ],
-  },
-  {
-    stationId: 'bj_wangfujing', stationName: '王府井', lng: 116.410, lat: 39.914, accessibleRestroom: true, source: 'backend',
-    entrances: [
-      { id: 'ent-4', name: 'A口', elevator: true, ramp: true, stairsOnly: false, wheelchairAccessible: true, status: 'verified' },
-      { id: 'ent-5', name: 'B口', elevator: true, ramp: false, stairsOnly: false, wheelchairAccessible: true, status: 'verified' },
-      { id: 'ent-6', name: 'C口', elevator: false, ramp: false, stairsOnly: true, wheelchairAccessible: false, status: 'verified' },
-    ],
-  },
-  {
-    stationId: 'bj_xidan', stationName: '西单', lng: 116.380, lat: 39.913, accessibleRestroom: false, source: 'backend',
-    entrances: [
-      { id: 'ent-7', name: 'A口', elevator: true, ramp: true, stairsOnly: false, wheelchairAccessible: true, status: 'verified' },
-      { id: 'ent-8', name: 'B口', elevator: false, ramp: false, stairsOnly: false, wheelchairAccessible: true, status: 'unknown' },
-      { id: 'ent-9', name: 'C口', elevator: false, ramp: false, stairsOnly: true, wheelchairAccessible: false, status: 'obstacle' },
-    ],
-  },
-  {
-    stationId: 'bj_guomao', stationName: '国贸', lng: 116.461, lat: 39.909, accessibleRestroom: true, source: 'backend',
-    entrances: [
-      { id: 'ent-10', name: 'A口', elevator: true, ramp: true, stairsOnly: false, wheelchairAccessible: true, status: 'verified' },
-      { id: 'ent-11', name: 'D口', elevator: false, ramp: false, stairsOnly: true, wheelchairAccessible: false, status: 'obstacle' },
-    ],
-  },
-  {
-    stationId: 'bj_beijing_station', stationName: '北京站', lng: 116.433, lat: 39.903, accessibleRestroom: true, source: 'backend',
-    entrances: [
-      { id: 'ent-12', name: '北广场入口', elevator: true, ramp: true, stairsOnly: false, wheelchairAccessible: true, status: 'verified' },
-      { id: 'ent-13', name: '南侧通道', elevator: false, ramp: true, stairsOnly: false, wheelchairAccessible: true, status: 'verified' },
-    ],
-  },
-];
+export const MOCK_ACCESSIBILITY_STATIONS: MockStationFacility[] = createDemoAccessibilityFacilities();
 
 // ---- Admin notifications（管理端通知中心）----
 export interface MockAdminNotification {

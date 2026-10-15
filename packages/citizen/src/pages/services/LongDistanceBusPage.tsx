@@ -53,6 +53,8 @@ const LongDistanceBusPage: React.FC = () => {
   // 是否已确认「购票信息已同步」（确认后不再直接打开外部深链，避免 404）
   const [purchaseSynced, setPurchaseSynced] = useState(false);
   const [purchaseNo, setPurchaseNo] = useState('');
+  const [purchaseError, setPurchaseError] = useState('');
+  const [purchasing, setPurchasing] = useState(false);
   const mountedRef = useRef(true);
 
   // 进入页面尝试定位（用于距离推荐；失败降级，不影响查询）
@@ -114,6 +116,9 @@ const LongDistanceBusPage: React.FC = () => {
     setPurchaseTarget(item);
     setPurchaseLink(null);
     setPurchaseSynced(false);
+    setPurchaseNo('');
+    setPurchaseError('');
+    setPurchasing(false);
     const { link, source } = await getPurchaseUrl(item.schedule, date, 1);
     if (!mountedRef.current) return;
     setPurchaseLink({ url: link.purchaseUrl, source });
@@ -121,7 +126,7 @@ const LongDistanceBusPage: React.FC = () => {
 
   // 点击「确认购票信息」：创建购票记录（后端存储），再进入已同步态
   const confirmPurchase = async () => {
-    if (!purchaseTarget) return;
+    if (!purchaseTarget || purchasing) return;
     // 未登录：跳登录（带 redirect 回来继续购票）
     if (!useAuthStore.getState().isAuthenticated) {
       setPurchaseTarget(null);
@@ -130,6 +135,8 @@ const LongDistanceBusPage: React.FC = () => {
       navigate('/login', { state: { from: location.pathname, notice: '购买长途客运票需要登录' } });
       return;
     }
+    setPurchasing(true);
+    setPurchaseError('');
     try {
       const { purchase, source } = await createPurchase(
         purchaseTarget.schedule,
@@ -138,17 +145,28 @@ const LongDistanceBusPage: React.FC = () => {
         purchaseTarget.inventory.price,
       );
       if (!mountedRef.current) return;
+      const remainingTickets = Math.max(0, purchaseTarget.inventory.remainingTickets - purchase.passengerCount);
+      const saleStatus = remainingTickets <= 0 ? 'sold_out' : remainingTickets <= 5 ? 'almost_sold' : 'on_sale';
+      setResults(prev => prev.map(item => item.schedule.id === purchaseTarget.schedule.id
+        ? { ...item, inventory: { ...item.inventory, remainingTickets, saleStatus } }
+        : item));
+      setRecommendation(prev => prev.map(item => item.schedule.id === purchaseTarget.schedule.id
+        ? { ...item, inventory: { ...item.inventory, remainingTickets, saleStatus } }
+        : item));
       setPurchaseSynced(true);
       setPurchaseLink(prev => ({ ...(prev || { url: '', source }), url: prev?.url || '' }));
       setPurchaseNo(purchase.purchaseNo);
     } catch (e) {
-      // 401：登录已过期或未登录，提示登录
       if (e instanceof Error && e.message === 'UNAUTHORIZED') {
         setPurchaseTarget(null);
         setPurchaseLink(null);
         setPurchaseSynced(false);
         navigate('/login', { state: { from: location.pathname, notice: '登录状态已过期，请重新登录后购票' } });
+      } else {
+        setPurchaseError(e instanceof Error ? e.message : '购票失败，请刷新余票后重试');
       }
+    } finally {
+      if (mountedRef.current) setPurchasing(false);
     }
   };
 
@@ -285,7 +303,7 @@ const LongDistanceBusPage: React.FC = () => {
 
       {/* 购票流程：确认购票信息 → 购票信息已同步（不直接打开外部深链，避免 404） */}
       {purchaseTarget && (
-        <div className={styles.overlay} onClick={() => { setPurchaseTarget(null); setPurchaseLink(null); setPurchaseSynced(false); }}>
+        <div className={styles.overlay} onClick={() => { if (!purchasing) { setPurchaseTarget(null); setPurchaseLink(null); setPurchaseSynced(false); setPurchaseError(''); } }}>
           <div className={styles.modal} onClick={e => e.stopPropagation()}>
             <div className={styles.modalTitle}>{purchaseSynced ? '✅ 购票信息已同步' : '确认购票信息'}</div>
             <div className={styles.modalInfo}>
@@ -308,7 +326,7 @@ const LongDistanceBusPage: React.FC = () => {
                   当前演示环境未接入真实购票平台，以下为合作平台官网入口，具体班次购票请以官网为准。
                 </div>
                 <div className={styles.modalActions}>
-                  <button type="button" className={styles.modalCancel} onClick={() => navigate('/profile/reservations')}>查看我的预约/购票</button>
+                  <button type="button" className={styles.modalCancel} onClick={() => navigate('/profile/reservations', { state: { newPurchase: purchaseNo } })}>查看我的预约/购票</button>
                   <button type="button" className={styles.modalConfirm}
                     onClick={() => {
                       window.open('https://www.e2go.com.cn/', '_blank', 'noopener');
@@ -326,12 +344,13 @@ const LongDistanceBusPage: React.FC = () => {
                 {purchaseLink?.source === 'demo' && (
                   <div className={styles.demoHint}>当前为演示购票链接，接入合作平台后由后端即时生成。</div>
                 )}
+                {purchaseError && <div className={styles.errorText}>⚠️ {purchaseError}</div>}
                 <div className={styles.modalActions}>
-                  <button type="button" className={styles.modalCancel} onClick={() => { setPurchaseTarget(null); setPurchaseLink(null); setPurchaseSynced(false); }}>取消</button>
+                  <button type="button" className={styles.modalCancel} disabled={purchasing} onClick={() => { setPurchaseTarget(null); setPurchaseLink(null); setPurchaseSynced(false); setPurchaseError(''); }}>取消</button>
                   <button type="button" className={styles.modalConfirm}
-                    disabled={!purchaseLink}
+                    disabled={!purchaseLink || purchasing}
                     onClick={() => void confirmPurchase()}>
-                    {purchaseLink ? '确认购票信息 →' : '正在生成购票链接...'}
+                    {purchasing ? '提交中...' : purchaseLink ? '确认购票信息 →' : '正在生成购票链接...'}
                   </button>
                 </div>
               </>

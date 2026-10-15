@@ -20,6 +20,39 @@
 
 .metrics { display: flex; gap: 16px; font-size: 13px; color: var(--text-secondary); margin-bottom: 10px; flex-wrap: wrap; }
 
+.metricGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 10px 0 12px;
+}
+
+.metricItem {
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid #eef1f5;
+  border-radius: 10px;
+  background: #fbfcff;
+}
+
+.metricItem span,
+.metricItem b {
+  display: block;
+}
+
+.metricItem span {
+  margin-bottom: 4px;
+  color: var(--text-hint);
+  font-size: 11px;
+}
+
+.metricItem b {
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 .tags { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
 .tag { font-size: 13px; background: #f0f5ff; color: #1677ff; border: 1px solid #d6e4ff; border-radius: 8px; padding: 4px 10px; }
 .statusList { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
@@ -32,3 +65,8 @@
 
 .navBtn { width: 100%; padding: 13px; background: #722ed1; color: #fff; border: none; border-radius: 10px; font-size: 15px; font-weight: 700; cursor: pointer; }
 .navBtn:hover { opacity: 0.9; }
+.navBtn:disabled { background: #bfbfbf; cursor: not-allowed; opacity: 1; }
+
+@media (max-width: 768px) {
+  .metricGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

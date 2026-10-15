@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Bus, RefreshCw, Ticket, Plane } from 'lucide-react';
 import {
   customBusReservationService,
@@ -33,6 +33,7 @@ const STATUS_META: Record<TravelOrder['status'], { label: string; className: str
 
 const MyReservationsPage: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [orders, setOrders] = useState<TravelOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');

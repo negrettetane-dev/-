@@ -44,15 +44,33 @@ export interface CitizenReport {
   category: ReportCategory;
   description: string;
   images: string[]; // 图片URL
+  /** 兼容旧字段：处理前/上报图片优先复用 images */
+  beforeImages?: string[];
   position: [number, number];
   address: string;
+  eventLocation?: {
+    address: string;
+    longitude: number;
+    latitude: number;
+    locationType?: 'auto' | 'manual' | 'search';
+    locationStatus?: 'verified' | 'unverified' | 'failed';
+    accuracy?: number;
+    poiName?: string;
+    city?: string;
+    locatedAt?: string;
+  };
   contactPhone?: string;
+  department?: string; // 受理部门
+  assignee?: string; // 处理人/队伍
+  estimatedProcessTime?: string; // 预计处理时间
+  platformFeedback?: string; // 平台反馈
   status: WorkOrderStatus;
   createTime: number;
   updateTime: number;
   processLogs: ProcessLog[];
   rating?: number; // 1-5 市民评分
   afterImage?: string; // 修复后对比图
+  afterImages?: string[]; // 多张处理后图片
 }
 
 /** 处理日志 */

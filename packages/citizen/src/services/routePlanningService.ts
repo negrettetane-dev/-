@@ -215,6 +215,25 @@ export function normalizePath(rawPath: any): [number, number][] {
     .filter((point): point is [number, number] => point !== null);
 }
 
+function extractSegmentPath(directPaths: any[], steps: any): [number, number][] {
+  for (const candidate of directPaths) {
+    const path = normalizePath(candidate);
+    if (path.length >= 2) return path;
+  }
+
+  const stepList = Array.isArray(steps)
+    ? steps
+    : steps && typeof steps === 'object'
+      ? Object.values(steps)
+      : [];
+  const path: [number, number][] = [];
+  stepList.forEach((step: any) => {
+    const stepPath = normalizePath(step?.path);
+    path.push(...(stepPath.length ? stepPath : normalizePath(step?.polyline)));
+  });
+  return path;
+}
+
 /**
  * 从高德单条路线对象提取路径。
  * 兼容结构（按优先级）：
@@ -340,6 +359,10 @@ export function parseTransitPlan(plan: any): ParsedTransitPlan {
     if (mode === 'WALK' || segment?.walking) {
       const walk = segment?.walking || segment?.transit || {};
       const dist = Number(walk.distance ?? segment?.distance ?? 0) || 0;
+      const segmentPath = extractSegmentPath(
+        [walk.path, walk.polyline, segment?.path, segment?.polyline],
+        walk.steps ?? segment?.steps,
+      );
       walkingDistance += dist;
       const text = typeof instruction === 'object' ? instruction.text : instruction;
       const item: SegmentData = {
@@ -347,13 +370,10 @@ export function parseTransitPlan(plan: any): ParsedTransitPlan {
         instruction: text ? String(text) : `步行 ${formatDistance(dist)}`,
         duration: Number(walk.duration ?? segment?.time ?? segment?.duration ?? 0),
         distance: dist,
-        path: normalizePath(walk.path ?? segment?.path),
+        path: segmentPath,
       };
       if (hasSegmentContent(item) || item.instruction) segments.push(item);
-      mergedSegmentPath.push(...normalizePath(walk.path));
-      (Array.isArray(walk.steps) ? walk.steps : []).forEach((step: any) => {
-        mergedSegmentPath.push(...normalizePath(step?.path));
-      });
+      mergedSegmentPath.push(...segmentPath);
       return;
     }
 
@@ -367,6 +387,10 @@ export function parseTransitPlan(plan: any): ParsedTransitPlan {
           : transit;
       const lineName = String(line?.name || line?.lineName || line?.route || transit.name || transit.route || '').trim();
       const rawType = line?.type || line?.lineType || transit.type || transit.transit_type || transit.transitType;
+      const segmentPath = extractSegmentPath(
+        [line?.path, line?.polyline, transit?.path, transit?.polyline, segment?.bus?.path, segment?.bus?.polyline],
+        transit.steps ?? line?.steps,
+      );
       if (isRailwayLike(rawType, lineName)) hasRailway = true;
       const isMetro = mode === 'SUBWAY' || mode === 'METRO_RAIL' || inferTransitType(rawType, lineName) === 'metro';
       const item: SegmentData = {
@@ -379,14 +403,10 @@ export function parseTransitPlan(plan: any): ParsedTransitPlan {
         distance: Number(segment?.distance ?? transit?.distance ?? line?.distance ?? 0) || 0,
         fromCoord: toLngLatTuple(line?.departure_stop?.location ?? line?.departureStop?.location ?? transit?.on_station?.location ?? transit?.onStation?.location) || undefined,
         toCoord: toLngLatTuple(line?.arrival_stop?.location ?? line?.arrivalStop?.location ?? transit?.off_station?.location ?? transit?.offStation?.location) || undefined,
-        path: normalizePath(line?.path ?? line?.polyline ?? transit?.path ?? segment?.bus?.path),
+        path: segmentPath,
       };
       if (hasSegmentContent(item)) segments.push(item);
-      const linePath = normalizePath(line?.path ?? line?.polyline ?? transit?.path ?? segment?.bus?.path);
-      if (linePath.length) mergedSegmentPath.push(...linePath);
-      (Array.isArray(transit.steps) ? transit.steps : []).forEach((step: any) => {
-        mergedSegmentPath.push(...normalizePath(step?.path));
-      });
+      mergedSegmentPath.push(...segmentPath);
       return;
     }
 
@@ -412,7 +432,7 @@ export function parseTransitPlan(plan: any): ParsedTransitPlan {
   const transferCount = Math.max(0, transitSegments.length - 1);
 
   // 路径：优先 plan.path（整条方案），否则用分段合并路径
-  const path = mergedSegmentPath.length >= 2 ? mergedSegmentPath : planPath;
+  const path = planPath.length >= 2 ? planPath : mergedSegmentPath;
   return { segments, path, walkingDistance, transferCount, hasRailway };
 }
 
@@ -816,7 +836,13 @@ function routeFromAmapRoute(mode: 'drive' | 'bike' | 'walk', route: any): Planne
   return {
     mode, distance: route.distance, duration: route.time, path, polyline: path,
     ...(mode === 'drive'
-      ? (trafficSegments.length ? { congestionSegments: trafficSegments } : {})
+      ? {
+          cost: Number(route.tolls ?? route.toll ?? 0) || 0,
+          ...(trafficSegments.length ? { congestionSegments: trafficSegments } : {}),
+          aiAdvice: trafficSegments.some((segment: { level: string }) => segment.level === 'congested' || segment.level === 'slow')
+            ? '建议避开拥堵路段'
+            : undefined,
+        }
       : { calories: Math.round(route.distance / 1000 * (isBike ? 30 : 45)) }),
   };
 }

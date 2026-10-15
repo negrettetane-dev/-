@@ -24,6 +24,11 @@ export default defineConfig(({ mode }) => {
         changeOrigin: true,
         secure: false,
       },
+      '/uploads': {
+        target: env.VITE_API_PROXY_TARGET || 'https://9tr30463os14.vicp.fun',
+        changeOrigin: true,
+        secure: false,
+      },
     },
   },
   };
