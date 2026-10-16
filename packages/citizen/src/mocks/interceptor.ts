@@ -169,7 +169,7 @@ export function fetchInterceptor() {
     if (url === '/api/transit/bus-lines') {
       return new Response(JSON.stringify(json(MOCK_BUS_LINES.map(b => ({
         id: b.id, mode: 'bus', name: b.name, direction: `${b.from} → ${b.to}`,
-        from: b.from, to: b.to, first: '05:30', last: '23:00', color: '#1677ff',
+        from: b.from, to: b.to, first: '05:30', last: '23:00', color: '#3F5B8D',
         status: 'normal', source: 'mock',
         stations: b.stops.map((s, i) => ({ id: `${b.id}_s${i}`, name: s, sequence: i })),
       })))), { headers:{'Content-Type':'application/json'} });
@@ -190,7 +190,7 @@ export function fetchInterceptor() {
       if (!b) return new Response(JSON.stringify({ code: 404, message: '线路不存在', data: null }), { headers:{'Content-Type':'application/json'} });
       return new Response(JSON.stringify(json({
         id: b.id, mode: 'bus', name: b.name, direction: `${b.from} → ${b.to}`,
-        from: b.from, to: b.to, first: '05:30', last: '23:00', color: '#1677ff',
+        from: b.from, to: b.to, first: '05:30', last: '23:00', color: '#3F5B8D',
         status: 'normal', source: 'mock',
         stations: b.stops.map((s, i) => ({ id: `${b.id}_s${i}`, name: s, sequence: i })),
       })), { headers:{'Content-Type':'application/json'} });

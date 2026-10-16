@@ -91,7 +91,7 @@ const QRCodePage: React.FC = () => {
           {activeCountdown <= 10 && (
             <div className={styles.qrOverlay}>
               <span>即将过期</span>
-              <span onClick={refreshActive} style={{ cursor: 'pointer', color: '#1677ff', textDecoration: 'underline' }}>点击刷新</span>
+              <span onClick={refreshActive} style={{ cursor: 'pointer', color: '#3F5B8D', textDecoration: 'underline' }}>点击刷新</span>
             </div>
           )}
         </div>
@@ -104,10 +104,10 @@ const QRCodePage: React.FC = () => {
           style={{
             marginTop: 10,
             padding: '8px 22px',
-            border: '1px solid #1677ff',
+            border: '1px solid #3F5B8D',
             borderRadius: 18,
             background: '#fff',
-            color: '#1677ff',
+            color: '#3F5B8D',
             fontSize: 13,
             fontWeight: 600,
             cursor: 'pointer',

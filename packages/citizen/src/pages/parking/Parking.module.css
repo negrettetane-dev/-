@@ -1,8 +1,16 @@
 .page { }
 .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
-.tabRow { display: flex; gap: 8px; background: #fff; padding: 6px; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); width: fit-content; }
-.tab { padding: 10px 24px; border: none; border-radius: 8px; background: transparent; font-size: 15px; cursor: pointer; transition: all 0.2s; color: var(--text-secondary); }
-.tabActive { background: var(--primary); color: #fff; font-weight: 600; }
+.tabRow { display: flex; gap: 12px; background: #fff; padding: 7px; border-radius: 999px; box-shadow: 0 8px 24px rgba(26, 39, 65, 0.08); width: fit-content; }
+.tab { padding: 10px 22px; border: 1px solid #67758b; border-radius: 999px; background: #fff; font-size: 15px; cursor: pointer; transition: background 160ms ease, border-color 160ms ease, color 160ms ease; color: var(--text-primary); white-space: nowrap; }
+.tabActive { border-color: var(--primary); background: var(--primary); color: #fff; font-weight: 600; }
+
+@media (hover: hover) and (pointer: fine) {
+  .tab:not(.tabActive):hover { border-color: var(--primary); background: var(--primary-light); color: var(--primary); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tab { transition: none; }
+}
 
 .list { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
 .card { background: #fff; border-radius: 12px; padding: 18px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); display: flex; flex-direction: column; gap: 8px; transition: all 0.25s; border: 1px solid transparent; }

@@ -3,8 +3,10 @@ import { ConfigProvider, theme } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
 import AppRouter from './router';
 import { setupMockHandlers } from './mocks/handlers';
+import { setupScrollReveal } from '@zhitu/shared';
 
 export default function App() {
+  useEffect(() => setupScrollReveal('.ant-table-tbody > tr[data-row-key], .ant-list-items > li, .content-page ul > li, .intersection-card'), []);
   useEffect(() => {
     if (import.meta.env.VITE_ENABLE_MOCK !== 'true') return;
     return setupMockHandlers();
@@ -24,7 +26,7 @@ export default function App() {
           colorBgBase: '#0a0a0f',
           colorTextBase: '#f5fbff',
           borderRadius: 4,
-          fontFamily: "'Cascadia Code', 'JetBrains Mono', 'Microsoft YaHei', monospace",
+          fontFamily: "'FangZheng XiaoBiaoSong', 'Microsoft YaHei', sans-serif",
         },
       }}
     >

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Briefcase } from 'lucide-react';
 import styles from './Services.module.css';
 
 interface ModalState { open: boolean; title: string; content: string; }
@@ -65,7 +66,7 @@ const ServicesPage: React.FC = () => {
 
   return (
     <div className={styles.page}>
-      <div className="page-title">🧰 便民服务</div>
+      <div className="page-title"><Briefcase size={24} strokeWidth={1.8} />便民服务</div>
       <div className={styles.grid}>
         {SERVICES.map(s => (
           <div key={s.title} className={styles.card}>

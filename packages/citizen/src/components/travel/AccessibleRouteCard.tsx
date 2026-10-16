@@ -4,7 +4,7 @@ import styles from './AccessibleRouteCard.module.css';
 
 const LEVEL_TONE_TEXT: Record<string, string> = {
   green: '#52c41a',
-  blue: '#1677ff',
+  blue: '#3F5B8D',
   orange: '#fa8c16',
   red: '#f5222d',
 };

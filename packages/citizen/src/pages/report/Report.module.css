@@ -1,6 +1,6 @@
 .page { }
 .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-.header .title { font-size: 24px; font-weight: 700; }
+.header .title { display: inline-flex; align-items: center; gap: 8px; font-size: 24px; font-weight: 700; }
 .newBtn { padding: 10px 24px; background: var(--primary); color: #fff; border: none; border-radius: 8px; font-size: 14px; cursor: pointer; transition: opacity 0.2s; }
 .newBtn:hover { opacity: 0.9; }
 .queryLink { padding: 14px; background: var(--primary-light); border-radius: 12px; font-size: 14px; color: var(--primary); cursor: pointer; text-align: center; margin-bottom: 20px; transition: all 0.2s; }
@@ -22,6 +22,16 @@
 .catCard { display: flex; align-items: center; gap: 10px; padding: 14px; border: 2px solid #eee; border-radius: 10px; cursor: pointer; transition: all 0.2s; }
 .catCard:hover { border-color: #b7d6ff; }
 .catActive { border-color: var(--primary); background: var(--primary-light); }
+
+@media (hover: hover) and (pointer: fine) {
+  .catCard { transition: border-color 160ms ease, background 160ms ease, transform 160ms ease; }
+  .catCard:hover { transform: translateY(-2px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .catCard { transition: border-color 160ms ease, background 160ms ease; }
+  .catCard:hover { transform: none; }
+}
 .photoArea { display: flex; gap: 10px; flex-wrap: wrap; }
 .photoSlot { width: 88px; height: 88px; border: 2px dashed #ddd; border-radius: 10px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; font-size: 12px; color: var(--text-hint); transition: all 0.2s; }
 .photoSlot:hover { border-color: var(--primary); color: var(--primary); }

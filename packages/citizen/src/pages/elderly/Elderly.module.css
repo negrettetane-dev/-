@@ -8,7 +8,7 @@
 .card { background: #fff; border: 3px solid #eee; border-radius: 20px; padding: 28px; display: flex; flex-direction: column; gap: 18px; box-shadow: 0 4px 20px rgba(0,0,0,0.06); }
 .cardTitle { font-size: 28px; font-weight: 700; }
 .voiceInput { display: flex; align-items: center; gap: 16px; width: 100%; padding: 20px; border: 2px solid transparent; background: var(--primary-light); border-radius: 16px; cursor: pointer; font: inherit; color: inherit; text-align: left; }
-.voiceInput:focus-visible { outline: 4px solid rgba(22,119,255,0.35); outline-offset: 3px; }
+.voiceInput:focus-visible { outline: 4px solid rgba(63, 91, 141,0.35); outline-offset: 3px; }
 .voiceListening { background: #e6fffb; border-color: #13c2c2; color: #006d75; }
 .voiceError { background: #fff1f0; border-color: #ffccc7; color: #a8071a; }
 .voiceMessage { font-size: 17px; line-height: 1.5; color: var(--text-secondary); }
@@ -22,7 +22,7 @@
 .busDemoBanner { background: #fff7e6; border: 2px solid #ffd591; color: #ad6800; border-radius: 12px; padding: 14px 16px; font-size: 20px; font-weight: 700; text-align: center; }
 .busRefreshRow { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .busUpdatedAt { font-size: 18px; color: var(--text-secondary); }
-.busRefreshBtn { padding: 12px 22px; background: #1677ff; color: #fff; border: none; border-radius: 12px; font-size: 20px; cursor: pointer; font-weight: 600; }
+.busRefreshBtn { padding: 12px 22px; background: #3F5B8D; color: #fff; border: none; border-radius: 12px; font-size: 20px; cursor: pointer; font-weight: 600; }
 .busStatusText { font-size: 22px; color: var(--text-secondary); padding: 20px 12px; text-align: center; }
 .busStatusHint { font-size: 17px; color: var(--text-hint); text-align: center; margin-top: 4px; }
 .busStationCard { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: #f0f5ff; border: 2px solid #adc6ff; border-radius: 16px; padding: 18px 20px; }
@@ -35,15 +35,15 @@
 .busVehicleRow { font-size: 22px; }
 .busKeyStats { display: flex; align-items: baseline; gap: 10px; }
 .busKeyStat { display: flex; align-items: baseline; gap: 6px; }
-.busKeyNum { font-size: 44px; font-weight: 800; color: #1677ff; }
+.busKeyNum { font-size: 44px; font-weight: 800; color: #3F5B8D; }
 .busKeyUnit { font-size: 22px; color: var(--text-secondary); }
 .busKeyDot { font-size: 32px; color: var(--text-hint); }
 .busCrowding { font-size: 24px; font-weight: 600; }
 .busActions { display: flex; gap: 12px; }
-.busActionBtn { flex: 1; padding: 16px; background: #fff; border: 2px solid #1677ff; color: #1677ff; border-radius: 12px; font-size: 20px; cursor: pointer; font-weight: 600; }
+.busActionBtn { flex: 1; padding: 16px; background: #fff; border: 2px solid #3F5B8D; color: #3F5B8D; border-radius: 12px; font-size: 20px; cursor: pointer; font-weight: 600; }
 .busActionBtn:disabled { opacity: 0.45; cursor: not-allowed; }
 .busStopRow { display: flex; align-items: center; gap: 14px; padding: 16px 0; border-bottom: 1px solid #eee; font-size: 22px; }
-.busStopSeq { width: 40px; height: 40px; border-radius: 50%; background: #1677ff; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 700; flex-shrink: 0; }
+.busStopSeq { width: 40px; height: 40px; border-radius: 50%; background: #3F5B8D; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 700; flex-shrink: 0; }
 .busStopName { font-size: 24px; }
 
 /* SOS 弹窗 */

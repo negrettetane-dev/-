@@ -14,11 +14,18 @@
   background: #fff;
   border-radius: 20px;
   box-shadow: 0 12px 48px rgba(0,0,0,0.12);
+  animation: auth-card-in 240ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+
+@keyframes auth-card-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .authCard { animation: none; }
 }
 /* 左侧品牌区 */
 .authSide {
   width: 45%;
-  background: linear-gradient(160deg, #001529 0%, #003a70 60%, #1677ff 130%);
+  background: linear-gradient(160deg, #001529 0%, #003a70 60%, #3F5B8D 130%);
   color: #fff;
   padding: 48px 40px;
   display: flex;

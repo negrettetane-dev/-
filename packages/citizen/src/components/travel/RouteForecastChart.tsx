@@ -34,8 +34,8 @@ const RouteForecastChart: React.FC<Props> = ({ forecast }) => {
           <text x={2} y={y(value) + 4} fontSize="11" fill="#a0a8b5">{value}</text>
         </g>
       ))}
-      <polygon points={area} fill="rgba(22,119,255,0.15)" />
-      <polyline points={line} fill="none" stroke="#1677ff" strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" />
+      <polygon points={area} fill="rgba(63, 91, 141,0.15)" />
+      <polyline points={line} fill="none" stroke="#3F5B8D" strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" />
       {offsets.map((o, i) => (
         <g key={o}>
           <circle cx={x(o)} cy={y(idxValues[i])} r="5" fill="#fff" stroke={FORECAST_LEVEL_COLOR[forecast[i].level]} strokeWidth="3" />

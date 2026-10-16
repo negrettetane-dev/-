@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Leaf } from 'lucide-react';
 import { getCarbonConfig, getPointRules, type RedemptionRecord, type CitizenCarbonConfig, type CitizenPointRule } from '../../stores/persistence';
 import { apiGet, apiPost } from '../../services/apiClient';
 import { useAuthStore } from '../../stores/authStore';
@@ -105,12 +106,12 @@ const CarbonPage: React.FC = () => {
     return (
       <div className={styles.page}>
         <div className={styles.header}>
-          <span className={styles.title}>🌳 碳积分</span>
+          <span className={styles.title}><Leaf size={24} strokeWidth={1.8} />碳积分</span>
         </div>
         <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-hint)' }}>
           <div style={{ fontSize: 40, marginBottom: 12 }}>🌱</div>
           <div style={{ fontSize: 15, marginBottom: 16 }}>登录后查看积分余额、绿色出行记录与兑换</div>
-          <button onClick={() => navigate('/login')} style={{ padding: '10px 32px', background: '#1677ff', color: '#fff', border: 'none', borderRadius: 8, fontSize: 15, cursor: 'pointer' }}>
+          <button onClick={() => navigate('/login')} style={{ padding: '10px 32px', background: '#3F5B8D', color: '#fff', border: 'none', borderRadius: 8, fontSize: 15, cursor: 'pointer' }}>
             立即登录
           </button>
         </div>
@@ -125,20 +126,21 @@ const CarbonPage: React.FC = () => {
   return (
     <div className={styles.page}>
       <div className={styles.header}>
-        <span className={styles.title}>🌳 我的碳积分</span>
-        <div className={styles.headerActions}><span className={styles.rank}>🏅 排名前 {stats.rankPercent}%</span><button className={styles.rank} onClick={() => navigate('/carbon/points-detail')}>路口 · 积分详情 →</button></div>
+        <span className={styles.title}><Leaf size={24} strokeWidth={1.8} />我的碳积分</span>
+        <div className={styles.headerActions}><span className={styles.rank}>🏅 排名前 {stats.rankPercent}%</span><button className={styles.rank} onClick={() => navigate('/carbon/points-detail')}>积分详情 →</button></div>
       </div>
 
       {/* Score Ring */}
       <div className={styles.scoreRing}>
-        <svg viewBox="0 0 120 120" width="140" height="140">
-          <circle cx="60" cy="60" r="52" fill="none" stroke="#eee" strokeWidth="8"/>
-          <circle cx="60" cy="60" r="52" fill="none" stroke="#52c41a" strokeWidth="8"
-            strokeDasharray={`${Math.min(1, stats.totalPoints/2000)*327} 327`} strokeLinecap="round"
-            transform="rotate(-90 60 60)"/>
-          <text x="60" y="55" textAnchor="middle" fill="#52c41a" fontSize="28" fontWeight="700">{stats.totalPoints}</text>
-          <text x="60" y="72" textAnchor="middle" fill="#999" fontSize="10">碳积分</text>
-        </svg>
+        <div
+          className={styles.scoreRingShape}
+          style={{ '--score-progress': `${Math.max(0, Math.min(1, stats.totalPoints / 2000)) * 100}%` } as React.CSSProperties}
+        >
+          <div className={styles.scoreRingCenter}>
+            <strong>{stats.totalPoints}</strong>
+            <span>碳积分</span>
+          </div>
+        </div>
       </div>
       {/* Stats Grid */}
       <div className={styles.statsGrid}>
@@ -181,7 +183,7 @@ const CarbonPage: React.FC = () => {
       )}
 
       <div style={{ background: '#f0f5ff', borderRadius: 12, padding: 14, marginBottom: 14, fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.9 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: '#1677ff', marginBottom: 6 }}>📐 碳积分计算规则</div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: '#3F5B8D', marginBottom: 6 }}>📐 碳积分计算规则</div>
         <div style={{ fontWeight: 600, color: '#101828' }}>实际轨迹距离（km）× 减碳系数 × 固定积分 = 碳积分</div>
         <div>仅完成步行、骑行、公交、地铁或新能源汽车出行后计分；路线预览、未完成或异常行程不计分。</div>
         <div>当前系数：步行 {carbonConfig.carbonFactors.walk ?? 1} · 骑行 {carbonConfig.carbonFactors.bike ?? 0.8} · 地铁 {carbonConfig.carbonFactors.metro ?? 0.6} · 公交 {carbonConfig.carbonFactors.bus ?? 0.5} · 新能源汽车 {carbonConfig.carbonFactors.new_energy_vehicle ?? 0.2}</div>

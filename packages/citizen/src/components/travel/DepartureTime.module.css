@@ -15,7 +15,7 @@
 }
 
 .select:focus {
-  border-color: #1677ff;
+  border-color: #3F5B8D;
 }
 
 /* ===== 自定义时间 Modal ===== */
@@ -97,7 +97,7 @@
 }
 
 .field input:focus {
-  border-color: #1677ff;
+  border-color: #3F5B8D;
 }
 
 .modalError {
@@ -137,8 +137,8 @@
 }
 
 .modalConfirm {
-  background: #1677ff;
-  border-color: #1677ff;
+  background: #3F5B8D;
+  border-color: #3F5B8D;
   color: #fff;
   font-weight: 600;
 }

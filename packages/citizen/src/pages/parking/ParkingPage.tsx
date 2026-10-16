@@ -102,10 +102,10 @@ const ParkingPage: React.FC = () => {
         const m = new AMap.Marker({
           position: p.position,
           title: p.name,
-          label: { content: `<div style="background:#1677ff;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px;white-space:nowrap">${p.name}</div>`, direction: 'top' },
+          label: { content: `<div style="background:#3F5B8D;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px;white-space:nowrap">${p.name}</div>`, direction: 'top' },
         });
         m.on('click', () => {
-          const info = `<div style="padding:8px;font-size:13px"><b>${p.name}</b><br/>空位: ${p.availableSpots}/${p.totalSpots}<br/>${formatPrice(p.price)}<br/><span style="color:#1677ff;cursor:pointer" onclick="window.__zhituNavToPlace('parking','${p.id}')">🧭 去这里</span></div>`;
+          const info = `<div style="padding:8px;font-size:13px"><b>${p.name}</b><br/>空位: ${p.availableSpots}/${p.totalSpots}<br/>${formatPrice(p.price)}<br/><span style="color:#3F5B8D;cursor:pointer" onclick="window.__zhituNavToPlace('parking','${p.id}')">🧭 去这里</span></div>`;
           const infoWin = new AMap.InfoWindow({ content: info, offset: new AMap.Pixel(0, -30) });
           infoWin.open(map, p.position);
         });
@@ -125,7 +125,7 @@ const ParkingPage: React.FC = () => {
           label: { content: `<div style="background:#52c41a;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">${c.name}</div>`, direction: 'top' },
         });
         m.on('click', () => {
-          const info = `<div style="padding:8px;font-size:13px"><b>${c.name}</b><br/>空闲: ${c.availablePiles}/${c.totalPiles}<br/>${c.power} · ${formatPrice(c.price)}<br/><span style="color:#1677ff;cursor:pointer" onclick="window.__zhituNavToPlace('charging','${c.id}')">🧭 去这里</span></div>`;
+          const info = `<div style="padding:8px;font-size:13px"><b>${c.name}</b><br/>空闲: ${c.availablePiles}/${c.totalPiles}<br/>${c.power} · ${formatPrice(c.price)}<br/><span style="color:#3F5B8D;cursor:pointer" onclick="window.__zhituNavToPlace('charging','${c.id}')">🧭 去这里</span></div>`;
           const infoWin = new AMap.InfoWindow({ content: info, offset: new AMap.Pixel(0, -30) });
           infoWin.open(map, c.position);
         });

@@ -6,7 +6,7 @@ import styles from './Report.module.css';
 interface WorkOrder { id:string; workOrderNo:string; category:string; description:string; images:string[]; position:[number,number]; address:string; status:string; createTime:number; updateTime:number; processLogs:{time:number;action:string;operator:string;detail:string}[]; rating?:number; afterImage?:string; platformFeedback?: string; feedback?: string }
 
 const STATUS_LABELS: Record<string,string> = { pending:'待受理', received:'已受理', processing:'处置中', completed:'已办结', rejected:'已驳回' };
-const STATUS_COLORS: Record<string,string> = { pending:'#faad14', received:'#1677ff', processing:'#ff7a00', completed:'#52c41a', rejected:'#f5222d' };
+const STATUS_COLORS: Record<string,string> = { pending:'#faad14', received:'#3F5B8D', processing:'#ff7a00', completed:'#52c41a', rejected:'#f5222d' };
 const CAT_MAP: Record<string,string> = { pothole:'🕳️ 路面坑洼', streetlight:'💡 路灯损坏', illegal_park:'🚗 违停占道', manhole:'⭕ 井盖破损', signal_fault:'🚦 信号灯故障', accident_clue:'🚨 事故线索', barrier:'🚧 道路障碍', other:'📝 其他' };
 
 const ReportDetailPage: React.FC = () => {

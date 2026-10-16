@@ -9,7 +9,7 @@
 .stationName { color: var(--text-primary); font-size: 16px; font-weight: 700; }
 .deviceId { color: var(--text-secondary); font-size: 13px; margin-top: 5px; }
 .statusBadge { border-radius: 20px; padding: 4px 9px; white-space: nowrap; font-size: 12px; font-weight: 600; }
-.statusIdle { color: #1677ff; background: #e6f4ff; }
+.statusIdle { color: #3F5B8D; background: #e6f4ff; }
 .statusActive { color: #389e0d; background: #f6ffed; }
 .statusDone { color: #595959; background: #f5f5f5; }
 .connectionLine { display: flex; align-items: center; gap: 7px; border-top: 1px solid #f0f0f0; margin-top: 14px; padding-top: 12px; color: var(--text-secondary); font-size: 13px; }
@@ -23,12 +23,12 @@
 .metricGrid > div { display: flex; flex-direction: column; gap: 5px; }
 .metricGrid b { color: var(--text-primary); font-size: 14px; }
 .progressTrack { height: 8px; overflow: hidden; border-radius: 8px; background: #f0f0f0; }
-.progressBar { height: 100%; min-width: 3px; border-radius: inherit; background: linear-gradient(90deg, #1677ff, #52c41a); transition: width .8s ease; }
+.progressBar { height: 100%; min-width: 3px; border-radius: inherit; background: linear-gradient(90deg, #3F5B8D, #52c41a); transition: width .8s ease; }
 .progressHint { color: var(--text-hint); font-size: 12px; margin-top: 8px; }
 .actionTitle, .doneTitle { font-size: 16px; font-weight: 700; margin-bottom: 7px; }
 .actionText, .settlement { color: var(--text-secondary); font-size: 13px; line-height: 1.6; margin-bottom: 14px; }
 .primaryBtn, .stopBtn { width: 100%; border: 0; border-radius: 8px; padding: 12px; color: #fff; font-size: 15px; font-weight: 600; cursor: pointer; }
-.primaryBtn { background: var(--primary, #1677ff); }
+.primaryBtn { background: var(--primary, #3F5B8D); }
 .stopBtn { background: #f5222d; }
 .primaryBtn:hover, .stopBtn:hover { opacity: .9; }
 .loadingState { display: flex; align-items: center; justify-content: center; gap: 9px; color: var(--text-secondary); font-size: 14px; padding: 10px; }

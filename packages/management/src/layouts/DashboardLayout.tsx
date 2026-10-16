@@ -23,21 +23,21 @@ const { Header, Sider, Content } = Layout;
 
 const menuItems: MenuProps['items'] = [
   { key: '/admin', icon: <DashboardOutlined />, label: '数据驾驶舱' },
-  { key: '/admin/incidents', icon: <AlertOutlined />, label: '事件管理' },
-  { key: '/admin/users', icon: <TeamOutlined />, label: '用户管理' },
+  { key: '/admin/incidents', icon: <AlertOutlined />, label: '事件处理' },
+  { key: '/admin/users', icon: <TeamOutlined />, label: '用户中心' },
   { key: '/admin/carbon', icon: <GiftOutlined />, label: '碳积分管理' },
-  { key: '/admin/content', icon: <EditOutlined />, label: '内容管理' },
-  { key: '/admin/accessibility', icon: <DeploymentUnitOutlined />, label: '无障碍设施管理' },
+  { key: '/admin/content', icon: <EditOutlined />, label: '内容运营' },
+  { key: '/admin/accessibility', icon: <DeploymentUnitOutlined />, label: '无障碍设施' },
   { key: '/admin/settings', icon: <SettingOutlined />, label: '系统设置' },
 ];
 
 const breadcrumbNameMap: Record<string, string> = {
   '/admin': '数据驾驶舱',
-  '/admin/incidents': '事件管理',
-  '/admin/users': '用户管理',
+  '/admin/incidents': '事件处理',
+  '/admin/users': '用户中心',
   '/admin/carbon': '碳积分管理',
-  '/admin/content': '内容管理',
-  '/admin/accessibility': '无障碍设施管理',
+  '/admin/content': '内容运营',
+  '/admin/accessibility': '无障碍设施',
   '/admin/settings': '系统设置',
 };
 
@@ -173,7 +173,7 @@ export default function DashboardLayout() {
               letterSpacing: 2,
             }}
           >
-            {sidebarCollapsed ? '智途' : '智途云枢'}
+            {sidebarCollapsed ? '智途' : <span className="text-gradient-flow">智途云枢</span>}
           </Typography.Title>
         </div>
 

@@ -28,7 +28,7 @@ const TripDetailPage: React.FC = () => {
     loadAMap().then(AMap => {
       if (!alive || !mapContainer.current) return;
       const map = new AMap.Map(mapContainer.current, { zoom: 13, viewMode: '2D', resizeEnable: true });
-      const route = new AMap.Polyline({ path: trip.path, strokeColor: '#1677ff', strokeWeight: 6, lineJoin: 'round', lineCap: 'round' });
+      const route = new AMap.Polyline({ path: trip.path, strokeColor: '#3F5B8D', strokeWeight: 6, lineJoin: 'round', lineCap: 'round' });
       map.add(route);
       map.setFitView([route], false, [48, 48, 48, 48]);
       mapRef.current = map;

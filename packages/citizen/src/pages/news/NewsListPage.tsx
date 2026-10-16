@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Newspaper } from 'lucide-react';
 import styles from './News.module.css';
 import { apiGet } from '../../services/apiClient';
 import { getManagedNewsFallback } from '../../services/adminContentFallback';
@@ -44,7 +45,7 @@ const NewsListPage: React.FC = () => {
 
   return (
     <div className={styles.page}>
-      <div className={styles.pageTitle}>📰 交通资讯</div>
+      <div className={styles.pageTitle}><Newspaper size={24} strokeWidth={1.8} />交通资讯</div>
 
       <div className={styles.catScroll}>
         {availableCats.map(c=>(

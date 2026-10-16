@@ -226,7 +226,7 @@ const HomePage: React.FC = () => {
         if (!AMap?.Polyline) return;
         const polyline = new AMap.Polyline({
           path: route.path,
-          strokeColor: '#1677ff',
+          strokeColor: '#3F5B8D',
           strokeWeight: 6,
           strokeOpacity: 0.95,
           strokeStyle: 'solid',
@@ -540,7 +540,6 @@ const HomePage: React.FC = () => {
           <div className={styles.indexCard}>
             <div className={styles.indexHead}>
               <span>北京 · 交通运行参考</span>
-              <span style={{ fontSize: 11, color: 'var(--text-hint)' }}>模拟数据 · 非官方实时</span>
             </div>
             {snapshotFailed ? (
               <div className={styles.alertEmpty}>交通运行数据暂不可用</div>
@@ -565,7 +564,7 @@ const HomePage: React.FC = () => {
         <div className={styles.congestionCard}>
           <div className={styles.sectionHead}>
             <h2 className={styles.sectionTitle}>📊 24小时拥堵趋势</h2>
-            <span className={styles.dataTag}>模拟数据</span>
+            <span className={styles.dataTag}>平台数据</span>
           </div>
           {snapshotFailed ? (
             <div className={styles.alertEmpty}>交通运行数据暂不可用</div>
@@ -637,7 +636,7 @@ const HomePage: React.FC = () => {
                           {r.congestionLevel === 'blocked' ? '严重拥堵' : '拥堵'} · 平均时速 {r.speed}km/h
                         </span>
                       </div>
-                      <span className={styles.trafficTime}>模拟数据</span>
+                      <span className={styles.trafficTime}>平台数据</span>
                     </div>
                   ))}
                 </div>
