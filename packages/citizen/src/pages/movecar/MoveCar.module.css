@@ -18,7 +18,7 @@
 .back {
   cursor: pointer;
   font-size: 14px;
-  color: var(--primary, #1677ff);
+  color: var(--primary, #3F5B8D);
 }
 
 .title {
@@ -83,7 +83,7 @@
   font-family: monospace;
 }
 
-.plateInput:focus { border-color: var(--primary, #1677ff); }
+.plateInput:focus { border-color: var(--primary, #3F5B8D); }
 
 /* 位置 */
 .locationBox {
@@ -101,10 +101,10 @@
 }
 
 .locationActions { display: flex; gap: 10px; margin-top: 8px; }
-.locateButton { flex: 1; padding: 9px; background: #f0f5ff; color: var(--primary, #1677ff); border: 1px solid var(--primary, #1677ff); border-radius: 8px; font-size: 13px; cursor: pointer; }
+.locateButton { flex: 1; padding: 9px; background: #f0f5ff; color: var(--primary, #3F5B8D); border: 1px solid var(--primary, #3F5B8D); border-radius: 8px; font-size: 13px; cursor: pointer; }
 .locateButton:hover { background: #e6f4ff; }
 .locateButton:disabled { opacity: 0.5; cursor: not-allowed; }
-.mapPickerButton { flex: 1; padding: 9px; background: var(--primary, #1677ff); color: #fff; border: none; border-radius: 8px; font-size: 13px; cursor: pointer; }
+.mapPickerButton { flex: 1; padding: 9px; background: var(--primary, #3F5B8D); color: #fff; border: none; border-radius: 8px; font-size: 13px; cursor: pointer; }
 .mapPickerButton:hover { opacity: 0.9; }
 .coordinateText { margin-top: 6px; font-size: 11px; color: var(--text-hint, #999); font-family: monospace; }
 .demoNote { margin-top: 8px; font-size: 12px; color: #ad6800; background: #fffbe6; padding: 8px 12px; border-radius: 8px; line-height: 1.6; }
@@ -120,7 +120,7 @@
   resize: vertical;
   font-family: inherit;
 }
-.textarea:focus { border-color: var(--primary, #1677ff); }
+.textarea:focus { border-color: var(--primary, #3F5B8D); }
 
 /* 照片 */
 .photoGrid {
@@ -141,7 +141,7 @@
   gap: 4px;
   cursor: pointer;
   position: relative;
-  border: 1px dashed #1677ff;
+  border: 1px dashed #3F5B8D;
 }
 
 .photoLabel {
@@ -179,7 +179,7 @@
   transition: border-color 0.2s;
 }
 
-.photoAdd:hover { border-color: var(--primary, #1677ff); color: var(--primary, #1677ff); }
+.photoAdd:hover { border-color: var(--primary, #3F5B8D); color: var(--primary, #3F5B8D); }
 
 /* 隐私 */
 .privacyBanner {
@@ -195,7 +195,7 @@
 .submitBtn {
   width: 100%;
   padding: 14px;
-  background: var(--primary, #1677ff);
+  background: var(--primary, #3F5B8D);
   color: #fff;
   border: none;
   border-radius: 10px;
@@ -248,7 +248,7 @@
 
 .successId {
   font-size: 14px;
-  color: var(--primary, #1677ff);
+  color: var(--primary, #3F5B8D);
   font-weight: 600;
   margin-bottom: 16px;
   font-family: monospace;
@@ -272,7 +272,7 @@
 
 .backBtn {
   padding: 10px 32px;
-  background: var(--primary, #1677ff);
+  background: var(--primary, #3F5B8D);
   color: #fff;
   border: none;
   border-radius: 8px;

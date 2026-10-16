@@ -43,14 +43,14 @@ const ElderlyNavigationPage: React.FC = () => {
         map.add(new AMap.Marker({ position: end, anchor: 'center', icon: new AMap.Icon({ size: new AMap.Size(18, 18), image: 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18"><circle cx="9" cy="9" r="8" fill="#f5222d" stroke="#fff" stroke-width="2"/></svg>') }) }));
 
         // 路线
-        const polyline = new AMap.Polyline({ path, strokeColor: '#1677ff', strokeWeight: 8, lineJoin: 'round', lineCap: 'round' });
+        const polyline = new AMap.Polyline({ path, strokeColor: '#3F5B8D', strokeWeight: 8, lineJoin: 'round', lineCap: 'round' });
         map.add(polyline);
         map.setFitView([polyline], false, [70, 70, 70, 70]);
 
         // 车辆
         const carMarker = new AMap.Marker({
           position: start, anchor: 'center',
-          icon: new AMap.Icon({ size: new AMap.Size(36, 36), image: 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36"><circle cx="18" cy="18" r="16" fill="#1677ff" stroke="#fff" stroke-width="3"/><text x="18" y="25" text-anchor="middle" fill="#fff" font-size="18">${MODE_LABEL[context.displayMode] === '公交' ? '🚌' : MODE_LABEL[context.displayMode] === '驾车' ? '🚗' : '🚶'}</text></svg>`) }),
+          icon: new AMap.Icon({ size: new AMap.Size(36, 36), image: 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36"><circle cx="18" cy="18" r="16" fill="#3F5B8D" stroke="#fff" stroke-width="3"/><text x="18" y="25" text-anchor="middle" fill="#fff" font-size="18">${MODE_LABEL[context.displayMode] === '公交' ? '🚌' : MODE_LABEL[context.displayMode] === '驾车' ? '🚗' : '🚶'}</text></svg>`) }),
         });
         map.add(carMarker);
         carMarkerRef.current = carMarker;
@@ -134,7 +134,7 @@ const ElderlyNavigationPage: React.FC = () => {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 18, minHeight: '100vh', padding: 24, background: '#f7f8fa' }}>
         <div style={{ fontSize: 22, fontWeight: 700 }}>未找到导航信息</div>
-        <button onClick={() => navigate('/elderly')} style={{ padding: '14px 28px', background: '#1677ff', color: '#fff', border: 'none', borderRadius: 12, fontSize: 18 }}>返回关怀首页</button>
+        <button onClick={() => navigate('/elderly')} style={{ padding: '14px 28px', background: '#3F5B8D', color: '#fff', border: 'none', borderRadius: 12, fontSize: 18 }}>返回关怀首页</button>
       </div>
     );
   }
@@ -143,7 +143,7 @@ const ElderlyNavigationPage: React.FC = () => {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 18, minHeight: '100vh', padding: 24, background: '#f7f8fa' }}>
         <div style={{ fontSize: 22, fontWeight: 700 }}>当前公交路线数据无效，请重新规划。</div>
-        <button onClick={() => navigate('/elderly')} style={{ padding: '14px 28px', background: '#1677ff', color: '#fff', border: 'none', borderRadius: 12, fontSize: 18 }}>返回关怀首页</button>
+        <button onClick={() => navigate('/elderly')} style={{ padding: '14px 28px', background: '#3F5B8D', color: '#fff', border: 'none', borderRadius: 12, fontSize: 18 }}>返回关怀首页</button>
       </div>
     );
   }

@@ -326,7 +326,7 @@ const ElderlyHomePage: React.FC = () => {
             <div className={styles.sosTitle}>🆘 紧急求助</div>
             <div className={styles.sosDesc}>请选择求助方式，系统将自动发送您的位置</div>
             <div className={styles.sosActions}>
-              <a href="tel:110" className={styles.sosCall} style={{background:'#1677ff'}}>📞 报警 110</a>
+              <a href="tel:110" className={styles.sosCall} style={{background:'#3F5B8D'}}>📞 报警 110</a>
               <a href="tel:120" className={styles.sosCall} style={{background:'#f5222d'}}>🚑 急救 120</a>
               <a href="tel:122" className={styles.sosCall} style={{background:'#faad14'}}>🚓 交通事故 122</a>
             </div>

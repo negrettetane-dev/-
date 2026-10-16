@@ -611,7 +611,7 @@ async function handleAccount(ctx: AssistantContext): Promise<AssistantMessage> {
       id: nextId('c'),
       kind: 'account',
       title: '我的积分',
-      rows: [{ label: '当前积分', value: `${data.points ?? 0} 分`, valueColor: '#1677ff' }],
+      rows: [{ label: '当前积分', value: `${data.points ?? 0} 分`, valueColor: '#3F5B8D' }],
       source: SRC.real,
       sourceLabel: '账户数据',
       actions: [

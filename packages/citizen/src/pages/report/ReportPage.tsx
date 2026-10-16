@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Camera } from 'lucide-react';
 import { apiGet } from '../../services/apiClient';
 import { useAuthStore } from '../../stores/authStore';
 import styles from './Report.module.css';
@@ -16,7 +17,7 @@ const CATEGORY_ICONS: Record<string,string> = {
 };
 const STATUS_MAP: Record<string,{label:string;color:string;bg:string}> = {
   pending:{label:'待受理',color:'#faad14',bg:'#fff7e6'},
-  received:{label:'已受理',color:'#1677ff',bg:'#e6f4ff'},
+  received:{label:'已受理',color:'#3F5B8D',bg:'#e6f4ff'},
   processing:{label:'处置中',color:'#ff7a00',bg:'#fff1f0'},
   completed:{label:'已办结',color:'#52c41a',bg:'#e6ffe6'},
   resolved:{label:'已办结',color:'#52c41a',bg:'#e6ffe6'},
@@ -47,13 +48,13 @@ const ReportPage: React.FC = () => {
 
   // 来源标签（events/mine 返回的均属当前用户）
   const renderSource = () => (
-    <span style={{ fontSize: 11, background: '#e6f4ff', color: '#1677ff', padding: '2px 6px', borderRadius: 4 }}>我的上报</span>
+    <span style={{ fontSize: 11, background: '#e6f4ff', color: '#3F5B8D', padding: '2px 6px', borderRadius: 4 }}>我的上报</span>
   );
 
   return (
     <div className={styles.page}>
       <div className={styles.header}>
-        <span className={styles.title}>📷 事件上报</span>
+        <span className={styles.title}><Camera size={24} strokeWidth={1.8} />事件上报</span>
         <button className={styles.newBtn} onClick={()=>navigate('/report/new')}>+ 新建上报</button>
       </div>
 

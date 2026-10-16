@@ -207,7 +207,7 @@ const BusDetailPage: React.FC = () => {
       const polyline = new AMap.Polyline({
         map: amapRef.current,
         path: routePath,
-        strokeColor: '#1677ff', strokeWeight: 6, strokeOpacity: 0.9,
+        strokeColor: '#3F5B8D', strokeWeight: 6, strokeOpacity: 0.9,
         lineJoin: 'round', lineCap: 'round',
       });
       overlaysRef.current.push(polyline);
@@ -216,7 +216,7 @@ const BusDetailPage: React.FC = () => {
       geometry.stations.forEach((st, i) => {
         if (!st.location || !Array.isArray(st.location)) return;
         const isFirst = i === 0, isLast = i === geometry.stations.length - 1;
-        const color = isFirst ? '#52c41a' : isLast ? '#f5222d' : '#1677ff';
+        const color = isFirst ? '#52c41a' : isLast ? '#f5222d' : '#3F5B8D';
         const size = isFirst || isLast ? 16 : 10;
         const marker = new AMap.Marker({
           map: amapRef.current,
@@ -265,12 +265,12 @@ const BusDetailPage: React.FC = () => {
         const m = new AMap.Marker({
           map: amapRef.current,
           position: [v.lng, v.lat],
-          content: '<div style="width:34px;height:34px;border-radius:50%;background:#1677ff;border:2px solid #fff;box-shadow:0 2px 10px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;font-size:17px;">🚌</div>',
+          content: '<div style="width:34px;height:34px;border-radius:50%;background:#3F5B8D;border:2px solid #fff;box-shadow:0 2px 10px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;font-size:17px;">🚌</div>',
           offset: new AMap.Pixel(-17, -17),
         });
         m.on('click', () => {
           new AMap.InfoWindow({
-            content: `<div style="padding:10px 12px;font-size:13px;min-width:180px"><b>🚌 ${geometry.lineName} 公交</b><br/>车辆编号：${v.vehicleId}<br/>速度：<b style="color:#1677ff">${v.speed} km/h</b></div>`,
+            content: `<div style="padding:10px 12px;font-size:13px;min-width:180px"><b>🚌 ${geometry.lineName} 公交</b><br/>车辆编号：${v.vehicleId}<br/>速度：<b style="color:#3F5B8D">${v.speed} km/h</b></div>`,
             offset: new AMap.Pixel(0, -34),
           }).open(amapRef.current!, [v.lng, v.lat]);
         });

@@ -18,7 +18,7 @@
 .back, .help {
   cursor: pointer;
   font-size: 14px;
-  color: var(--primary, #1677ff);
+  color: var(--primary, #3F5B8D);
 }
 
 .title {
@@ -50,8 +50,8 @@
 
 .modeActive {
   background: #fff;
-  color: var(--primary, #1677ff);
-  box-shadow: 0 2px 8px rgba(22,119,255,0.15);
+  color: var(--primary, #3F5B8D);
+  box-shadow: 0 2px 8px rgba(63, 91, 141,0.15);
 }
 
 /* 二维码卡片 */
@@ -77,7 +77,7 @@
   margin: 0 auto 16px;
   padding: 12px;
   background: #fff;
-  border: 3px solid #1677ff;
+  border: 3px solid #3F5B8D;
   border-radius: 12px;
 }
 
@@ -211,8 +211,8 @@
 }
 
 .faqItem b {
-  color: var(--primary, #1677ff);
+  color: var(--primary, #3F5B8D);
 }
 
-.faqBtn { width: 100%; padding: 10px; margin-top: 12px; background: var(--primary, #1677ff); color: #fff; border: none; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; }
+.faqBtn { width: 100%; padding: 10px; margin-top: 12px; background: var(--primary, #3F5B8D); color: #fff; border: none; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; }
 .faqBtn:hover { opacity: 0.9; }

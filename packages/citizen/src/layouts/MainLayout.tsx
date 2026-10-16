@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useLayoutEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { Briefcase, Camera, Home, Leaf, Newspaper, ParkingSquare } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
 import { useElderly } from '../App';
 import { maskPhone } from '@zhitu/shared';
@@ -15,12 +16,12 @@ const ABOUT_CONTENT: Record<string, string> = {
 };
 
 const NAV_ITEMS = [
-  { key: '/', label: '首页', icon: '🏠' },
-  { key: '/parking', label: '停车充电', icon: '🅿️' },
-  { key: '/report', label: '事件上报', icon: '📷' },
-  { key: '/news', label: '交通资讯', icon: '📰' },
-  { key: '/services', label: '便民服务', icon: '🧰' },
-  { key: '/carbon', label: '碳积分', icon: '🌳' },
+  { key: '/', label: '首页', icon: <Home size={18} strokeWidth={1.8} /> },
+  { key: '/parking', label: '停车充电', icon: <ParkingSquare size={18} strokeWidth={1.8} /> },
+  { key: '/report', label: '事件上报', icon: <Camera size={18} strokeWidth={1.8} /> },
+  { key: '/news', label: '交通资讯', icon: <Newspaper size={18} strokeWidth={1.8} /> },
+  { key: '/services', label: '便民服务', icon: <Briefcase size={18} strokeWidth={1.8} /> },
+  { key: '/carbon', label: '碳积分', icon: <Leaf size={18} strokeWidth={1.8} /> },
 ];
 
 const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -30,6 +31,8 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { elderlyMode } = useElderly();
   const currentPath = location.pathname;
   const [aboutModal, setAboutModal] = useState('');
+  const navRef = useRef<HTMLElement>(null);
+  const [highlight, setHighlight] = useState({ x: 0, width: 0, visible: false });
 
   // 关怀模式或详情页时不显示标准导航
   const isFullScreen = currentPath.startsWith('/elderly');
@@ -39,6 +42,20 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     if (item.key === '/') return currentPath === '/';
     return currentPath.startsWith(item.key);
   })?.key || '';
+
+  const moveHighlight = (key: string) => {
+    const item = Array.from(navRef.current?.querySelectorAll<HTMLElement>('[data-nav-key]') || [])
+      .find(element => element.dataset.navKey === key);
+    if (item) setHighlight({ x: item.offsetLeft, width: item.offsetWidth, visible: true });
+    else setHighlight(previous => ({ ...previous, visible: false }));
+  };
+
+  useLayoutEffect(() => {
+    moveHighlight(activeKey);
+    const observer = new ResizeObserver(() => moveHighlight(activeKey));
+    if (navRef.current) observer.observe(navRef.current);
+    return () => observer.disconnect();
+  }, [activeKey]);
 
   if (isFullScreen) {
     return <>{children}</>;
@@ -63,16 +80,27 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             <span className={styles.logoSub}>城市智慧交通</span>
           </div>
 
-          <nav className={styles.nav}>
+          <nav ref={navRef} className={styles.nav} onMouseLeave={() => moveHighlight(activeKey)}>
+            <span
+              className={`${styles.navHighlight} ${highlight.visible ? styles.navHighlightVisible : ''}`}
+              style={{ transform: `translateX(${highlight.x}px)`, width: highlight.width }}
+              aria-hidden="true"
+            />
             {NAV_ITEMS.map(item => (
-              <div
+              <button
                 key={item.key}
+                type="button"
+                data-nav-key={item.key}
                 className={`${styles.navItem} ${activeKey === item.key ? styles.navActive : ''}`}
                 onClick={() => navigate(item.key)}
+                onMouseEnter={() => moveHighlight(item.key)}
+                onFocus={() => moveHighlight(item.key)}
+                onBlur={() => moveHighlight(activeKey)}
+                aria-current={activeKey === item.key ? 'page' : undefined}
               >
                 <span className={styles.navIcon}>{item.icon}</span>
                 <span>{item.label}</span>
-              </div>
+              </button>
             ))}
           </nav>
 

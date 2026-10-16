@@ -30,6 +30,7 @@ import ElderlyHomePage from './pages/elderly/ElderlyHomePage';
 import ElderlyNavigationPage from './pages/elderly/ElderlyNavigationPage';
 import ElderlyBusDetailPage from './pages/elderly/ElderlyBusDetailPage';
 import { loadAccessibilityFacilities } from './data/accessibilityFacilities';
+import { setupScrollReveal } from '@zhitu/shared';
 import LoginPage from './pages/auth/LoginPage';
 import RegisterPage from './pages/auth/RegisterPage';
 import QRCodePage from './pages/qrcode/QRCodePage';
@@ -75,6 +76,14 @@ const RequireAuth: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 };
 
 const App: React.FC = () => {
+  useEffect(() => setupScrollReveal([
+    '[class*="_list_"] > *',
+    '[class*="List_"] > *',
+    '[class*="_timeline_"] > [class*="_timelineItem_"]',
+    '[class*="_recordSection_"] > [class*="_redemptionItem_"]',
+    'main ul > li',
+    'main ol > li',
+  ].join(', ')), []);
   const [elderlyMode, setElderlyMode] = useState(() => {
     return localStorage.getItem('zhitu_elder_mode') === 'true';
   });

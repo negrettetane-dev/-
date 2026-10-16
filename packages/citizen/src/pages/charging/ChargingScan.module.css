@@ -14,7 +14,7 @@
 .formTitle { font-size: 15px; font-weight: 700; margin-bottom: 6px; }
 .formHint { color: var(--text-secondary); font-size: 13px; line-height: 1.6; margin-bottom: 14px; }
 .fileInput { display: none; }
-.uploadBtn, .secondaryBtn { width: 100%; padding: 11px 14px; color: var(--primary, #1677ff); background: var(--primary-light, #e6f4ff); border: 1px solid var(--primary, #1677ff); border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.uploadBtn, .secondaryBtn { width: 100%; padding: 11px 14px; color: var(--primary, #3F5B8D); background: var(--primary-light, #e6f4ff); border: 1px solid var(--primary, #3F5B8D); border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .secondaryBtn { width: auto; }
 .uploadBtn:hover, .secondaryBtn:hover { background: #d6ecff; }
 .uploadBtn:disabled { opacity: 0.55; cursor: not-allowed; }
@@ -34,10 +34,10 @@
 .unavailableNote, .confirmedNote { padding: 9px 10px; border-radius: 8px; font-size: 13px; line-height: 1.5; margin-bottom: 12px; }
 .unavailableNote { color: #ad6800; background: #fffbe6; }
 .confirmedNote { color: #237804; background: #f6ffed; }
-.btn { width: 100%; padding: 12px; background: var(--primary, #1677ff); color: #fff; border: none; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; }
+.btn { width: 100%; padding: 12px; background: var(--primary, #3F5B8D); color: #fff; border: none; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; }
 .btn:hover { opacity: 0.9; }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.resetBtn { width: 100%; padding: 9px; border: none; background: transparent; color: var(--primary, #1677ff); cursor: pointer; font-size: 13px; margin-top: 4px; }
+.resetBtn { width: 100%; padding: 9px; border: none; background: transparent; color: var(--primary, #3F5B8D); cursor: pointer; font-size: 13px; margin-top: 4px; }
 .emptyHint { color: var(--text-hint); text-align: center; font-size: 13px; padding: 16px 10px; }
 
 @media (max-width: 420px) {

@@ -13,7 +13,7 @@
 .stopSeq { font-size: 11px; color: var(--text-hint); }
 
 /* 实时卡片 */
-.liveCard { background: linear-gradient(135deg, #1677ff, #4096ff); color: #fff; border-radius: 14px; padding: 18px 20px; margin-bottom: 14px; box-shadow: 0 4px 16px rgba(22,119,255,0.3); }
+.liveCard { background: linear-gradient(135deg, #3F5B8D, #4096ff); color: #fff; border-radius: 14px; padding: 18px 20px; margin-bottom: 14px; box-shadow: 0 4px 16px rgba(63, 91, 141,0.3); }
 .liveRow { display: flex; gap: 12px; }
 .liveRow:first-child { margin-bottom: 14px; }
 .liveItem { flex: 1; }
@@ -33,7 +33,7 @@
 .map { width: 100%; height: 100%; min-height: 300px; }
 .mapHint { position: absolute; bottom: 8px; left: 10px; z-index: 10; background: rgba(0,0,0,0.55); color: #fff; font-size: 11px; padding: 2px 8px; border-radius: 4px; }
 .mapStatus { position: absolute; inset: 0; z-index: 20; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 20px; color: #5f6b7a; background: #f7f9fc; text-align: center; }
-.retryBtn { border: 0; border-radius: 8px; padding: 8px 20px; color: #fff; background: #1677ff; font-size: 14px; cursor: pointer; }
+.retryBtn { border: 0; border-radius: 8px; padding: 8px 20px; color: #fff; background: #3F5B8D; font-size: 14px; cursor: pointer; }
 .retryBtn:hover { opacity: 0.9; }
 
 /* 在线车辆列表 */
@@ -41,12 +41,12 @@
 .vehiclesTitle { font-size: 14px; font-weight: 600; margin-bottom: 10px; }
 .vehicleRow { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid #f5f5f5; }
 .vehicleRow:last-child { border-bottom: none; }
-.vehicleBadge { font-size: 11px; font-weight: 700; color: #1677ff; background: #e6f4ff; padding: 3px 8px; border-radius: 6px; flex-shrink: 0; }
+.vehicleBadge { font-size: 11px; font-weight: 700; color: #3F5B8D; background: #e6f4ff; padding: 3px 8px; border-radius: 6px; flex-shrink: 0; }
 .vehicleBody { flex: 1; }
 .vehicleStations { font-size: 14px; font-weight: 500; display: block; }
 .vehicleDist { font-size: 11px; color: var(--text-hint); }
 .vehicleRight { text-align: right; }
-.vehicleSpeed { font-size: 14px; font-weight: 700; color: #1677ff; display: block; }
+.vehicleSpeed { font-size: 14px; font-weight: 700; color: #3F5B8D; display: block; }
 .vehicleEta { font-size: 11px; color: #52c41a; }
 
 /* 站点列表 */

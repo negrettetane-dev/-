@@ -55,7 +55,7 @@ interface RouteCardData {
 }
 
 const MODE_META: Record<TravelMode, { icon: string; label: string; color: string }> = {
-  drive: { icon: '🚗', label: '驾车', color: '#1677ff' },
+  drive: { icon: '🚗', label: '驾车', color: '#3F5B8D' },
   bus: { icon: '🚌', label: '公交地铁', color: '#722ed1' },
   bike: { icon: '🚲', label: '骑行', color: '#faad14' },
   walk: { icon: '🚶', label: '步行', color: '#722ed1' },
@@ -1258,7 +1258,7 @@ const RouteResultPage: React.FC = () => {
 
       {/* 出发时间提示（非「现在出发」时显示） */}
       {!navActive && departureLabel && (
-        <div style={{ padding: '8px 14px', background: '#f0f5ff', borderRadius: 8, fontSize: 12, color: '#1677ff', marginBottom: 12, lineHeight: 1.6 }}>
+        <div style={{ padding: '8px 14px', background: '#f0f5ff', borderRadius: 8, fontSize: 12, color: '#3F5B8D', marginBottom: 12, lineHeight: 1.6 }}>
           🕐 出发：{departureLabel}
         </div>
       )}
@@ -1295,7 +1295,7 @@ const RouteResultPage: React.FC = () => {
           <button
             type="button"
             onClick={() => navigate(-1)}
-            style={{ marginTop: 10, border: 0, borderRadius: 6, padding: '7px 14px', background: '#1677ff', color: '#fff', cursor: 'pointer' }}
+            style={{ marginTop: 10, border: 0, borderRadius: 6, padding: '7px 14px', background: '#3F5B8D', color: '#fff', cursor: 'pointer' }}
           >
             返回重新选择
           </button>
@@ -1399,7 +1399,7 @@ const RouteResultPage: React.FC = () => {
         <div style={{ padding: 10, background: '#fff7e6', color: '#ad6800', borderRadius: 8, fontSize: 13, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <span>⚠️ {unavailableNote}</span>
           {selectedMode === 'bus' && (
-            <button onClick={() => selectTravelMode('driving')} style={{ marginLeft: 'auto', padding: '6px 14px', border: 'none', borderRadius: 6, background: '#1677ff', color: '#fff', fontSize: 13, cursor: 'pointer' }}>
+            <button onClick={() => selectTravelMode('driving')} style={{ marginLeft: 'auto', padding: '6px 14px', border: 'none', borderRadius: 6, background: '#3F5B8D', color: '#fff', fontSize: 13, cursor: 'pointer' }}>
               切换驾车
             </button>
           )}
@@ -1485,9 +1485,9 @@ const RouteResultPage: React.FC = () => {
                           onClick={(e) => { e.stopPropagation(); selectTransitOption(option); }}
                           style={{
                             flex: 1, minWidth: 110, padding: '8px 12px', borderRadius: 10,
-                            border: active ? '2px solid #1677ff' : '1px solid #e5e9ef',
+                            border: active ? '2px solid #3F5B8D' : '1px solid #e5e9ef',
                             background: active ? '#f0f5ff' : '#fff',
-                            color: active ? '#1677ff' : 'var(--text-secondary)',
+                            color: active ? '#3F5B8D' : 'var(--text-secondary)',
                             cursor: 'pointer', fontSize: 13, textAlign: 'left', lineHeight: 1.5,
                           }}
                         >
@@ -1518,9 +1518,9 @@ const RouteResultPage: React.FC = () => {
                           onClick={(e) => { e.stopPropagation(); selectCandidate(mode, idx); }}
                           style={{
                             flex: 1, minWidth: 110, padding: '8px 12px', borderRadius: 10,
-                            border: active ? '2px solid #1677ff' : '1px solid #e5e9ef',
+                            border: active ? '2px solid #3F5B8D' : '1px solid #e5e9ef',
                             background: active ? '#f0f5ff' : '#fff',
-                            color: active ? '#1677ff' : 'var(--text-secondary)',
+                            color: active ? '#3F5B8D' : 'var(--text-secondary)',
                             cursor: 'pointer', fontSize: 13, textAlign: 'left', lineHeight: 1.5,
                           }}
                         >
@@ -1577,7 +1577,7 @@ const RouteResultPage: React.FC = () => {
                     <div className={styles.aiAdvice} style={{ background: '#f0f5ff' }}>
                       <span>🔌 附近充电站：</span>
                       <span
-                        style={{ color: '#1677ff', cursor: 'pointer', fontWeight: 600 }}
+                        style={{ color: '#3F5B8D', cursor: 'pointer', fontWeight: 600 }}
                         onClick={(e) => { e.stopPropagation(); navigate('/parking'); }}
                       >
                         查看充电站 →
@@ -1704,7 +1704,7 @@ const RouteResultPage: React.FC = () => {
               </div>
             );
           })()}
-          <div className={styles.departAdvice} style={{ marginTop: 8, fontSize: 13, color: '#1677ff' }}>
+          <div className={styles.departAdvice} style={{ marginTop: 8, fontSize: 13, color: '#3F5B8D' }}>
             🕐 出发时间建议：{departureAdvice}
           </div>
         </div>

@@ -32,7 +32,7 @@
 
 .option:hover {
   z-index: 1;
-  border-color: rgba(22, 119, 255, 0.25);
+  border-color: rgba(63, 91, 141, 0.25);
   box-shadow: 0 8px 20px rgba(15, 23, 42, 0.13);
 }
 
@@ -43,9 +43,9 @@
 }
 
 .active {
-  border-color: rgba(22, 119, 255, 0.38);
+  border-color: rgba(63, 91, 141, 0.38);
   background: #f3f7ff;
-  box-shadow: 0 6px 18px rgba(22, 119, 255, 0.14);
+  box-shadow: 0 6px 18px rgba(63, 91, 141, 0.14);
 }
 
 .icon {

@@ -7,26 +7,26 @@
 .list { overflow: hidden; border: 1px solid #edf0f4; border-radius: 8px; background: #fff; }
 .reservationItem { display: flex; width: 100%; align-items: flex-start; gap: 14px; padding: 17px 18px; border: 0; border-bottom: 1px solid #f0f2f5; background: #fff; color: inherit; text-align: left; }
 .reservationItem:last-child { border-bottom: 0; }
-.modeIcon { display: grid; width: 42px; height: 42px; flex: 0 0 42px; place-items: center; border-radius: 8px; background: #f3f7fb; color: #1677ff; }
+.modeIcon { display: grid; width: 42px; height: 42px; flex: 0 0 42px; place-items: center; border-radius: 8px; background: #f3f7fb; color: #3F5B8D; }
 .resBody { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 5px; }
 .resTop { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
 .resTop strong { font-size: 14px; }
 .resMeta { color: var(--text-secondary); font-size: 12px; }
 
 .status { padding: 2px 7px; border-radius: 4px; font-size: 11px; white-space: nowrap; }
-.statusPending { background: #e6f4ff; color: #1677ff; }
+.statusPending { background: #e6f4ff; color: #3F5B8D; }
 .statusCompleted { background: #f0f9eb; color: #389e0d; }
 .statusCancelled { background: #f5f5f5; color: #777; }
 .statusExpired { background: #fff7e6; color: #d46b08; }
 
-.orderTagReservation { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 8px; background: #e6f4ff; color: #1677ff; }
+.orderTagReservation { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 8px; background: #e6f4ff; color: #3F5B8D; }
 .orderTagPurchase { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 8px; background: #f9f0ff; color: #722ed1; }
 .cancelBtn { flex: 0 0 auto; align-self: center; padding: 7px 13px; border: 1px solid #ffa39e; border-radius: 7px; background: #fff; color: #cf1322; font-size: 13px; font-weight: 600; cursor: pointer; }
 .cancelBtn:hover { background: #fff1f0; }
 
 .state { display: flex; min-height: 280px; align-items: center; justify-content: center; flex-direction: column; gap: 10px; border: 1px solid #edf0f4; border-radius: 8px; background: #fff; color: var(--text-secondary); text-align: center; }
 .state h2, .state p { margin: 0; }
-.primaryButton, .retryButton { display: inline-flex; align-items: center; gap: 6px; padding: 9px 16px; border: 0; border-radius: 7px; background: #1677ff; color: #fff; cursor: pointer; }
+.primaryButton, .retryButton { display: inline-flex; align-items: center; gap: 6px; padding: 9px 16px; border: 0; border-radius: 7px; background: #3F5B8D; color: #fff; cursor: pointer; }
 
 /* 取消预约确认弹窗 */
 .modalMask { position: fixed; z-index: 1000; inset: 0; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(15, 23, 42, 0.52); }
