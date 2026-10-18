@@ -128,11 +128,6 @@ const ChargingScanPage: React.FC = () => {
       <div className={styles.header}>
         <span className={styles.back} onClick={() => navigate(-1)}>← 返回</span>
         <span className={styles.title}>🔌 扫码充电</span>
-        <span className={styles.demoBadge}>演示</span>
-      </div>
-
-      <div className={styles.warnBanner}>
-        ⚠️ 演示扫码充电 · 未连接真实充电运营平台，不会启动实体充电
       </div>
 
       <div className={styles.stationCard}>
